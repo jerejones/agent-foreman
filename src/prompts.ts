@@ -47,7 +47,21 @@ ${goal}
 2. **Don't modify acceptance criteria** - Only change \`status\` and \`notes\`
 3. **Update status promptly** - Mark features passing when criteria met
 4. **Leave clean state** - No broken code between sessions
-5. **Log everything** - Progress log is your handoff mechanism
+5. **Use single-line log format** - One line per entry, not verbose Markdown
+
+### Progress Log Format
+
+Append entries to \`ai/progress.md\` using this **single-line format only**:
+
+\`\`\`
+STEP 2025-01-15T10:30:00Z feature=auth.login status=passing summary="Implemented login flow"
+CHANGE 2025-01-15T11:00:00Z feature=auth.login action=refactor reason="Improved error handling"
+REPLAN 2025-01-15T12:00:00Z summary="Splitting auth into submodules" note="Original scope too large"
+\`\`\`
+
+**Log types**: \`INIT\` | \`STEP\` | \`CHANGE\` | \`REPLAN\`
+
+**IMPORTANT**: Do NOT write verbose Markdown session notes. Keep each entry as a single line.
 
 ### Commands
 
