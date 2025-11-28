@@ -55,11 +55,8 @@ agent-foreman is available as a Claude Code plugin:
 For a brand new project with no existing code:
 
 ```bash
-# Create project directory
 mkdir my-project && cd my-project
-
-# Initialize with your project goal
-agent-foreman init "Build a REST API for task management"
+agent-foreman init "Build a REST API for task management" --mode new
 ```
 
 **Prompt for Claude Code:**
@@ -74,18 +71,14 @@ Goal: Build a REST API for task management
 For projects with existing code:
 
 ```bash
-# Step 1: Survey the project (AI analyzes your codebase)
 agent-foreman survey
-
-# Step 2: Initialize with merge mode (preserves existing features)
-agent-foreman init "Your project goal" --mode merge
+agent-foreman init "Your project goal"
 ```
 
 **Prompt for Claude Code:**
 
 ```text
 Survey this existing project and initialize the agent-foreman harness.
-Use merge mode to preserve any existing features.
 ```
 
 ---
@@ -264,9 +257,9 @@ one by one until all are passing.
 
 | Command | Description |
 |---------|-------------|
-| `survey [output]` | Generate project survey report |
+| `survey` | Generate project survey report |
 | `init <goal>` | Initialize or upgrade the harness |
-| `step [feature_id]` | Show next feature to work on |
+| `step` | Show next feature to work on |
 | `status` | Show current project status |
 | `impact <feature_id>` | Analyze impact of changes |
 | `complete <feature_id>` | Mark a feature as complete |
@@ -275,9 +268,9 @@ one by one until all are passing.
 
 | Mode | Description |
 |------|-------------|
-| `--mode create` | Create new (default) |
-| `--mode merge` | Merge with existing |
-| `--mode overwrite` | Replace existing |
+| `--mode merge` | Merge with existing (default) |
+| `--mode new` | Create new, fail if exists |
+| `--mode scan` | Scan only, no AI features |
 
 ---
 

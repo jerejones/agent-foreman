@@ -55,11 +55,8 @@ agent-foreman 可作为 Claude Code 插件使用：
 对于没有现有代码的全新项目：
 
 ```bash
-# 创建项目目录
 mkdir my-project && cd my-project
-
-# 使用项目目标初始化
-agent-foreman init "构建一个任务管理的 REST API"
+agent-foreman init "构建一个任务管理的 REST API" --mode new
 ```
 
 **Claude Code 提示词：**
@@ -74,18 +71,14 @@ agent-foreman init "构建一个任务管理的 REST API"
 对于已有代码的项目：
 
 ```bash
-# 步骤 1：调查项目（AI 分析你的代码库）
 agent-foreman survey
-
-# 步骤 2：使用合并模式初始化（保留现有功能）
-agent-foreman init "你的项目目标" --mode merge
+agent-foreman init "你的项目目标"
 ```
 
 **Claude Code 提示词：**
 
 ```text
 调查这个现有项目并初始化 agent-foreman 框架。
-使用 merge 模式保留现有功能。
 ```
 
 ---
@@ -261,9 +254,9 @@ agent-foreman init "你的项目目标" --mode merge
 
 | 命令 | 描述 |
 |------|------|
-| `survey [output]` | 生成项目调查报告 |
+| `survey` | 生成项目调查报告 |
 | `init <goal>` | 初始化或升级框架 |
-| `step [feature_id]` | 显示下一个要处理的功能 |
+| `step` | 显示下一个要处理的功能 |
 | `status` | 显示当前项目状态 |
 | `impact <feature_id>` | 分析更改的影响 |
 | `complete <feature_id>` | 将功能标记为完成 |
@@ -272,9 +265,9 @@ agent-foreman init "你的项目目标" --mode merge
 
 | 模式 | 描述 |
 |------|------|
-| `--mode create` | 创建新的（默认）|
-| `--mode merge` | 与现有合并 |
-| `--mode overwrite` | 替换现有 |
+| `--mode merge` | 与现有合并（默认）|
+| `--mode new` | 创建新的，如存在则失败 |
+| `--mode scan` | 仅扫描，不使用 AI 功能 |
 
 ---
 
