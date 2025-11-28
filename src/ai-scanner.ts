@@ -421,6 +421,87 @@ export async function aiScanProject(
 }
 
 /**
+ * Generate features from existing PROJECT_SURVEY.md + goal
+ * Much faster than full scan since it reuses existing survey
+ */
+export async function generateFeaturesFromSurvey(
+  surveyContent: string,
+  goal: string
+): Promise<AIAnalysisResult> {
+  const prompt = `You are an expert software architect. Based on the following project survey document and project goal, extract and generate a feature list.
+
+## Project Goal
+${goal}
+
+## Project Survey Document
+${surveyContent}
+
+Based on this survey, respond with a JSON object (ONLY JSON, no markdown code blocks):
+
+{
+  "techStack": {
+    "language": "from survey",
+    "framework": "from survey",
+    "buildTool": "from survey",
+    "testFramework": "from survey",
+    "packageManager": "from survey"
+  },
+  "modules": [
+    {
+      "name": "module name from survey",
+      "path": "relative path",
+      "description": "description",
+      "status": "complete|partial|stub"
+    }
+  ],
+  "features": [
+    {
+      "id": "hierarchical.feature.id",
+      "description": "what this feature does",
+      "module": "parent module name",
+      "source": "survey",
+      "confidence": 0.9
+    }
+  ],
+  "completion": {
+    "overall": 65,
+    "notes": ["from survey"]
+  },
+  "commands": {
+    "install": "from survey",
+    "dev": "from survey",
+    "build": "from survey",
+    "test": "from survey"
+  },
+  "summary": "from survey",
+  "recommendations": ["from survey"]
+}
+
+Extract all information directly from the survey document. Generate feature IDs using hierarchical naming (module.submodule.action).`;
+
+  console.log(chalk.gray("  Generating features from survey..."));
+
+  const result = await callAnyAvailableAgent(prompt, {
+    preferredOrder: ["gemini", "codex", "claude"],
+    verbose: true,
+  });
+
+  if (!result.success) {
+    return {
+      success: false,
+      error: result.error,
+    };
+  }
+
+  const analysis = parseAIResponse(result.output);
+  if (analysis.success) {
+    analysis.agentUsed = result.agentUsed;
+  }
+
+  return analysis;
+}
+
+/**
  * Convert AI analysis result to ProjectSurvey format
  */
 export function aiResultToSurvey(

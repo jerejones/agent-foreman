@@ -9,7 +9,7 @@ import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
-import { aiScanProject, aiResultToSurvey, generateAISurveyMarkdown } from "./ai-scanner.js";
+import { aiScanProject, aiResultToSurvey, generateAISurveyMarkdown, generateFeaturesFromSurvey } from "./ai-scanner.js";
 import { printAgentStatus } from "./agents.js";
 import { scanDirectoryStructure } from "./project-scanner.js";
 import {
@@ -34,6 +34,53 @@ import {
 import { generateInitScript, generateMinimalInitScript } from "./init-script.js";
 import { generateClaudeMd, generateFeatureGuidance } from "./prompts.js";
 import type { InitMode, Feature } from "./types.js";
+
+/**
+ * Auto-detect project goal from README or package.json
+ */
+async function detectProjectGoal(cwd: string): Promise<string> {
+  // Try package.json description first
+  try {
+    const pkgPath = path.join(cwd, "package.json");
+    const pkgContent = await fs.readFile(pkgPath, "utf-8");
+    const pkg = JSON.parse(pkgContent);
+    if (pkg.description && pkg.description.length > 10) {
+      console.log(chalk.gray(`  Auto-detected goal from package.json`));
+      return pkg.description;
+    }
+  } catch {
+    // No package.json or no description
+  }
+
+  // Try README first line (usually project title/description)
+  try {
+    const readmeNames = ["README.md", "README", "readme.md", "Readme.md"];
+    for (const name of readmeNames) {
+      try {
+        const readmePath = path.join(cwd, name);
+        const content = await fs.readFile(readmePath, "utf-8");
+        const lines = content.split("\n").filter((l) => l.trim());
+        // Skip markdown headers, get first meaningful line
+        for (const line of lines.slice(0, 5)) {
+          const clean = line.replace(/^#+\s*/, "").trim();
+          if (clean.length > 10 && !clean.startsWith("!") && !clean.startsWith("[")) {
+            console.log(chalk.gray(`  Auto-detected goal from ${name}`));
+            return clean;
+          }
+        }
+      } catch {
+        // Try next README variant
+      }
+    }
+  } catch {
+    // No README found
+  }
+
+  // Fallback: use directory name
+  const dirName = path.basename(cwd);
+  console.log(chalk.yellow(`  No description found, using directory name: ${dirName}`));
+  return `Development of ${dirName}`;
+}
 
 async function main() {
   await yargs(hideBin(process.argv))
@@ -60,14 +107,13 @@ async function main() {
       }
     )
     .command(
-      "init <goal>",
+      "init [goal]",
       "Initialize or upgrade the long-task harness",
       (yargs) =>
         yargs
           .positional("goal", {
-            describe: "Project goal description",
+            describe: "Project goal description (auto-detected if not provided)",
             type: "string",
-            demandOption: true,
           })
           .option("mode", {
             alias: "m",
@@ -82,7 +128,8 @@ async function main() {
             default: false,
           }),
       async (argv) => {
-        await runInit(argv.goal!, argv.mode as InitMode, argv.verbose);
+        const goal = argv.goal || (await detectProjectGoal(process.cwd()));
+        await runInit(goal, argv.mode as InitMode, argv.verbose);
       }
     )
     .command(
@@ -211,13 +258,25 @@ async function runInit(goal: string, mode: InitMode, verbose: boolean) {
   const cwd = process.cwd();
   console.log(chalk.blue(`🚀 Initializing harness (mode: ${mode})...`));
 
-  // Step 1: Run AI-powered project scan to discover features
-  console.log(chalk.gray("  AI scanning project (priority: Gemini > Codex > Claude)..."));
-  if (verbose) {
-    printAgentStatus();
-  }
+  // Step 1: Try to use existing PROJECT_SURVEY.md, otherwise do full scan
+  const surveyPath = path.join(cwd, "docs/PROJECT_SURVEY.md");
+  let aiResult;
 
-  const aiResult = await aiScanProject(cwd, { verbose });
+  try {
+    const surveyContent = await fs.readFile(surveyPath, "utf-8");
+    console.log(chalk.green(`✓ Found PROJECT_SURVEY.md`));
+
+    // Use survey + goal to generate features
+    aiResult = await generateFeaturesFromSurvey(surveyContent, goal);
+  } catch {
+    // No survey file, do full AI scan
+    console.log(chalk.gray("  No PROJECT_SURVEY.md found, running full AI scan..."));
+    if (verbose) {
+      printAgentStatus();
+    }
+
+    aiResult = await aiScanProject(cwd, { verbose });
+  }
 
   if (!aiResult.success) {
     console.log(chalk.red(`✗ AI analysis failed: ${aiResult.error}`));
