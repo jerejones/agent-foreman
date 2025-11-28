@@ -16,6 +16,41 @@ Invoke this skill when:
 - **Upgrading harness** after significant project changes
 - **Re-scanning features** when new routes or tests are added
 
+## Auto-Detection Flow
+
+The `init` command automatically chooses the best approach:
+
+```text
+agent-foreman init "goal"
+        │
+        ▼
+┌───────────────────┐
+│ PROJECT_SURVEY.md │
+│     exists?       │
+└─────────┬─────────┘
+          │
+    ┌─────┴─────┐
+    │           │
+   YES          NO
+    │           │
+    ▼           ▼
+┌─────────┐  ┌───────────────┐
+│ Use     │  │ Has source    │
+│ survey  │  │ code files?   │
+│ (fast)  │  └───────┬───────┘
+└─────────┘          │
+              ┌──────┴──────┐
+              │             │
+             YES            NO
+              │             │
+              ▼             ▼
+        ┌─────────┐  ┌─────────────┐
+        │ AI scan │  │ Generate    │
+        │ project │  │ from goal   │
+        │ (slow)  │  │ (10-20 feat)│
+        └─────────┘  └─────────────┘
+```
+
 ## Modes
 
 ### Merge Mode (default)
@@ -49,6 +84,7 @@ agent-foreman init "Project goal" --mode scan
 - Only observes, does not modify
 - Shows what would be discovered
 - Useful for preview before commit
+- **Does not create git commit**
 
 ## Created Files
 
@@ -72,7 +108,7 @@ Feature backlog with schema validation:
       ],
       "dependsOn": [],
       "version": 1,
-      "origin": "init-from-routes"
+      "origin": "init-from-goal"
     }
   ],
   "metadata": {
@@ -88,7 +124,7 @@ Feature backlog with schema validation:
 
 Session handoff audit log:
 
-```
+```text
 INIT 2024-01-15T10:00:00Z goal="Build user authentication" note="mode=merge, features=15"
 
 STEP 2024-01-15T11:30:00Z feature=auth.login status=passing tests="npm test" summary="Implemented login endpoint"
@@ -109,21 +145,45 @@ check() { npm run test }
 
 Instructions for AI agents working on the project.
 
-## Feature Discovery
+## Git Integration
 
-Features are derived from:
+### Auto Commit
 
-| Source | Example | Confidence |
-|--------|---------|------------|
-| Routes | `app.post('/login', ...)` | 80% |
-| Tests | `it('should authenticate user', ...)` | 90% |
-| Controllers | Handler function patterns | 70% |
+After creating all files, `init` automatically commits them:
+
+```bash
+git add ai/ CLAUDE.md
+git commit -m "chore: initialize agent-foreman harness"
+```
+
+**Output:**
+
+```text
+✓ Feature list saved with 15 features
+✓ Generated ai/init.sh
+✓ Generated CLAUDE.md
+✓ Updated ai/progress.log
+✓ Created initial git commit
+
+🎉 Harness initialized successfully!
+```
+
+**Note:** If not in a git repo, a warning is shown but initialization continues.
+
+## Feature Discovery Sources
+
+| Scenario | Source | Features Generated |
+|----------|--------|-------------------|
+| Has `PROJECT_SURVEY.md` | Survey document | Based on existing analysis |
+| Has source code | AI scan of codebase | From routes, tests, patterns |
+| Empty project | Goal description | 10-20 features from goal |
 
 ## Feature ID Convention
 
 IDs use dot notation: `module.submodule.action`
 
 Examples:
+
 - `auth.login`
 - `auth.password.reset`
 - `api.users.create`
@@ -131,23 +191,35 @@ Examples:
 
 ## Usage Examples
 
-### New Project
+### New Project (Empty Directory)
 
 ```bash
-# Initialize with goal
+# Create project
+mkdir my-api && cd my-api
+git init
+
+# Initialize with goal (AI generates features)
 agent-foreman init "Build a REST API for task management"
+
+# Output:
+# ✓ Feature list saved with 12 features
+# ✓ Generated ai/init.sh
+# ✓ Generated CLAUDE.md
+# ✓ Updated ai/progress.log
+# ✓ Created initial git commit
+# 🎉 Harness initialized successfully!
 
 # Check what was created
 agent-foreman status
 ```
 
-### Existing Project
+### Existing Project (With Code)
 
 ```bash
-# First, survey to understand the project
+# First, survey to understand the project (recommended)
 agent-foreman survey
 
-# Then initialize (merge mode preserves existing)
+# Then initialize (uses survey for faster feature generation)
 agent-foreman init "Continue development on e-commerce platform" --mode merge
 
 # Start working
@@ -175,10 +247,11 @@ After initialization:
 
 ## Important Notes
 
-- Run `/project-survey` first for existing projects
+- For existing projects, run `/project-survey` first for better results
 - Always review auto-discovered features
 - Manually add features that weren't discovered
 - Set realistic priorities (1 = highest)
+- Git commit is automatic (except in scan mode)
 
 ---
 

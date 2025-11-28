@@ -502,6 +502,98 @@ Extract all information directly from the survey document. Generate feature IDs 
 }
 
 /**
+ * Generate features from goal description for new/empty projects
+ * Used when there is no existing code to scan
+ */
+export async function generateFeaturesFromGoal(
+  goal: string
+): Promise<AIAnalysisResult> {
+  const prompt = `You are an expert software architect. Based on the following project goal, generate an initial feature list for a brand new project.
+
+## Project Goal
+${goal}
+
+Generate a comprehensive feature list for building this project from scratch. Think about:
+1. Core functionality required to achieve the goal
+2. Common supporting features (auth, config, error handling, etc. if relevant)
+3. Developer experience features (CLI, API, etc. if relevant)
+4. Testing and documentation needs
+
+Respond with a JSON object (ONLY JSON, no markdown code blocks):
+
+{
+  "techStack": {
+    "language": "recommended primary language",
+    "framework": "recommended framework (or 'none')",
+    "buildTool": "recommended build tool",
+    "testFramework": "recommended test framework",
+    "packageManager": "recommended package manager"
+  },
+  "modules": [
+    {
+      "name": "module name",
+      "path": "suggested relative path",
+      "description": "what this module handles",
+      "status": "stub"
+    }
+  ],
+  "features": [
+    {
+      "id": "hierarchical.feature.id",
+      "description": "what this feature does - specific and testable",
+      "module": "parent module name",
+      "source": "goal",
+      "confidence": 0.8
+    }
+  ],
+  "completion": {
+    "overall": 0,
+    "notes": ["Project not yet started - features generated from goal"]
+  },
+  "commands": {
+    "install": "suggested install command",
+    "dev": "suggested dev command",
+    "build": "suggested build command",
+    "test": "suggested test command"
+  },
+  "summary": "Brief description of what will be built",
+  "recommendations": [
+    "Start with feature X first",
+    "Consider Y for architecture"
+  ]
+}
+
+Guidelines:
+1. Generate 10-20 features that cover the full scope of the goal
+2. Use hierarchical IDs: module.submodule.action (e.g., auth.user.login, api.orders.create)
+3. Each feature should be specific enough to be implemented and tested independently
+4. Order features by logical dependency (foundational features first)
+5. All features start with status "failing" (will be set by the calling code)
+6. Recommend a reasonable tech stack based on the goal (don't over-engineer)`;
+
+  console.log(chalk.gray("  Generating features from goal description..."));
+
+  const result = await callAnyAvailableAgent(prompt, {
+    preferredOrder: ["gemini", "codex", "claude"],
+    verbose: true,
+  });
+
+  if (!result.success) {
+    return {
+      success: false,
+      error: result.error,
+    };
+  }
+
+  const analysis = parseAIResponse(result.output);
+  if (analysis.success) {
+    analysis.agentUsed = result.agentUsed;
+  }
+
+  return analysis;
+}
+
+/**
  * Convert AI analysis result to ProjectSurvey format
  */
 export function aiResultToSurvey(

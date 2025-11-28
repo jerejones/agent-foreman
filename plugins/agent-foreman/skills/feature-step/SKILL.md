@@ -51,6 +51,14 @@ agent-foreman step auth.login
 
 Shows details for the specified feature.
 
+### Run Tests First
+
+```bash
+agent-foreman step --check
+```
+
+Runs `ai/init.sh check` before showing the next task.
+
 ### Preview Without Changes
 
 ```bash
@@ -61,12 +69,35 @@ Shows what would be selected without making changes.
 
 ## Output Example
 
-```
-📋 Selected Feature: auth.login
-   Module: auth
-   Priority: 1
+```text
+═══════════════════════════════════════════════════════════════
+                    EXTERNAL MEMORY SYNC
+═══════════════════════════════════════════════════════════════
+
+📁 Current Directory:
+   /Users/dev/my-project
+
+📜 Recent Git Commits:
+   abc1234 feat(api): add user endpoint
+   def5678 chore: initialize agent-foreman harness
+
+📝 Recent Progress:
+   2024-01-15 10:00 [INIT] Initialize harness
+   2024-01-15 11:30 [STEP] Completed auth.register
+
+📊 Feature Status:
+   ✓ Passing: 3 | ✗ Failing: 12 | ⚠ Review: 0 | Blocked: 0
+   Progress: [████░░░░░░░░░░░░░░░░░░░░░░░░░░] 20%
+
+═══════════════════════════════════════════════════════════════
+                     NEXT TASK
+═══════════════════════════════════════════════════════════════
+
+📋 Feature: auth.login
+   Module: auth | Priority: 1
    Status: failing
 
+   Description:
    User can log in with email and password
 
    Acceptance Criteria:
@@ -76,25 +107,32 @@ Shows what would be selected without making changes.
 
    ⚠ Depends on: auth.register
 
-   ─────────────────────────────────────────
+═══════════════════════════════════════════════════════════════
    When done, run: agent-foreman complete auth.login
+═══════════════════════════════════════════════════════════════
 ```
 
-## Workflow After Selection
+## Development Workflow
 
-### 1. Plan
+### 1. Get Next Task
+
+```bash
+agent-foreman step
+```
+
+### 2. Plan
 
 - Review acceptance criteria
 - Check dependencies are passing
 - Identify files to modify
 
-### 2. Implement
+### 3. Implement
 
 - Write code to satisfy criteria
 - Keep changes focused on this feature
 - Don't introduce unrelated changes
 
-### 3. Test
+### 4. Test
 
 ```bash
 # Run project tests
@@ -104,36 +142,47 @@ Shows what would be selected without making changes.
 npm run test
 ```
 
-### 4. Verify Acceptance
+### 5. Verify Acceptance
 
 Go through each criterion:
+
 - [ ] User enters valid credentials
 - [ ] System returns JWT token
 - [ ] User is redirected to dashboard
 
-### 5. Mark Complete
+### 6. Mark Complete
 
 ```bash
 agent-foreman complete auth.login
 ```
 
-### 6. Check Impact
+**Output with suggested commit:**
+
+```text
+✓ Marked 'auth.login' as passing
+
+📝 Suggested commit:
+   git add -A && git commit -m "feat(auth): User can log in with email and password"
+
+  Next up: auth.logout
+```
+
+### 7. Follow Suggested Commit
+
+```bash
+git add -A && git commit -m "feat(auth): User can log in with email and password"
+```
+
+### 8. Check Impact (Optional)
 
 ```bash
 agent-foreman impact auth.login
 ```
 
-### 7. Commit
+### 9. Continue
 
 ```bash
-git add .
-git commit -m "feat(auth): implement user login
-
-- Add login endpoint
-- Return JWT on success
-- Add redirect logic
-
-Feature: auth.login"
+agent-foreman step
 ```
 
 ## Feature States
@@ -150,7 +199,7 @@ Feature: auth.login"
 
 If a feature has dependencies:
 
-```
+```text
 ⚠ Depends on: auth.register, user.profile
 ```
 
@@ -166,7 +215,7 @@ agent-foreman step auth.register
 
 Features may have notes from previous sessions:
 
-```
+```text
 Notes: Started implementation, need to add validation
 ```
 
@@ -181,7 +230,7 @@ agent-foreman step
 # Check project status
 agent-foreman status
 
-# Mark feature complete
+# Mark feature complete (shows suggested commit)
 agent-foreman complete <feature_id>
 
 # Mark feature complete with notes
@@ -191,19 +240,47 @@ agent-foreman complete <feature_id> --notes "Added extra validation"
 agent-foreman impact <feature_id>
 ```
 
+## Git Integration
+
+### Suggested Commits
+
+After marking a feature complete, the CLI shows a suggested commit command:
+
+```text
+📝 Suggested commit:
+   git add -A && git commit -m "feat(module): description"
+```
+
+**Best practice:** Always follow the suggested commit to maintain clean git history for the next agent session.
+
+### Commit Format
+
+The suggested format follows conventional commits:
+
+```text
+feat(module): Short description from feature
+
+Examples:
+- feat(auth): User can log in with email and password
+- feat(api): Create user endpoint with validation
+- fix(chat): Handle empty message gracefully
+```
+
 ## Best Practices
 
 1. **One feature at a time** - Don't start multiple features
 2. **Complete or pause cleanly** - Leave code in working state
-3. **Update notes** - If pausing, note what's done and what's left
-4. **Test thoroughly** - Check all acceptance criteria
-5. **Clean commits** - One feature = one commit
+3. **Follow suggested commits** - Use the commit command shown after `complete`
+4. **Update notes** - If pausing, note what's done and what's left
+5. **Test thoroughly** - Check all acceptance criteria
+6. **Clean commits** - One feature = one commit
 
 ## Troubleshooting
 
 ### "No feature list found"
 
 Run initialization first:
+
 ```bash
 agent-foreman init "Your project goal"
 ```
@@ -211,13 +288,14 @@ agent-foreman init "Your project goal"
 ### "Feature not found"
 
 Check available features:
+
 ```bash
 agent-foreman status
 ```
 
 ### "All features passing"
 
-```
+```text
 🎉 All features are passing or blocked. Nothing to do!
 ```
 

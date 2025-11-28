@@ -37,14 +37,18 @@ The foreman maintains three core artifacts as external memory:
 
 ## Workflow
 
-### For New Projects
+### For New Projects (Empty Directory)
 
 ```bash
-# 1. Initialize the harness
-agent-foreman init "Your project goal here"
+# 1. Create and enter project directory
+mkdir my-project && cd my-project
+git init
 
-# 2. Check status
-agent-foreman status
+# 2. Initialize with your goal (AI generates features automatically)
+agent-foreman init "Build a REST API for user management"
+# → Creates feature list from goal (10-20 features)
+# → Creates ai/ directory and CLAUDE.md
+# → Automatically commits harness files
 
 # 3. Start working on features
 agent-foreman step
@@ -53,18 +57,30 @@ agent-foreman step
 ### For Existing Projects
 
 ```bash
-# 1. Survey the project first
+# 1. Survey the project first (recommended)
 agent-foreman survey
 
 # 2. Review the generated report
 cat docs/PROJECT_SURVEY.md
 
-# 3. Initialize harness (merge mode keeps existing features)
+# 3. Initialize harness (uses survey for faster feature generation)
 agent-foreman init "Project goal" --mode merge
+# → Reads survey to generate features
+# → Automatically commits harness files
 
 # 4. Start working
 agent-foreman step
 ```
+
+### Init Auto-Detection
+
+The `init` command automatically chooses the best approach:
+
+| Condition | Action |
+|-----------|--------|
+| `PROJECT_SURVEY.md` exists | Uses survey to generate features (fast) |
+| Has source code, no survey | Scans codebase with AI (slower) |
+| Empty project | Generates features from goal (10-20 features) |
 
 ### Daily Development Session
 
@@ -72,7 +88,7 @@ agent-foreman step
 # 1. Check current status
 agent-foreman status
 
-# 2. Get next feature to work on
+# 2. Get next feature to work on (shows external memory sync)
 agent-foreman step
 
 # 3. Implement the feature
@@ -80,8 +96,12 @@ agent-foreman step
 
 # 4. Mark complete when done
 agent-foreman complete <feature_id>
+# → Shows suggested git commit command
 
-# 5. Check for impact on other features
+# 5. Follow the suggested commit
+git add -A && git commit -m "feat(module): description"
+
+# 6. Check for impact on other features (optional)
 agent-foreman impact <feature_id>
 ```
 
@@ -95,17 +115,46 @@ agent-foreman impact <feature_id>
 | `needs_review` | Potentially affected by recent changes |
 | `deprecated` | No longer needed, superseded |
 
+## Git Integration
+
+### Auto Commit on Init
+
+When you run `init`, the harness automatically:
+
+1. Creates `ai/` directory with feature list and scripts
+2. Creates `CLAUDE.md` with agent instructions
+3. **Commits these files automatically** with message:
+   ```
+   chore: initialize agent-foreman harness
+   ```
+
+### Suggested Commits on Complete
+
+When you run `complete`, the output includes:
+
+```
+✓ Marked 'api.users.create' as passing
+
+📝 Suggested commit:
+   git add -A && git commit -m "feat(api): Create user endpoint"
+
+  Next up: api.users.list
+```
+
+Follow the suggested command to maintain clean git history.
+
 ## Best Practices
 
 1. **One feature at a time** - Complete or cleanly pause before switching
-2. **Update status promptly** - Mark features passing when criteria are met
-3. **Review impact** - After changes, run impact analysis
-4. **Clean commits** - Each feature should result in a clean, atomic commit
+2. **Follow suggested commits** - Use the commit command shown after `complete`
+3. **Update status promptly** - Mark features passing when criteria are met
+4. **Review impact** - After changes, run impact analysis
 5. **Read before coding** - Always read feature list and progress log first
 
 ## Feature Selection Priority
 
 The foreman selects features in this order:
+
 1. `needs_review` status (highest priority)
 2. `failing` status
 3. Lower priority number (priority 1 > priority 10)

@@ -16,6 +16,10 @@ Automatically invoke this skill when:
 - **Understanding codebase structure** before making changes
 - **Identifying implemented features** from routes and tests
 
+**Note:** For new/empty projects, skip this skill and use `/init-harness` directly with your goal.
+
+> 注意：对于新的/空的项目，跳过此技能，直接使用 `/init-harness` 并提供你的目标。
+
 ## What It Does
 
 1. **Detects tech stack** - Language, framework, build tools, test framework
@@ -31,6 +35,10 @@ Automatically invoke this skill when:
 | Node.js/TypeScript | Express, Vue, React, Astro, Next.js, Nuxt, Fastify, Koa |
 | Go | Echo, Gin, Fiber, Chi |
 | Python | FastAPI, Flask, Django |
+| Rust | Actix, Axum, Rocket |
+| Java/Kotlin | Spring Boot, Ktor |
+| Ruby | Rails, Sinatra |
+| PHP | Laravel, Symfony |
 
 ## Usage
 
@@ -50,6 +58,7 @@ agent-foreman survey --verbose
 The skill generates `docs/PROJECT_SURVEY.md` containing:
 
 ### Tech Stack Table
+
 | Aspect | Value |
 |--------|-------|
 | Language | typescript/javascript |
@@ -59,21 +68,26 @@ The skill generates `docs/PROJECT_SURVEY.md` containing:
 | Package Manager | pnpm |
 
 ### Directory Structure
+
 - Entry points found
 - Source directories
 - Test directories
 - Configuration files
 
 ### Discovered Features
+
 Features extracted from:
+
 - Route definitions (e.g., `app.get('/users', ...)`)
 - Test descriptions (e.g., `it('should create user', ...)`)
 
 ### Completion Assessment
+
 - Overall percentage
 - Per-module breakdown
 
 ### Available Commands
+
 ```bash
 # Install dependencies
 pnpm install
@@ -85,15 +99,41 @@ pnpm run dev
 pnpm run test
 ```
 
+## Why Survey First?
+
+Running `survey` before `init` is recommended for existing projects because:
+
+1. **Faster init** - Init reuses the survey instead of re-scanning
+2. **Better accuracy** - AI analysis has time to thoroughly examine code
+3. **Review opportunity** - You can check and correct the survey before init
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│  Existing Project Workflow                                   │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  agent-foreman survey   →  docs/PROJECT_SURVEY.md           │
+│         (~45 seconds)       Review the analysis              │
+│              ↓                                               │
+│  agent-foreman init     →  ai/feature_list.json             │
+│         (~5 seconds)        Uses survey (fast!)              │
+│                             + git commit (auto)              │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
 ## Important Notes
 
 - This skill is **read-only** - it does not modify the codebase
 - Does **not** create or update `feature_list.json`
-- Useful for initial assessment before running `/init-harness`
-- Feature discovery uses pattern matching and may miss some features
+- Does **not** create git commits
+- **Not needed for new/empty projects** - use `init` directly
+- Feature discovery uses AI analysis and pattern matching
 - Review the generated report and add missing features manually
 
 ## Example Workflow
+
+### Existing Project
 
 ```bash
 # 1. Survey the project
@@ -102,8 +142,19 @@ agent-foreman survey
 # 2. Review the report
 cat docs/PROJECT_SURVEY.md
 
-# 3. If satisfied, initialize harness
+# 3. If satisfied, initialize harness (uses survey)
 agent-foreman init "Project goal" --mode merge
+```
+
+### New Project (Skip Survey)
+
+```bash
+# For empty projects, skip survey and go directly to init
+mkdir my-project && cd my-project
+git init
+
+# Init will generate features from goal
+agent-foreman init "Build a REST API for user management"
 ```
 
 ---

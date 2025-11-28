@@ -9,7 +9,7 @@ import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
-import { aiScanProject, aiResultToSurvey, generateAISurveyMarkdown, generateFeaturesFromSurvey } from "./ai-scanner.js";
+import { aiScanProject, aiResultToSurvey, generateAISurveyMarkdown, generateFeaturesFromSurvey, generateFeaturesFromGoal } from "./ai-scanner.js";
 import { printAgentStatus } from "./agents.js";
 import { scanDirectoryStructure } from "./project-scanner.js";
 import {
@@ -34,6 +34,39 @@ import {
 import { generateInitScript, generateMinimalInitScript } from "./init-script.js";
 import { generateClaudeMd, generateFeatureGuidance } from "./prompts.js";
 import type { InitMode, Feature } from "./types.js";
+import { glob } from "glob";
+
+/**
+ * Check if project directory is empty (no source files)
+ * Used to determine whether to scan existing code or generate features from goal
+ */
+async function isProjectEmpty(cwd: string): Promise<boolean> {
+  const sourcePatterns = [
+    "**/*.{ts,tsx,js,jsx,mjs,cjs}",
+    "**/*.{py,go,rs,java,kt,rb,php,cs,swift,scala}",
+    "**/*.{c,cpp,h,hpp}",
+    "**/src/**/*",
+    "**/lib/**/*",
+    "**/app/**/*",
+  ];
+
+  const ignorePatterns = [
+    "node_modules/**",
+    "dist/**",
+    "build/**",
+    ".git/**",
+    "vendor/**",
+    "__pycache__/**",
+  ];
+
+  for (const pattern of sourcePatterns) {
+    const matches = await glob(pattern, { cwd, ignore: ignorePatterns, nodir: true });
+    if (matches.length > 0) {
+      return false; // Has source files
+    }
+  }
+  return true; // No source files found
+}
 
 /**
  * Auto-detect project goal from README or package.json
@@ -262,9 +295,11 @@ async function runSurvey(outputPath: string, verbose: boolean) {
 
 async function runInit(goal: string, mode: InitMode, verbose: boolean) {
   const cwd = process.cwd();
+  const { spawnSync } = await import("node:child_process");
   console.log(chalk.blue(`🚀 Initializing harness (mode: ${mode})...`));
 
-  // Step 1: Try to use existing PROJECT_SURVEY.md, otherwise do full scan
+  // Step 1: Determine feature source based on project state
+  // Priority: survey > existing code scan > goal-based generation
   const surveyPath = path.join(cwd, "docs/PROJECT_SURVEY.md");
   let aiResult;
 
@@ -275,13 +310,26 @@ async function runInit(goal: string, mode: InitMode, verbose: boolean) {
     // Use survey + goal to generate features
     aiResult = await generateFeaturesFromSurvey(surveyContent, goal);
   } catch {
-    // No survey file, do full AI scan
-    console.log(chalk.gray("  No PROJECT_SURVEY.md found, running full AI scan..."));
-    if (verbose) {
-      printAgentStatus();
-    }
+    // No survey file - check if project has source code
+    const empty = await isProjectEmpty(cwd);
 
-    aiResult = await aiScanProject(cwd, { verbose });
+    if (empty) {
+      // Empty project: generate features from goal description
+      console.log(chalk.gray("  New/empty project detected, generating features from goal..."));
+      if (verbose) {
+        printAgentStatus();
+      }
+
+      aiResult = await generateFeaturesFromGoal(goal);
+    } else {
+      // Has source code: do full AI scan
+      console.log(chalk.gray("  No PROJECT_SURVEY.md found, running full AI scan..."));
+      if (verbose) {
+        printAgentStatus();
+      }
+
+      aiResult = await aiScanProject(cwd, { verbose });
+    }
   }
 
   if (!aiResult.success) {
@@ -358,6 +406,26 @@ async function runInit(goal: string, mode: InitMode, verbose: boolean) {
       createInitEntry(goal, `mode=${mode}, features=${featureList.features.length}`)
     );
     console.log(chalk.green("✓ Updated ai/progress.log"));
+  }
+
+  // Step 9: Make first git commit (PRD requirement)
+  if (mode !== "scan") {
+    const addResult = spawnSync("git", ["add", "ai/", "CLAUDE.md"], { cwd, encoding: "utf-8" });
+    if (addResult.status === 0) {
+      const commitResult = spawnSync(
+        "git",
+        ["commit", "-m", "chore: initialize agent-foreman harness"],
+        { cwd, encoding: "utf-8" }
+      );
+      if (commitResult.status === 0) {
+        console.log(chalk.green("✓ Created initial git commit"));
+      } else {
+        // Could be: no git repo, nothing to commit, or other git issue
+        console.log(chalk.yellow("⚠ Could not create git commit (maybe no git repo or no changes)"));
+      }
+    } else {
+      console.log(chalk.yellow("⚠ Could not stage files for git commit"));
+    }
   }
 
   console.log(chalk.bold.green("\n🎉 Harness initialized successfully!"));
@@ -696,12 +764,19 @@ async function runComplete(featureId: string, notes?: string) {
 
   console.log(chalk.green(`✓ Marked '${featureId}' as passing`));
 
+  // Suggest git commit (PRD: write clear commit message)
+  const shortDesc = feature.description.length > 50
+    ? feature.description.substring(0, 47) + "..."
+    : feature.description;
+  console.log(chalk.cyan("\n📝 Suggested commit:"));
+  console.log(chalk.white(`   git add -A && git commit -m "feat(${feature.module}): ${shortDesc}"`));
+
   // Show next feature
   const next = selectNextFeature(featureList.features);
   if (next) {
-    console.log(chalk.gray(`  Next up: ${next.id}`));
+    console.log(chalk.gray(`\n  Next up: ${next.id}`));
   } else {
-    console.log(chalk.green("  🎉 All features are now passing!"));
+    console.log(chalk.green("\n  🎉 All features are now passing!"));
   }
 }
 
