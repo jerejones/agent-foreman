@@ -9,7 +9,9 @@ import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
-import { scanProject, generateSurveyMarkdown } from "./project-scanner.js";
+import { aiScanProject, aiResultToSurvey, generateAISurveyMarkdown } from "./ai-scanner.js";
+import { printAgentStatus } from "./agents.js";
+import { scanDirectoryStructure } from "./project-scanner.js";
 import {
   loadFeatureList,
   saveFeatureList,
@@ -39,7 +41,7 @@ async function main() {
     .usage("$0 <command> [options]")
     .command(
       "survey [output]",
-      "Generate project survey report",
+      "Generate AI-powered project survey report",
       (yargs) =>
         yargs
           .positional("output", {
@@ -142,6 +144,14 @@ async function main() {
         await runComplete(argv.feature_id!, argv.notes);
       }
     )
+    .command(
+      "agents",
+      "Show available AI agents status",
+      {},
+      async () => {
+        printAgentStatus();
+      }
+    )
     .demandCommand(1, "You need at least one command")
     .help()
     .version()
@@ -154,16 +164,25 @@ async function main() {
 
 async function runSurvey(outputPath: string, verbose: boolean) {
   const cwd = process.cwd();
-  console.log(chalk.blue("🔍 Scanning project..."));
 
-  const survey = await scanProject(cwd);
-
+  console.log(chalk.blue("🤖 AI-powered project scan (priority: Gemini > Codex > Claude)"));
   if (verbose) {
-    console.log(chalk.gray(`  Found ${survey.modules.length} modules`));
-    console.log(chalk.gray(`  Found ${survey.features.length} features`));
+    printAgentStatus();
   }
 
-  const markdown = generateSurveyMarkdown(survey);
+  const aiResult = await aiScanProject(cwd, { verbose });
+
+  if (!aiResult.success) {
+    console.log(chalk.red(`✗ AI analysis failed: ${aiResult.error}`));
+    console.log(chalk.yellow("  Make sure gemini, codex, or claude CLI is installed"));
+    process.exit(1);
+  }
+
+  console.log(chalk.green(`✓ AI analysis successful (agent: ${aiResult.agentUsed})`));
+
+  const structure = await scanDirectoryStructure(cwd);
+  const survey = aiResultToSurvey(aiResult, structure);
+  const markdown = generateAISurveyMarkdown(survey, aiResult);
   const fullPath = path.join(cwd, outputPath);
 
   await fs.mkdir(path.dirname(fullPath), { recursive: true });
@@ -171,24 +190,52 @@ async function runSurvey(outputPath: string, verbose: boolean) {
 
   console.log(chalk.green(`✓ Survey written to ${outputPath}`));
   console.log(chalk.gray(`  Tech stack: ${survey.techStack.language}/${survey.techStack.framework}`));
+  console.log(chalk.gray(`  Modules: ${survey.modules.length}`));
+  console.log(chalk.gray(`  Features: ${survey.features.length}`));
   console.log(chalk.gray(`  Completion: ${survey.completion.overall}%`));
+
+  if (aiResult.summary) {
+    console.log(chalk.cyan("\n📝 Summary:"));
+    console.log(chalk.white(`  ${aiResult.summary}`));
+  }
+
+  if (aiResult.recommendations && aiResult.recommendations.length > 0) {
+    console.log(chalk.cyan("\n💡 Recommendations:"));
+    aiResult.recommendations.forEach((rec, i) => {
+      console.log(chalk.white(`  ${i + 1}. ${rec}`));
+    });
+  }
 }
 
 async function runInit(goal: string, mode: InitMode, verbose: boolean) {
   const cwd = process.cwd();
   console.log(chalk.blue(`🚀 Initializing harness (mode: ${mode})...`));
 
-  // Step 1: Run project scan to discover features
-  console.log(chalk.gray("  Scanning project..."));
-  const survey = await scanProject(cwd);
+  // Step 1: Run AI-powered project scan to discover features
+  console.log(chalk.gray("  AI scanning project (priority: Gemini > Codex > Claude)..."));
+  if (verbose) {
+    printAgentStatus();
+  }
+
+  const aiResult = await aiScanProject(cwd, { verbose });
+
+  if (!aiResult.success) {
+    console.log(chalk.red(`✗ AI analysis failed: ${aiResult.error}`));
+    console.log(chalk.yellow("  Make sure gemini, codex, or claude CLI is installed"));
+    process.exit(1);
+  }
+
+  console.log(chalk.green(`✓ AI analysis successful (agent: ${aiResult.agentUsed})`));
+
+  const structure = await scanDirectoryStructure(cwd);
+  const survey = aiResultToSurvey(aiResult, structure);
 
   if (verbose) {
-    console.log(chalk.gray(`  Found ${survey.features.length} features from routes/tests`));
+    console.log(chalk.gray(`  Found ${survey.features.length} features`));
   }
 
   // Step 2: Load existing feature list or create new
   let featureList = await loadFeatureList(cwd);
-  const isNewProject = !featureList;
 
   if (mode === "new" || !featureList) {
     featureList = createEmptyFeatureList(goal);
