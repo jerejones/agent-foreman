@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
-import { scanDirectoryStructure } from "../src/project-scanner.js";
+import { scanDirectoryStructure, isProjectEmpty } from "../src/project-scanner.js";
 
 describe("Project Scanner", () => {
   let tempDir: string;
@@ -208,6 +208,122 @@ describe("Project Scanner", () => {
         expect(structure.testDirs).toContain("tests");
         expect(structure.configFiles).toContain("tsconfig.json");
       });
+    });
+  });
+
+  describe("isProjectEmpty", () => {
+    it("should return true for empty directory", async () => {
+      const result = await isProjectEmpty(tempDir);
+      expect(result).toBe(true);
+    });
+
+    it("should return false when TypeScript files exist", async () => {
+      await fs.mkdir(path.join(tempDir, "src"), { recursive: true });
+      await fs.writeFile(path.join(tempDir, "src/index.ts"), "console.log('hello');");
+
+      const result = await isProjectEmpty(tempDir);
+      expect(result).toBe(false);
+    });
+
+    it("should return false when JavaScript files exist", async () => {
+      await fs.writeFile(path.join(tempDir, "app.js"), "module.exports = {};");
+
+      const result = await isProjectEmpty(tempDir);
+      expect(result).toBe(false);
+    });
+
+    it("should return false when Python files exist", async () => {
+      await fs.writeFile(path.join(tempDir, "main.py"), "print('hello')");
+
+      const result = await isProjectEmpty(tempDir);
+      expect(result).toBe(false);
+    });
+
+    it("should return false when Go files exist", async () => {
+      await fs.writeFile(path.join(tempDir, "main.go"), "package main");
+
+      const result = await isProjectEmpty(tempDir);
+      expect(result).toBe(false);
+    });
+
+    it("should return false when Rust files exist", async () => {
+      await fs.mkdir(path.join(tempDir, "src"), { recursive: true });
+      await fs.writeFile(path.join(tempDir, "src/main.rs"), "fn main() {}");
+
+      const result = await isProjectEmpty(tempDir);
+      expect(result).toBe(false);
+    });
+
+    it("should return false when files exist in src directory", async () => {
+      await fs.mkdir(path.join(tempDir, "src/utils"), { recursive: true });
+      await fs.writeFile(path.join(tempDir, "src/utils/helper.ts"), "export {}");
+
+      const result = await isProjectEmpty(tempDir);
+      expect(result).toBe(false);
+    });
+
+    it("should return false when files exist in lib directory", async () => {
+      await fs.mkdir(path.join(tempDir, "lib"), { recursive: true });
+      await fs.writeFile(path.join(tempDir, "lib/core.js"), "module.exports = {};");
+
+      const result = await isProjectEmpty(tempDir);
+      expect(result).toBe(false);
+    });
+
+    it("should return false when files exist in app directory", async () => {
+      await fs.mkdir(path.join(tempDir, "app"), { recursive: true });
+      await fs.writeFile(path.join(tempDir, "app/page.tsx"), "export default function() {}");
+
+      const result = await isProjectEmpty(tempDir);
+      expect(result).toBe(false);
+    });
+
+    it("should return true when only config files exist (no source code)", async () => {
+      await fs.writeFile(path.join(tempDir, "package.json"), "{}");
+      await fs.writeFile(path.join(tempDir, "tsconfig.json"), "{}");
+      await fs.writeFile(path.join(tempDir, "README.md"), "# Project");
+
+      const result = await isProjectEmpty(tempDir);
+      expect(result).toBe(true);
+    });
+
+    it("should ignore node_modules directory", async () => {
+      await fs.mkdir(path.join(tempDir, "node_modules/lodash"), { recursive: true });
+      await fs.writeFile(path.join(tempDir, "node_modules/lodash/index.js"), "module.exports = {};");
+
+      const result = await isProjectEmpty(tempDir);
+      expect(result).toBe(true);
+    });
+
+    it("should ignore dist directory", async () => {
+      await fs.mkdir(path.join(tempDir, "dist"), { recursive: true });
+      await fs.writeFile(path.join(tempDir, "dist/index.js"), "console.log('built');");
+
+      const result = await isProjectEmpty(tempDir);
+      expect(result).toBe(true);
+    });
+
+    it("should ignore build directory", async () => {
+      await fs.mkdir(path.join(tempDir, "build"), { recursive: true });
+      await fs.writeFile(path.join(tempDir, "build/main.js"), "console.log('built');");
+
+      const result = await isProjectEmpty(tempDir);
+      expect(result).toBe(true);
+    });
+
+    it("should detect C/C++ files", async () => {
+      await fs.writeFile(path.join(tempDir, "main.c"), "int main() { return 0; }");
+
+      const result = await isProjectEmpty(tempDir);
+      expect(result).toBe(false);
+    });
+
+    it("should detect Java files", async () => {
+      await fs.mkdir(path.join(tempDir, "src"), { recursive: true });
+      await fs.writeFile(path.join(tempDir, "src/Main.java"), "public class Main {}");
+
+      const result = await isProjectEmpty(tempDir);
+      expect(result).toBe(false);
     });
   });
 });

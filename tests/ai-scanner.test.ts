@@ -5,8 +5,22 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
-import { aiResultToSurvey, generateAISurveyMarkdown, type AIAnalysisResult } from "../src/ai-scanner.js";
+import {
+  aiResultToSurvey,
+  generateAISurveyMarkdown,
+  generateFeaturesFromSurvey,
+  generateFeaturesFromGoal,
+  type AIAnalysisResult,
+} from "../src/ai-scanner.js";
 import type { DirectoryStructure, ProjectSurvey } from "../src/types.js";
+
+// Mock the agents module
+vi.mock("../src/agents.js", () => ({
+  callAnyAvailableAgent: vi.fn(),
+  checkAvailableAgents: vi.fn(() => [{ name: "gemini", available: true }]),
+}));
+
+import { callAnyAvailableAgent } from "../src/agents.js";
 
 describe("AI Scanner", () => {
   describe("aiResultToSurvey", () => {
@@ -246,6 +260,192 @@ describe("AI Scanner", () => {
       const markdown = generateAISurveyMarkdown(surveyWithManyFeatures, aiResult);
 
       expect(markdown).toContain("and 50 more features");
+    });
+  });
+
+  describe("generateFeaturesFromSurvey", () => {
+    beforeEach(() => {
+      vi.mocked(callAnyAvailableAgent).mockReset();
+    });
+
+    it("should generate features from survey content", async () => {
+      const mockResponse = JSON.stringify({
+        techStack: {
+          language: "typescript",
+          framework: "express",
+          buildTool: "tsc",
+          testFramework: "vitest",
+          packageManager: "npm",
+        },
+        modules: [{ name: "api", path: "src/api", description: "REST API", status: "partial" }],
+        features: [
+          { id: "api.users", description: "Users endpoint", module: "api", source: "survey", confidence: 0.9 },
+        ],
+        completion: { overall: 50, notes: ["In progress"] },
+        commands: { install: "npm install", dev: "npm run dev", build: "npm run build", test: "npm test" },
+        summary: "TypeScript API",
+        recommendations: ["Add tests"],
+      });
+
+      vi.mocked(callAnyAvailableAgent).mockResolvedValue({
+        success: true,
+        output: mockResponse,
+        agentUsed: "gemini",
+      });
+
+      const result = await generateFeaturesFromSurvey("# Survey content", "Build API");
+
+      expect(result.success).toBe(true);
+      expect(result.features).toHaveLength(1);
+      expect(result.features![0].id).toBe("api.users");
+      expect(result.agentUsed).toBe("gemini");
+    });
+
+    it("should return error when agent call fails", async () => {
+      vi.mocked(callAnyAvailableAgent).mockResolvedValue({
+        success: false,
+        error: "No agents available",
+      });
+
+      const result = await generateFeaturesFromSurvey("# Survey", "Goal");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("No agents available");
+    });
+
+    it("should handle malformed JSON response", async () => {
+      vi.mocked(callAnyAvailableAgent).mockResolvedValue({
+        success: true,
+        output: "not valid json",
+        agentUsed: "gemini",
+      });
+
+      const result = await generateFeaturesFromSurvey("# Survey", "Goal");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Failed to parse");
+    });
+
+    it("should extract JSON from markdown code blocks", async () => {
+      const wrappedResponse = "```json\n" + JSON.stringify({
+        techStack: { language: "python", framework: "fastapi", buildTool: "pip", testFramework: "pytest", packageManager: "pip" },
+        modules: [],
+        features: [{ id: "api.health", description: "Health check", module: "api", source: "survey", confidence: 0.8 }],
+        completion: { overall: 30, notes: [] },
+        commands: {},
+        summary: "Python API",
+        recommendations: [],
+      }) + "\n```";
+
+      vi.mocked(callAnyAvailableAgent).mockResolvedValue({
+        success: true,
+        output: wrappedResponse,
+        agentUsed: "codex",
+      });
+
+      const result = await generateFeaturesFromSurvey("# Survey", "Goal");
+
+      expect(result.success).toBe(true);
+      expect(result.features).toHaveLength(1);
+      expect(result.techStack?.language).toBe("python");
+    });
+  });
+
+  describe("generateFeaturesFromGoal", () => {
+    beforeEach(() => {
+      vi.mocked(callAnyAvailableAgent).mockReset();
+    });
+
+    it("should generate features from goal description", async () => {
+      const mockResponse = JSON.stringify({
+        techStack: {
+          language: "typescript",
+          framework: "express",
+          buildTool: "tsc",
+          testFramework: "vitest",
+          packageManager: "npm",
+        },
+        modules: [
+          { name: "auth", path: "src/auth", description: "Authentication", status: "stub" },
+          { name: "api", path: "src/api", description: "REST API", status: "stub" },
+        ],
+        features: [
+          { id: "auth.login", description: "User login", module: "auth", source: "goal", confidence: 0.8 },
+          { id: "auth.register", description: "User registration", module: "auth", source: "goal", confidence: 0.8 },
+          { id: "api.users.list", description: "List users", module: "api", source: "goal", confidence: 0.8 },
+        ],
+        completion: { overall: 0, notes: ["Project not yet started"] },
+        commands: { install: "npm install", dev: "npm run dev", build: "npm run build", test: "npm test" },
+        summary: "REST API for user management",
+        recommendations: ["Start with auth module"],
+      });
+
+      vi.mocked(callAnyAvailableAgent).mockResolvedValue({
+        success: true,
+        output: mockResponse,
+        agentUsed: "gemini",
+      });
+
+      const result = await generateFeaturesFromGoal("Build a REST API for user management");
+
+      expect(result.success).toBe(true);
+      expect(result.features).toHaveLength(3);
+      expect(result.modules).toHaveLength(2);
+      expect(result.completion?.overall).toBe(0);
+      expect(result.agentUsed).toBe("gemini");
+    });
+
+    it("should return error when agent call fails", async () => {
+      vi.mocked(callAnyAvailableAgent).mockResolvedValue({
+        success: false,
+        error: "API rate limit exceeded",
+      });
+
+      const result = await generateFeaturesFromGoal("Build something");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("API rate limit exceeded");
+    });
+
+    it("should handle empty features in response", async () => {
+      const mockResponse = JSON.stringify({
+        techStack: { language: "go", framework: "gin", buildTool: "go build", testFramework: "go test", packageManager: "go mod" },
+        modules: [],
+        features: [],
+        completion: { overall: 0, notes: [] },
+        commands: {},
+        summary: "Go project",
+        recommendations: [],
+      });
+
+      vi.mocked(callAnyAvailableAgent).mockResolvedValue({
+        success: true,
+        output: mockResponse,
+        agentUsed: "claude",
+      });
+
+      const result = await generateFeaturesFromGoal("Build a CLI tool");
+
+      expect(result.success).toBe(true);
+      expect(result.features).toHaveLength(0);
+      expect(result.techStack?.language).toBe("go");
+    });
+
+    it("should pass correct preferred order to agent", async () => {
+      vi.mocked(callAnyAvailableAgent).mockResolvedValue({
+        success: true,
+        output: JSON.stringify({ features: [], modules: [], completion: { overall: 0, notes: [] }, commands: {} }),
+        agentUsed: "gemini",
+      });
+
+      await generateFeaturesFromGoal("Goal");
+
+      expect(callAnyAvailableAgent).toHaveBeenCalledWith(
+        expect.stringContaining("Project Goal"),
+        expect.objectContaining({
+          preferredOrder: ["gemini", "codex", "claude"],
+        })
+      );
     });
   });
 });

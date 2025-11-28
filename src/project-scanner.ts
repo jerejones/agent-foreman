@@ -72,3 +72,35 @@ export async function scanDirectoryStructure(basePath: string): Promise<Director
 
   return structure;
 }
+
+/**
+ * Check if project directory is empty (no source files)
+ * Used to determine whether to scan existing code or generate features from goal
+ */
+export async function isProjectEmpty(cwd: string): Promise<boolean> {
+  const sourcePatterns = [
+    "**/*.{ts,tsx,js,jsx,mjs,cjs}",
+    "**/*.{py,go,rs,java,kt,rb,php,cs,swift,scala}",
+    "**/*.{c,cpp,h,hpp}",
+    "**/src/**/*",
+    "**/lib/**/*",
+    "**/app/**/*",
+  ];
+
+  const ignorePatterns = [
+    "node_modules/**",
+    "dist/**",
+    "build/**",
+    ".git/**",
+    "vendor/**",
+    "__pycache__/**",
+  ];
+
+  for (const pattern of sourcePatterns) {
+    const matches = await glob(pattern, { cwd, ignore: ignorePatterns, nodir: true });
+    if (matches.length > 0) {
+      return false; // Has source files
+    }
+  }
+  return true; // No source files found
+}
