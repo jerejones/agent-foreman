@@ -5,6 +5,8 @@ description: Initialize or upgrade the long-task harness for a project
 
 # Init Harness Skill
 
+> **Tip:** For more reliable invocation, use the `/foreman-init` slash command instead of this skill.
+
 Set up or upgrade the long-task harness infrastructure for feature-driven development.
 
 ## When to Use

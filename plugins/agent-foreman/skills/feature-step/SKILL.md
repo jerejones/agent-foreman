@@ -5,6 +5,8 @@ description: Work on the next priority feature with guided implementation
 
 # Feature Step Skill
 
+> **Tip:** For more reliable invocation, use the `/foreman-step` slash command instead of this skill.
+
 Select and work on the next priority feature from the backlog with structured guidance.
 
 ## When to Use

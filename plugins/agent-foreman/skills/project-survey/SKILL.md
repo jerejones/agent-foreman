@@ -5,6 +5,8 @@ description: Analyze existing projects to generate comprehensive survey reports
 
 # Project Survey Skill
 
+> **Tip:** For more reliable invocation, use the `/foreman-survey` slash command instead of this skill.
+
 Scan and analyze existing projects to understand their structure, tech stack, and feature coverage.
 
 ## When to Use
