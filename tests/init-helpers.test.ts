@@ -19,9 +19,54 @@ vi.mock("../src/agents.js", () => ({
   printAgentStatus: mockPrintAgentStatus,
 }));
 
+// Mock feature-list module
+const { mockLoadFeatureList, mockSaveFeatureList, mockCreateEmptyFeatureList, mockMergeFeatures, mockDiscoveredToFeature } = vi.hoisted(() => ({
+  mockLoadFeatureList: vi.fn(),
+  mockSaveFeatureList: vi.fn(),
+  mockCreateEmptyFeatureList: vi.fn(),
+  mockMergeFeatures: vi.fn(),
+  mockDiscoveredToFeature: vi.fn(),
+}));
+
+vi.mock("../src/feature-list.js", () => ({
+  loadFeatureList: mockLoadFeatureList,
+  saveFeatureList: mockSaveFeatureList,
+  createEmptyFeatureList: mockCreateEmptyFeatureList,
+  mergeFeatures: mockMergeFeatures,
+  discoveredToFeature: mockDiscoveredToFeature,
+}));
+
+// Mock project-scanner module
+const { mockScanDirectoryStructure, mockIsProjectEmpty } = vi.hoisted(() => ({
+  mockScanDirectoryStructure: vi.fn(),
+  mockIsProjectEmpty: vi.fn(),
+}));
+
+vi.mock("../src/project-scanner.js", () => ({
+  scanDirectoryStructure: mockScanDirectoryStructure,
+  isProjectEmpty: mockIsProjectEmpty,
+}));
+
+// Mock ai-scanner module
+const { mockAiScanProject, mockGenerateFeaturesFromGoal, mockGenerateFeaturesFromSurvey, mockAiResultToSurvey, mockGenerateAISurveyMarkdown } = vi.hoisted(() => ({
+  mockAiScanProject: vi.fn(),
+  mockGenerateFeaturesFromGoal: vi.fn(),
+  mockGenerateFeaturesFromSurvey: vi.fn(),
+  mockAiResultToSurvey: vi.fn(),
+  mockGenerateAISurveyMarkdown: vi.fn(),
+}));
+
+vi.mock("../src/ai-scanner.js", () => ({
+  aiScanProject: mockAiScanProject,
+  generateFeaturesFromGoal: mockGenerateFeaturesFromGoal,
+  generateFeaturesFromSurvey: mockGenerateFeaturesFromSurvey,
+  aiResultToSurvey: mockAiResultToSurvey,
+  generateAISurveyMarkdown: mockGenerateAISurveyMarkdown,
+}));
+
 // Import after mocks are set up
-import { generateHarnessFiles } from "../src/init-helpers.js";
-import type { FeatureList } from "../src/types.js";
+import { generateHarnessFiles, detectAndAnalyzeProject, mergeOrCreateFeatures } from "../src/init-helpers.js";
+import type { FeatureList, Feature } from "../src/types.js";
 
 describe("Init Helpers", () => {
   let testDir: string;
@@ -385,6 +430,282 @@ Some existing content.
       expect(progressLog).toContain("INIT");
       expect(progressLog).toContain("Another goal");
       expect(progressLog).toContain("mode=merge");
+    });
+  });
+
+  describe("detectAndAnalyzeProject", () => {
+    const mockStructure = { entryPoints: [], sourceDirectories: [], testDirectories: [] };
+    const mockSurvey = { techStack: { language: "typescript" }, commands: {}, features: [], modules: [], structure: mockStructure };
+
+    beforeEach(() => {
+      mockScanDirectoryStructure.mockResolvedValue(mockStructure);
+      mockAiResultToSurvey.mockReturnValue(mockSurvey);
+      vi.spyOn(console, "log").mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("should use existing PROJECT_SURVEY.md when available", async () => {
+      // Create PROJECT_SURVEY.md
+      await fs.mkdir(path.join(testDir, "docs"), { recursive: true });
+      await fs.writeFile(path.join(testDir, "docs/PROJECT_SURVEY.md"), "# Project Survey\nTest content");
+
+      mockGenerateFeaturesFromSurvey.mockResolvedValue({
+        success: true,
+        features: [],
+        agentUsed: "claude",
+      });
+
+      const result = await detectAndAnalyzeProject(testDir, "Test goal", false);
+
+      expect(result.success).toBe(true);
+      expect(result.agentUsed).toBe("claude");
+      expect(mockGenerateFeaturesFromSurvey).toHaveBeenCalled();
+      expect(mockGenerateFeaturesFromGoal).not.toHaveBeenCalled();
+      expect(mockAiScanProject).not.toHaveBeenCalled();
+    });
+
+    it("should return error when survey analysis fails", async () => {
+      await fs.mkdir(path.join(testDir, "docs"), { recursive: true });
+      await fs.writeFile(path.join(testDir, "docs/PROJECT_SURVEY.md"), "# Survey");
+
+      mockGenerateFeaturesFromSurvey.mockResolvedValue({
+        success: false,
+        error: "AI analysis failed",
+      });
+
+      const result = await detectAndAnalyzeProject(testDir, "Test goal", false);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("AI analysis failed");
+    });
+
+    it("should generate features from goal for empty projects", async () => {
+      mockIsProjectEmpty.mockResolvedValue(true);
+      mockGenerateFeaturesFromGoal.mockResolvedValue({
+        success: true,
+        features: [],
+        agentUsed: "gemini",
+      });
+
+      const result = await detectAndAnalyzeProject(testDir, "Build a CLI tool", false);
+
+      expect(result.success).toBe(true);
+      expect(result.agentUsed).toBe("gemini");
+      expect(mockGenerateFeaturesFromGoal).toHaveBeenCalledWith("Build a CLI tool");
+      expect(mockAiScanProject).not.toHaveBeenCalled();
+    });
+
+    it("should return error when goal generation fails for empty project", async () => {
+      mockIsProjectEmpty.mockResolvedValue(true);
+      mockGenerateFeaturesFromGoal.mockResolvedValue({
+        success: false,
+        error: "No agent available",
+      });
+
+      const result = await detectAndAnalyzeProject(testDir, "Test goal", false);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("No agent available");
+    });
+
+    it("should run AI scan for projects with source code", async () => {
+      mockIsProjectEmpty.mockResolvedValue(false);
+      mockAiScanProject.mockResolvedValue({
+        success: true,
+        features: [],
+        agentUsed: "codex",
+      });
+      mockGenerateAISurveyMarkdown.mockReturnValue("# Generated Survey");
+
+      const result = await detectAndAnalyzeProject(testDir, "Test goal", false);
+
+      expect(result.success).toBe(true);
+      expect(result.agentUsed).toBe("codex");
+      expect(mockAiScanProject).toHaveBeenCalled();
+
+      // Should auto-save survey
+      const surveyFile = await fs.readFile(path.join(testDir, "docs/PROJECT_SURVEY.md"), "utf-8");
+      expect(surveyFile).toContain("Generated Survey");
+    });
+
+    it("should return error when AI scan fails", async () => {
+      mockIsProjectEmpty.mockResolvedValue(false);
+      mockAiScanProject.mockResolvedValue({
+        success: false,
+        error: "Scan failed",
+      });
+
+      const result = await detectAndAnalyzeProject(testDir, "Test goal", false);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("Scan failed");
+    });
+
+    it("should print agent status when verbose", async () => {
+      mockIsProjectEmpty.mockResolvedValue(true);
+      mockGenerateFeaturesFromGoal.mockResolvedValue({
+        success: true,
+        features: [],
+        agentUsed: "claude",
+      });
+
+      await detectAndAnalyzeProject(testDir, "Test goal", true);
+
+      expect(mockPrintAgentStatus).toHaveBeenCalled();
+    });
+  });
+
+  describe("mergeOrCreateFeatures", () => {
+    const mockSurvey = {
+      techStack: { language: "typescript" },
+      commands: {},
+      features: [
+        { id: "feature1", description: "Feature 1", module: "test" },
+        { id: "feature2", description: "Feature 2", module: "test" },
+      ],
+      modules: [],
+      structure: { entryPoints: [], sourceDirectories: [], testDirectories: [] },
+    };
+
+    const mockFeature: Feature = {
+      id: "converted.feature",
+      description: "Converted",
+      module: "test",
+      priority: 1,
+      status: "failing",
+      acceptance: [],
+      version: 1,
+      origin: "init-auto",
+      dependsOn: [],
+      supersedes: [],
+      tags: [],
+      notes: "",
+    };
+
+    beforeEach(() => {
+      mockDiscoveredToFeature.mockReturnValue(mockFeature);
+      vi.spyOn(console, "log").mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("should create new feature list in new mode", async () => {
+      const newFeatureList: FeatureList = {
+        features: [],
+        metadata: {
+          projectGoal: "Test goal",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          version: "1.0.0",
+        },
+      };
+
+      mockLoadFeatureList.mockResolvedValue(null);
+      mockCreateEmptyFeatureList.mockReturnValue(newFeatureList);
+      mockSaveFeatureList.mockResolvedValue(undefined);
+
+      const result = await mergeOrCreateFeatures(testDir, mockSurvey as any, "Test goal", "new", false);
+
+      expect(result.features).toHaveLength(2);
+      expect(mockCreateEmptyFeatureList).toHaveBeenCalledWith("Test goal");
+      expect(mockSaveFeatureList).toHaveBeenCalled();
+    });
+
+    it("should create new feature list when no existing list", async () => {
+      const newFeatureList: FeatureList = {
+        features: [],
+        metadata: {
+          projectGoal: "Test goal",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          version: "1.0.0",
+        },
+      };
+
+      mockLoadFeatureList.mockResolvedValue(null);
+      mockCreateEmptyFeatureList.mockReturnValue(newFeatureList);
+      mockMergeFeatures.mockReturnValue([mockFeature, mockFeature]); // Return array for merge mode
+      mockSaveFeatureList.mockResolvedValue(undefined);
+
+      await mergeOrCreateFeatures(testDir, mockSurvey as any, "Test goal", "merge", false);
+
+      expect(mockCreateEmptyFeatureList).toHaveBeenCalled();
+    });
+
+    it("should merge features in merge mode", async () => {
+      const existingFeatureList: FeatureList = {
+        features: [{ ...mockFeature, id: "existing.feature" }],
+        metadata: {
+          projectGoal: "Old goal",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          version: "1.0.0",
+        },
+      };
+
+      mockLoadFeatureList.mockResolvedValue(existingFeatureList);
+      mockMergeFeatures.mockReturnValue([
+        { ...mockFeature, id: "existing.feature" },
+        { ...mockFeature, id: "new.feature" },
+      ]);
+      mockSaveFeatureList.mockResolvedValue(undefined);
+
+      const result = await mergeOrCreateFeatures(testDir, mockSurvey as any, "New goal", "merge", true);
+
+      expect(result.metadata.projectGoal).toBe("New goal");
+      expect(mockMergeFeatures).toHaveBeenCalled();
+    });
+
+    it("should not save in scan mode", async () => {
+      const existingFeatureList: FeatureList = {
+        features: [],
+        metadata: {
+          projectGoal: "Test goal",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          version: "1.0.0",
+        },
+      };
+
+      mockLoadFeatureList.mockResolvedValue(existingFeatureList);
+
+      await mergeOrCreateFeatures(testDir, mockSurvey as any, "Test goal", "scan", false);
+
+      expect(mockSaveFeatureList).not.toHaveBeenCalled();
+    });
+
+    it("should replace features in new mode even with existing list", async () => {
+      const existingFeatureList: FeatureList = {
+        features: [{ ...mockFeature, id: "old.feature" }],
+        metadata: {
+          projectGoal: "Old goal",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          version: "1.0.0",
+        },
+      };
+
+      mockLoadFeatureList.mockResolvedValue(existingFeatureList);
+      mockCreateEmptyFeatureList.mockReturnValue({
+        features: [],
+        metadata: {
+          projectGoal: "New goal",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          version: "1.0.0",
+        },
+      });
+      mockSaveFeatureList.mockResolvedValue(undefined);
+
+      const result = await mergeOrCreateFeatures(testDir, mockSurvey as any, "New goal", "new", false);
+
+      expect(mockMergeFeatures).not.toHaveBeenCalled();
+      expect(result.features).toHaveLength(2);
     });
   });
 });
