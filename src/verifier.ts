@@ -830,7 +830,7 @@ export async function verifyFeatureAutonomous(
 
     const result = await callAnyAvailableAgent(prompt, {
       cwd,
-      timeoutMs: options.timeout || 600000, // 10 minute timeout for exploration
+      timeoutMs: options.timeout, // No default timeout - let AI explore as long as needed
       verbose: options.verbose,
     });
 

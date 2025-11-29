@@ -268,14 +268,13 @@ async function main() {
             default: false,
             describe: "Show detailed verification output",
           })
-          .option("autonomous", {
-            alias: "a",
+          .option("no-autonomous", {
             type: "boolean",
             default: false,
-            describe: "Use autonomous AI exploration (recommended)",
+            describe: "Disable autonomous AI exploration (use diff-based)",
           }),
       async (argv) => {
-        await runComplete(argv.feature_id!, argv.notes, !argv.noCommit, argv.skipVerify, argv.verbose, argv.autonomous);
+        await runComplete(argv.feature_id!, argv.notes, !argv.noCommit, argv.skipVerify, argv.verbose, !argv.noAutonomous);
       }
     )
     .command(
@@ -300,14 +299,13 @@ async function main() {
             default: false,
             describe: "Skip automated checks, AI only",
           })
-          .option("autonomous", {
-            alias: "a",
+          .option("no-autonomous", {
             type: "boolean",
             default: false,
-            describe: "Use autonomous AI exploration (recommended)",
+            describe: "Disable autonomous AI exploration (use diff-based)",
           }),
       async (argv) => {
-        await runVerify(argv.feature_id!, argv.verbose, argv.skipChecks, argv.autonomous);
+        await runVerify(argv.feature_id!, argv.verbose, argv.skipChecks, !argv.noAutonomous);
       }
     )
     .command(
