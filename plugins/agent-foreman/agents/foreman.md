@@ -151,8 +151,8 @@ Follow the suggested command to maintain clean git history.
 ## Best Practices
 
 1. **One feature at a time** - Complete or cleanly pause before switching
-2. **Always verify before complete** - Run `verify` before marking features as passing
-3. **Follow suggested commits** - Use the commit command shown after `complete`
+2. **Use complete command** - It auto-verifies before marking features as passing
+3. **Follow suggested commits** - Auto-commit is included in `complete`
 4. **Update status promptly** - Mark features passing when criteria are met
 5. **Review impact** - After changes, run impact analysis
 6. **Read before coding** - Always read feature list and progress log first

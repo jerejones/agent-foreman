@@ -102,19 +102,25 @@ agent-foreman step
 ./ai/init.sh check
 ```
 
-### 5. Verify Acceptance
-
-Go through each criterion and confirm it's met.
-
-### 6. Mark Complete
+### 5. Complete (with Integrated Verification)
 
 ```bash
 agent-foreman complete auth.login
 ```
 
-Shows suggested commit command.
+This will:
+1. Run AI-powered verification automatically
+2. If pass → marks as passing + auto-commits
+3. If fail → shows errors, does NOT complete
+4. If needs_review → prompts for confirmation
 
-### 7. Continue
+**Skip verification (not recommended):**
+
+```bash
+agent-foreman complete auth.login --skip-verify
+```
+
+### 6. Continue
 
 ```bash
 agent-foreman step
