@@ -2,8 +2,8 @@
 
 ## Summary
 
-Agent-foreman is a TypeScript-based CLI harness that helps AI agents manage long software tasks via feature lists, progress logs, AI surveys, and automated verification workflows.
-> Agent-foreman 是一个基于 TypeScript 的 CLI 脚手架，通过特性列表、进度日志、AI 调查和自动化验证流程帮助 AI 代理管理长周期软件任务。
+Agent-foreman is a TypeScript CLI harness that uses AI agents to survey projects, generate/manage feature backlogs, and orchestrate verification with progress logging and git integration.
+> agent-foreman 是一个 TypeScript CLI 脚手架，利用 AI 调研项目、生成/管理特性清单，并结合进度日志与 Git 集成来编排验证流程。
 
 > Analyzed by: codex
 
@@ -11,16 +11,11 @@ Agent-foreman is a TypeScript-based CLI harness that helps AI agents manage long
 
 | Aspect | Value |
 |--------|-------|
-| Language | TypeScript
-> 使用 TypeScript |
-| Framework | none (CLI via yargs)
-> 无框架（通过 yargs 的 CLI） |
-| Build Tool | tsc
-> 使用 tsc 编译 |
-| Test Framework | vitest
-> 使用 vitest 测试 |
-| Package Manager | npm
-> 使用 npm 包管理 |
+| Language | TypeScript/Node.js |
+| Framework | None (CLI utilities) |
+| Build Tool | tsc |
+| Test Framework | vitest |
+| Package Manager | npm |
 
 ## Directory Structure
 
@@ -32,143 +27,105 @@ Agent-foreman is a TypeScript-based CLI harness that helps AI agents manage long
 
 ## Modules
 
-### cli
+### CLI
 - **Path**: `src/index.ts`
 - **Status**: complete
-- **Description**: CLI entrypoint exposing survey/init/step/status/impact/complete/verify/agents/detect-capabilities workflows with git safety and progress logging.
-> CLI 入口，提供 survey/init/step/status/impact/complete/verify/agents/detect-capabilities 工作流，并包含 git 安全检查与进度日志。
+- **Description**: Command-line entrypoint offering survey, init, step, status, impact, verify, complete, detect-capabilities, agents, and slash-command installation flows.
 
-### agents
-- **Path**: `src/agents.ts`
-- **Status**: complete
-- **Description**: Manages external AI agent subprocesses with discovery, retries, and availability reporting.
-> 管理外部 AI 代理子进程，包含发现、重试与可用性报告。
-
-### ai-capability-discovery
-- **Path**: `src/ai-capability-discovery.ts`
-- **Status**: complete
-- **Description**: Collects project context, builds AI prompts, parses responses, and discovers verification commands via AI.
-> 收集项目上下文，构造 AI 提示，解析响应，并通过 AI 发现验证命令。
-
-### ai-scanner
+### AI Scanner
 - **Path**: `src/ai-scanner.ts`
 - **Status**: complete
-- **Description**: Runs autonomous AI surveys, parses results, and generates feature lists or markdown surveys.
-> 运行自主 AI 调查，解析结果，并生成特性列表或调查 Markdown。
+- **Description**: Builds autonomous exploration prompts, parses AI survey responses, and renders bilingual or Chinese survey markdown.
 
-### capability-cache
-- **Path**: `src/capability-cache.ts`
+### AI Capability Discovery
+- **Path**: `src/ai-capability-discovery.ts`
 - **Status**: complete
-- **Description**: Persists detected capabilities with git-aware staleness checks and cache invalidation.
-> 持久化检测到的能力，并通过 git 感知的陈旧性检查和缓存失效处理。
+- **Description**: Collects config/build/source samples, crafts discovery prompts, parses AI JSON, and falls back to minimal capability profiles.
 
-### capability-detector
-- **Path**: `src/capability-detector.ts`
+### Capability Detector & Cache
+- **Path**: `src/capability-detector.ts; src/capability-cache.ts`
 - **Status**: complete
-- **Description**: Detects tests, type checks, lint, build, git, and languages via presets or AI fallback.
-> 通过预设或 AI 兜底检测测试、类型检查、lint、构建、git 以及语言。
+- **Description**: Preset and AI-based verification capability detection with confidence scoring, git-aware caching, staleness checks, and formatting helpers.
 
-### feature-list
+### Agents Manager
+- **Path**: `src/agents.ts`
+- **Status**: complete
+- **Description**: Defines default Claude/Gemini/Codex configs, availability checks, process spawning with retries/timeouts, and status printing.
+
+### Feature List
 - **Path**: `src/feature-list.ts`
 - **Status**: complete
-- **Description**: Reads/writes ai/feature_list.json and provides selection, merge, stats, and CRUD helpers.
-> 读写 ai/feature_list.json，并提供选择、合并、统计和增删改工具。
+- **Description**: Loads/saves validated feature_list.json, selects next feature by priority/status, merges discoveries, and supports CRUD/status/verification updates.
 
-### git-utils
-- **Path**: `src/git-utils.ts`
-- **Status**: complete
-- **Description**: Lightweight git helpers for repo checks, staging, committing, and change inspection.
-> 轻量级 git 工具，用于仓库检查、暂存、提交与变更查看。
-
-### impact-analyzer
-- **Path**: `src/impact-analyzer.ts`
-- **Status**: complete
-- **Description**: Analyzes feature dependencies, affected chains, and readiness ordering.
-> 分析特性依赖、受影响链路与可工作顺序。
-
-### init-script
-- **Path**: `src/init-script.ts`
-- **Status**: complete
-- **Description**: Generates ai/init.sh scripts for bootstrap, dev, check, verify, and build flows.
-> 生成 ai/init.sh 脚本，覆盖引导、开发、检查、验证与构建流程。
-
-### progress-log
+### Progress Log
 - **Path**: `src/progress-log.ts`
 - **Status**: complete
-- **Description**: Formats, parses, and appends single-line progress entries for ai/progress.md.
-> 格式化、解析并追加单行进度记录到 ai/progress.md。
+- **Description**: Formats/parses single-line progress entries, appends/read logs, fetches recent activity, and provides entry builders.
 
-### project-scanner
+### Progress UI
+- **Path**: `src/progress.ts`
+- **Status**: complete
+- **Description**: TTY-aware spinner, progress bar, and step progress utilities for long tasks.
+
+### Init Helpers
+- **Path**: `src/init-helpers.ts`
+- **Status**: complete
+- **Description**: Detects project state, runs AI scans or goal generation, merges/creates feature lists, writes init.sh/CLAUDE.md/progress logs via AI-assisted merges.
+
+### Init Script Generator
+- **Path**: `src/init-script.ts`
+- **Status**: complete
+- **Description**: Generates full or minimal ai/init.sh with bootstrap/dev/check/verify/build/status/help functions and TypeScript checks.
+
+### Project Scanner
 - **Path**: `src/project-scanner.ts`
 - **Status**: complete
-- **Description**: Scans directory structure for entry points, source/test dirs, and config files; checks emptiness.
-> 扫描目录结构以发现入口、源码/测试目录与配置文件，并检查项目是否为空。
+- **Description**: Finds entry points, source/test/config directories and detects empty projects using glob scans.
 
-### prompts
+### Prompts
 - **Path**: `src/prompts.ts`
 - **Status**: complete
-- **Description**: Generates harness documentation, commit messages, feature guidance, and impact summaries.
-> 生成脚手架文档、提交信息、特性指导与影响摘要。
+- **Description**: Creates harness documentation sections, commit messages, feature guidance, impact guidance, and session summaries.
 
-### schema
-- **Path**: `src/schema.ts`
+### Schema & Types
+- **Path**: `src/schema.ts; src/types.ts`
 - **Status**: complete
-- **Description**: Defines and validates JSON schema for feature_list, plus ID/status validators.
-> 定义并校验 feature_list 的 JSON 模式，提供 ID/状态校验器。
+- **Description**: JSON schema validation for feature lists plus core domain/type definitions for features, surveys, capabilities, and verification data.
 
-### types
-- **Path**: `src/types.ts`
-- **Status**: complete
-- **Description**: Domain models for features, progress logs, surveys, commands, and impact analysis.
-> 特性、进度日志、调查、命令与影响分析的领域模型。
-
-### verification-prompts
+### Verification Prompts
 - **Path**: `src/verification-prompts.ts`
 - **Status**: complete
-- **Description**: Builds AI verification prompts and parses JSON verdicts with confidence handling.
-> 构建 AI 验证提示并解析带置信度的 JSON 裁决。
+- **Description**: Intelligent diff truncation, AI verification prompt building, response parsing, and quick-check prompt helpers.
 
-### verification-store
+### Verification Store
 - **Path**: `src/verification-store.ts`
 - **Status**: complete
-- **Description**: Persists AI verification results under ai/verification/results.json with helpers.
-> 将 AI 验证结果保存到 ai/verification/results.json，并提供辅助函数。
+- **Description**: Persists verification results to ai/verification/results.json with CRUD helpers and summary stats.
 
-### verification-types
-- **Path**: `src/verification-types.ts`
-- **Status**: complete
-- **Description**: Type definitions for verification capabilities, results, rules, and caches.
-> 验证能力、结果、规则与缓存的类型定义。
-
-### verifier
+### Verifier
 - **Path**: `src/verifier.ts`
 - **Status**: complete
-- **Description**: Orchestrates git diff collection, automated checks, AI analysis, and result formatting.
-> 协调 git diff 收集、自动检查、AI 分析与结果格式化。
+- **Description**: Runs git diff capture, capability detection, automated checks, AI analysis with retry/backoff, result formatting, and summary embedding.
 
-### plugin-foreman-agent
-- **Path**: `plugins/agent-foreman/agents/foreman.md`
+### Git Utils
+- **Path**: `src/git-utils.ts`
 - **Status**: complete
-- **Description**: Claude Code agent documentation guiding harness workflow and git discipline.
-> Claude Code 代理文档，指导脚手架工作流与 git 规范。
+- **Description**: Git repo checks, change detection, staging, committing, branch lookup, and staged-change detection helpers.
 
-### skill-project-survey
-- **Path**: `plugins/agent-foreman/skills/project-survey/SKILL.md`
+### File Utils
+- **Path**: `src/file-utils.ts`
 - **Status**: complete
-- **Description**: Skill doc for running project surveys to map tech stack, structure, and features.
-> 运行项目调研以映射技术栈、结构与特性的技能文档。
+- **Description**: Path safety validation, safe joins/reads, existence checks, pattern finds, and directory checks.
 
-### skill-init-harness
-- **Path**: `plugins/agent-foreman/skills/init-harness/SKILL.md`
+### Impact Analyzer
+- **Path**: `src/impact-analyzer.ts`
 - **Status**: complete
-- **Description**: Skill doc for initializing or upgrading the harness with auto-detection flow.
-> 初始化或升级脚手架的技能文档，包含自动检测流程。
+- **Description**: Dependency graph analysis to find affected features, recommendations, readiness checks, ordering, and depth calculations.
 
-### skill-feature-step
-- **Path**: `plugins/agent-foreman/skills/feature-step/SKILL.md`
+### Plugins
+- **Path**: `plugins/agent-foreman`
 - **Status**: complete
-- **Description**: Skill doc for selecting next feature, showing guidance, and running checks.
-> 选择下一特性、展示指导并运行检查的技能文档。
+- **Description**: Claude plugin assets (agent profile, slash commands, skills) documenting workflows for survey/init/feature steps.
 
 ## Feature Completion Status
 
@@ -206,6 +163,31 @@ Agent-foreman is a TypeScript-based CLI harness that helps AI agents manage long
 | git.utils | Create git utility functions for auto-commit functionality | git | ✅ passing |
 | git.step_guard | Enforce clean working directory check in step command | git | ✅ passing |
 | git.auto_commit | Auto-commit all changes when completing a feature | git | ✅ passing |
+| git.tests | Unit tests for git utility functions with 100% branch coverage | git | ✅ passing |
+| security.command_injection | Fix command injection vulnerabilities by using spawnSync with argument arrays | security | ✅ passing |
+| security.path_traversal | Add path traversal validation for file operations | security | ✅ passing |
+| quality.error_logging | Add proper error logging to all silent catch blocks | quality | ✅ passing |
+| quality.file_utils | Create shared file-utils.ts module to eliminate code duplication | quality | ✅ passing |
+| quality.refactor_runinit | Refactor runInit function into smaller focused functions | quality | ✅ passing |
+| cli.quiet_json_output | Add --quiet and --json output modes for scripting | cli | ✅ passing |
+| agents.windows_support | Add Windows support for agent detection | agents | ✅ passing |
+| test.init_script | Add unit tests for init-script.ts | test | ✅ passing |
+| test.prompts | Add unit tests for prompts.ts | test | ✅ passing |
+| test.integration | Add integration tests for CLI commands | test | ✅ passing |
+| test.verifier_coverage | Add comprehensive unit tests for verifier.ts to achieve 100% coverage | test | ✅ passing |
+| test.debug_coverage | Add unit tests for debug.ts to achieve 100% coverage | test | ✅ passing |
+| test.init_helpers_coverage | Add more unit tests for init-helpers.ts to achieve 100% coverage | test | ✅ passing |
+| test.verification_store_coverage | Add unit tests for verification-store.ts to achieve 100% coverage | test | ✅ passing |
+| test.capability_discovery_coverage | Add unit tests for capability-discovery.ts to achieve 100% coverage | test | ✅ passing |
+| test.agents_coverage | Add unit tests for agents.ts to achieve 100% coverage | test | ✅ passing |
+| test.capability_detector_coverage | Add unit tests for capability-detector.ts to achieve 100% coverage | test | ✅ passing |
+| test.capability_cache_coverage | Add unit tests for capability-cache.ts to achieve 100% coverage | test | ✅ passing |
+| verify.integrate_complete | Integrate AI verification into complete command for single-step workflow | verification | ✅ passing |
+| verify.smart_diff_truncation | Implement intelligent diff truncation for large diffs in AI prompts | verification | ✅ passing |
+| verify.ai_retry_logic | Add retry logic with exponential backoff for AI verification calls | verification | ✅ passing |
+| docs.clean_survey_format | Clean up PROJECT_SURVEY.md format by separating translations | docs | ✅ passing |
+| test.e2e_cli_flows | Add end-to-end integration tests for CLI command flows | test | ✅ passing |
+| ux.progress_indicators | Add progress indicators for long-running operations | ux | ✅ passing |
 
 ## Completion Assessment
 
@@ -213,36 +195,32 @@ Agent-foreman is a TypeScript-based CLI harness that helps AI agents manage long
 
 **Notes:**
 - All features are passing
-- Completed 32/32 features
+- Completed 57/57 features
 - Last updated: 2025-11-29
 
 ## Recommendations
 
-- Add end-to-end integration tests covering full CLI flows (survey → init → step → complete) to validate real file outputs.
-> 增补覆盖完整 CLI 流程（survey → init → step → complete）的端到端集成测试，以验证真实文件输出。
-- Provide graceful handling or mocks when external AI CLIs are absent to improve developer onboarding.
-> 在缺少外部 AI CLI 时提供优雅降级或模拟，以提升开发者上手体验。
-- Consider bundling example feature_list/progress assets and a quickstart script for new users.
-> 可附带示例 feature_list/progress 资源与快速入门脚本，方便新用户。
+- Ensure Claude/Gemini/Codex CLIs are installed and authenticated for AI features.
+> 确保已安装并授权 Claude/Gemini/Codex CLI，以便使用 AI 功能。
+- Keep ai/feature_list.json and ai/progress.md under version control to preserve external memory.
+> 将 ai/feature_list.json 与 ai/progress.md 納入版本控制，保存外部记忆。
+- Periodically run agent-foreman detect-capabilities --force when build/test tooling changes.
+> 当构建/测试工具变更时，定期运行 agent-foreman detect-capabilities --force。
 
 ## Commands
 
 ```bash
 # Install dependencies
 npm install
-> 运行 npm install
 
 # Start development server
 npm run dev
-> 运行 npm run dev
 
 # Build for production
 npm run build
-> 运行 npm run build
 
 # Run tests
-npm run test
-> 运行 npm run test
+npm test
 ```
 
 ---
