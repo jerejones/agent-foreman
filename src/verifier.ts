@@ -28,6 +28,13 @@ import {
   parseVerificationResponse,
 } from "./verification-prompts.js";
 import { callAnyAvailableAgent } from "./agents.js";
+import {
+  createSpinner,
+  createProgressBar,
+  createStepProgress,
+  isTTY,
+  type Spinner,
+} from "./progress.js";
 
 const execAsync = promisify(exec);
 
@@ -157,54 +164,48 @@ export async function runAutomatedChecks(
 ): Promise<AutomatedCheckResult[]> {
   const results: AutomatedCheckResult[] = [];
 
-  // Run tests
+  // Collect checks to run
+  const checks: Array<{ type: AutomatedCheckResult["type"]; command: string; name: string }> = [];
+
   if (capabilities.hasTests && capabilities.testCommand) {
-    if (verbose) {
-      process.stdout.write(chalk.blue("   Running tests... "));
-    }
-    const result = await runCheck(cwd, "test", capabilities.testCommand);
-    results.push(result);
-    if (verbose) {
-      console.log(result.success ? chalk.green("PASSED") : chalk.red("FAILED"));
-    }
+    checks.push({ type: "test", command: capabilities.testCommand, name: "tests" });
   }
-
-  // Run type check
   if (capabilities.hasTypeCheck && capabilities.typeCheckCommand) {
-    if (verbose) {
-      process.stdout.write(chalk.blue("   Running type check... "));
-    }
-    const result = await runCheck(cwd, "typecheck", capabilities.typeCheckCommand);
-    results.push(result);
-    if (verbose) {
-      console.log(result.success ? chalk.green("PASSED") : chalk.red("FAILED"));
-    }
+    checks.push({ type: "typecheck", command: capabilities.typeCheckCommand, name: "type check" });
   }
-
-  // Run linter
   if (capabilities.hasLint && capabilities.lintCommand) {
-    if (verbose) {
-      process.stdout.write(chalk.blue("   Running linter... "));
-    }
-    const result = await runCheck(cwd, "lint", capabilities.lintCommand);
-    results.push(result);
-    if (verbose) {
-      console.log(result.success ? chalk.green("PASSED") : chalk.red("FAILED"));
-    }
+    checks.push({ type: "lint", command: capabilities.lintCommand, name: "linter" });
   }
-
-  // Run build
   if (capabilities.hasBuild && capabilities.buildCommand) {
-    if (verbose) {
-      process.stdout.write(chalk.blue("   Running build... "));
-    }
-    const result = await runCheck(cwd, "build", capabilities.buildCommand);
+    checks.push({ type: "build", command: capabilities.buildCommand, name: "build" });
+  }
+
+  if (checks.length === 0) {
+    return results;
+  }
+
+  // Create progress bar for checks
+  const progressBar = createProgressBar("Running automated checks", checks.length);
+  progressBar.start();
+
+  for (let i = 0; i < checks.length; i++) {
+    const check = checks[i];
+    progressBar.update(i, `Running ${check.name}`);
+
+    const spinner = verbose ? createSpinner(`Running ${check.name}`) : null;
+    const result = await runCheck(cwd, check.type, check.command);
     results.push(result);
-    if (verbose) {
-      console.log(result.success ? chalk.green("PASSED") : chalk.red("FAILED"));
+
+    if (spinner) {
+      if (result.success) {
+        spinner.succeed(`${check.name} passed`);
+      } else {
+        spinner.fail(`${check.name} failed`);
+      }
     }
   }
 
+  progressBar.complete("Automated checks complete");
   return results;
 }
 
@@ -354,7 +355,14 @@ export async function analyzeWithAI(
   let lastError: string | undefined;
   let lastAgentUsed: string | undefined;
 
+  // Create spinner for AI analysis
+  const spinner = createSpinner("Analyzing code changes with AI");
+
   for (let attempt = 1; attempt <= RETRY_CONFIG.maxRetries; attempt++) {
+    if (attempt > 1) {
+      spinner.update(`Analyzing code changes with AI (attempt ${attempt}/${RETRY_CONFIG.maxRetries})`);
+    }
+
     const result = await callAnyAvailableAgent(prompt, {
       cwd,
       timeoutMs: options.timeout || 300000, // 5 minute timeout
@@ -364,6 +372,7 @@ export async function analyzeWithAI(
     lastAgentUsed = result.agentUsed;
 
     if (result.success) {
+      spinner.succeed(`AI analysis complete (${result.agentUsed})`);
       // Parse the response
       const parsed = parseVerificationResponse(result.output, feature.acceptance);
       return {
@@ -377,26 +386,18 @@ export async function analyzeWithAI(
     // Check if error is transient (retryable)
     if (!isTransientError(lastError)) {
       // Permanent error, don't retry
-      console.log(chalk.red("   AI analysis failed (permanent error): " + lastError));
+      spinner.fail("AI analysis failed (permanent error): " + lastError);
       break;
     }
 
     // Transient error, retry with backoff
     if (attempt < RETRY_CONFIG.maxRetries) {
       const delayMs = calculateBackoff(attempt);
-      console.log(
-        chalk.yellow(
-          `   AI analysis failed (attempt ${attempt}/${RETRY_CONFIG.maxRetries}): ${lastError}`
-        )
-      );
+      spinner.warn(`AI analysis failed (attempt ${attempt}/${RETRY_CONFIG.maxRetries}): ${lastError}`);
       console.log(chalk.yellow(`   Retrying in ${(delayMs / 1000).toFixed(1)}s...`));
       await sleep(delayMs);
     } else {
-      console.log(
-        chalk.red(
-          `   AI analysis failed after ${RETRY_CONFIG.maxRetries} attempts: ${lastError}`
-        )
-      );
+      spinner.fail(`AI analysis failed after ${RETRY_CONFIG.maxRetries} attempts: ${lastError}`);
     }
   }
 
@@ -434,11 +435,17 @@ export async function verifyFeature(
 
   console.log(chalk.bold("\n   Verifying feature: " + feature.id));
 
+  // Define verification steps for progress tracking
+  const steps = skipChecks
+    ? ["Get git diff", "Analyze with AI", "Save results"]
+    : ["Get git diff", "Detect capabilities", "Run automated checks", "Analyze with AI", "Save results"];
+
+  const stepProgress = createStepProgress(steps);
+  stepProgress.start();
+
   // Step 1: Get git diff
-  if (verbose) {
-    console.log(chalk.blue("\n   Getting git diff..."));
-  }
   const { diff, files: changedFiles, commitHash } = await getGitDiffForFeature(cwd);
+  stepProgress.completeStep(true);
 
   if (verbose) {
     console.log(chalk.gray(`   Changed files: ${changedFiles.length}`));
@@ -452,16 +459,13 @@ export async function verifyFeature(
   let automatedResults: AutomatedCheckResult[] = [];
 
   if (!skipChecks) {
-    if (verbose) {
-      console.log(chalk.blue("\n   Detecting verification capabilities..."));
-    }
     // Use new three-tier detection system (cache -> preset -> AI)
     const capabilities = await detectCapabilities(cwd, { verbose });
+    stepProgress.completeStep(true);
 
-    if (verbose) {
-      console.log(chalk.blue("\n   Running automated checks..."));
-    }
     automatedResults = await runAutomatedChecks(cwd, capabilities, verbose);
+    const allPassed = automatedResults.every((r) => r.success);
+    stepProgress.completeStep(allPassed);
   }
 
   // Step 3: AI Analysis
@@ -473,6 +477,7 @@ export async function verifyFeature(
     automatedResults,
     options
   );
+  stepProgress.completeStep(aiResult.verdict !== "fail");
 
   // Step 4: Build verification result
   const result: VerificationResult = {
@@ -493,6 +498,7 @@ export async function verifyFeature(
 
   // Step 5: Save result
   await saveVerificationResult(cwd, result);
+  stepProgress.completeStep(true);
 
   return result;
 }

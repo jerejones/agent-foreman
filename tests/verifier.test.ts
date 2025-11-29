@@ -341,7 +341,7 @@ describe("Verifier", () => {
     });
 
     it("should handle verbose output", async () => {
-      const consoleSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
       const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
       setExecMock(() => ({ stdout: "success" }));
@@ -357,10 +357,11 @@ describe("Verifier", () => {
 
       await runAutomatedChecks(testDir, capabilities, true);
 
-      expect(consoleSpy).toHaveBeenCalled();
-      expect(logSpy).toHaveBeenCalled();
+      // Progress indicators use either stdout.write (TTY) or console.log (non-TTY)
+      const hasOutput = stdoutSpy.mock.calls.length > 0 || logSpy.mock.calls.length > 0;
+      expect(hasOutput).toBe(true);
 
-      consoleSpy.mockRestore();
+      stdoutSpy.mockRestore();
       logSpy.mockRestore();
     });
 

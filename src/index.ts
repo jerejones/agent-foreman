@@ -52,6 +52,7 @@ import {
   mergeOrCreateFeatures,
   generateHarnessFiles,
 } from "./init-helpers.js";
+import { createSpinner, createProgressBar } from "./progress.js";
 
 /**
  * Auto-detect project goal from README or package.json
@@ -362,15 +363,16 @@ async function runSurvey(outputPath: string, verbose: boolean, bilingual: boolea
     printAgentStatus();
   }
 
+  const spinner = createSpinner("Analyzing project with AI");
   const aiResult = await aiScanProject(cwd, { verbose });
 
   if (!aiResult.success) {
-    console.log(chalk.red(`✗ AI analysis failed: ${aiResult.error}`));
+    spinner.fail(`AI analysis failed: ${aiResult.error}`);
     console.log(chalk.yellow("  Make sure gemini, codex, or claude CLI is installed"));
     process.exit(1);
   }
 
-  console.log(chalk.green(`✓ AI analysis successful (agent: ${aiResult.agentUsed})`));
+  spinner.succeed(`AI analysis successful (agent: ${aiResult.agentUsed})`);
 
   const structure = await scanDirectoryStructure(cwd);
   const survey = aiResultToSurvey(aiResult, structure);
@@ -419,15 +421,16 @@ async function runInit(goal: string, mode: InitMode, verbose: boolean) {
   console.log(chalk.blue(`🚀 Initializing harness (mode: ${mode})...`));
 
   // Step 1: Detect project type and analyze with AI
+  const spinner = createSpinner("Analyzing project with AI");
   const analysisResult = await detectAndAnalyzeProject(cwd, goal, verbose);
 
   if (!analysisResult.success || !analysisResult.survey) {
-    console.log(chalk.red(`✗ AI analysis failed: ${analysisResult.error}`));
+    spinner.fail(`AI analysis failed: ${analysisResult.error}`);
     console.log(chalk.yellow("  Make sure gemini, codex, or claude CLI is installed"));
     process.exit(1);
   }
 
-  console.log(chalk.green(`✓ AI analysis successful (agent: ${analysisResult.agentUsed})`));
+  spinner.succeed(`AI analysis successful (agent: ${analysisResult.agentUsed})`);
 
   if (verbose) {
     console.log(chalk.gray(`  Found ${analysisResult.survey.features.length} features`));
@@ -1170,6 +1173,8 @@ async function runDetectCapabilities(
     console.log(chalk.gray("   (forcing AI-based detection)"));
   }
 
+  const spinner = createSpinner("Detecting capabilities");
+
   try {
     const capabilities = await detectCapabilities(cwd, {
       force,
@@ -1177,7 +1182,7 @@ async function runDetectCapabilities(
       verbose,
     });
 
-    console.log(chalk.green("\n✓ Capabilities detected:"));
+    spinner.succeed("Capabilities detected");
     console.log(formatExtendedCapabilities(capabilities));
 
     // Show custom rules if any
@@ -1193,7 +1198,7 @@ async function runDetectCapabilities(
     console.log(chalk.gray(`\n  Detected at: ${capabilities.detectedAt}`));
     console.log(chalk.gray(`  Cache: ai/capabilities.json`));
   } catch (error) {
-    console.error(chalk.red(`\n✗ Detection failed: ${(error as Error).message}`));
+    spinner.fail(`Detection failed: ${(error as Error).message}`);
     process.exit(1);
   }
 }
