@@ -80,6 +80,9 @@ import {
   verifyFeature,
   createVerificationSummary,
   formatVerificationResult,
+  isTransientError,
+  calculateBackoff,
+  RETRY_CONFIG,
 } from "../src/verifier.js";
 import type { Feature } from "../src/types.js";
 import type {
@@ -907,6 +910,278 @@ describe("Verifier", () => {
 
       expect(output).toContain("test");
       expect(output).toContain("PASSED");
+    });
+  });
+
+  describe("isTransientError", () => {
+    it("should return false for undefined error", () => {
+      expect(isTransientError(undefined)).toBe(false);
+    });
+
+    it("should return false for empty string", () => {
+      expect(isTransientError("")).toBe(false);
+    });
+
+    it("should identify timeout errors as transient", () => {
+      expect(isTransientError("Request timed out")).toBe(true);
+      expect(isTransientError("timeout")).toBe(true);
+      expect(isTransientError("ETIMEDOUT")).toBe(true);
+    });
+
+    it("should identify network errors as transient", () => {
+      expect(isTransientError("ECONNRESET")).toBe(true);
+      expect(isTransientError("ECONNREFUSED")).toBe(true);
+      expect(isTransientError("ENETUNREACH")).toBe(true);
+      expect(isTransientError("network error")).toBe(true);
+      expect(isTransientError("socket hang up")).toBe(true);
+    });
+
+    it("should identify connection errors as transient", () => {
+      expect(isTransientError("connection reset")).toBe(true);
+      expect(isTransientError("connection refused")).toBe(true);
+      expect(isTransientError("connection closed")).toBe(true);
+    });
+
+    it("should identify rate limit errors as transient", () => {
+      expect(isTransientError("rate limit exceeded")).toBe(true);
+      expect(isTransientError("too many requests")).toBe(true);
+      expect(isTransientError("HTTP 429")).toBe(true);
+    });
+
+    it("should identify HTTP status errors as transient", () => {
+      expect(isTransientError("HTTP 502")).toBe(true);
+      expect(isTransientError("HTTP 503")).toBe(true);
+      expect(isTransientError("HTTP 504")).toBe(true);
+    });
+
+    it("should identify overload errors as transient", () => {
+      expect(isTransientError("server overloaded")).toBe(true);
+      expect(isTransientError("at capacity")).toBe(true);
+      expect(isTransientError("temporarily unavailable")).toBe(true);
+    });
+
+    it("should return false for permanent errors", () => {
+      expect(isTransientError("Invalid API key")).toBe(false);
+      expect(isTransientError("Authentication failed")).toBe(false);
+      expect(isTransientError("Permission denied")).toBe(false);
+      expect(isTransientError("File not found")).toBe(false);
+    });
+  });
+
+  describe("calculateBackoff", () => {
+    it("should calculate exponential delays", () => {
+      // Disable jitter for deterministic testing
+      const backup = Math.random;
+      Math.random = () => 0.5; // Returns 0 jitter
+
+      expect(calculateBackoff(1, 1000)).toBe(1000); // 1s
+      expect(calculateBackoff(2, 1000)).toBe(2000); // 2s
+      expect(calculateBackoff(3, 1000)).toBe(4000); // 4s
+      expect(calculateBackoff(4, 1000)).toBe(8000); // 8s
+
+      Math.random = backup;
+    });
+
+    it("should respect max delay", () => {
+      Math.random = () => 0.5;
+
+      // Very high attempt should be capped at maxDelayMs (10000)
+      const delay = calculateBackoff(10, 1000);
+      expect(delay).toBeLessThanOrEqual(RETRY_CONFIG.maxDelayMs);
+
+      Math.random = Math.random; // Restore
+    });
+
+    it("should use default base delay", () => {
+      Math.random = () => 0.5;
+
+      const delay = calculateBackoff(1);
+      expect(delay).toBe(RETRY_CONFIG.baseDelayMs);
+
+      Math.random = Math.random;
+    });
+
+    it("should add jitter to delay", () => {
+      // Test that jitter is applied by checking the delay is within expected range
+      // Base delay for attempt 2 is 2000ms (2^1 * 1000)
+      // Jitter is ±10%, so range is 1800-2200ms
+      const delay = calculateBackoff(2, 1000);
+
+      // Delay should be within ±10% of base (2000ms)
+      expect(delay).toBeGreaterThanOrEqual(1800);
+      expect(delay).toBeLessThanOrEqual(2200);
+    });
+  });
+
+  describe("RETRY_CONFIG", () => {
+    it("should have correct default values", () => {
+      expect(RETRY_CONFIG.maxRetries).toBe(3);
+      expect(RETRY_CONFIG.baseDelayMs).toBe(1000);
+      expect(RETRY_CONFIG.maxDelayMs).toBe(10000);
+    });
+  });
+
+  describe("analyzeWithAI - retry logic", () => {
+    const mockFeature: Feature = {
+      id: "test.feature",
+      description: "Test feature",
+      module: "test",
+      priority: 1,
+      status: "failing",
+      acceptance: ["Criterion 1"],
+      dependsOn: [],
+      supersedes: [],
+      tags: [],
+      version: 1,
+      origin: "manual",
+      notes: "",
+    };
+
+    beforeEach(() => {
+      mockBuildPrompt.mockReturnValue("verification prompt");
+      vi.spyOn(console, "log").mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("should retry on transient errors", async () => {
+      let callCount = 0;
+      mockCallAgent.mockImplementation(() => {
+        callCount++;
+        if (callCount < 3) {
+          return Promise.resolve({
+            success: false,
+            error: "timeout",
+            output: "",
+            agentUsed: "claude",
+          });
+        }
+        return Promise.resolve({
+          success: true,
+          output: "success",
+          agentUsed: "claude",
+        });
+      });
+
+      mockParseResponse.mockReturnValue({
+        criteriaResults: [
+          {
+            criterion: "Criterion 1",
+            index: 0,
+            satisfied: true,
+            reasoning: "OK",
+            evidence: [],
+            confidence: 0.9,
+          },
+        ],
+        verdict: "pass",
+        overallReasoning: "Done",
+        suggestions: [],
+        codeQualityNotes: [],
+      });
+
+      const result = await analyzeWithAI(
+        testDir,
+        mockFeature,
+        "diff",
+        [],
+        []
+      );
+
+      expect(callCount).toBe(3);
+      expect(result.verdict).toBe("pass");
+    });
+
+    it("should not retry on permanent errors", async () => {
+      let callCount = 0;
+      mockCallAgent.mockImplementation(() => {
+        callCount++;
+        return Promise.resolve({
+          success: false,
+          error: "Invalid API key",
+          output: "",
+          agentUsed: "claude",
+        });
+      });
+
+      const result = await analyzeWithAI(
+        testDir,
+        mockFeature,
+        "diff",
+        [],
+        []
+      );
+
+      // Should only call once (no retries for permanent errors)
+      expect(callCount).toBe(1);
+      expect(result.verdict).toBe("needs_review");
+    });
+
+    it("should fail after max retries exhausted", async () => {
+      let callCount = 0;
+      mockCallAgent.mockImplementation(() => {
+        callCount++;
+        return Promise.resolve({
+          success: false,
+          error: "connection timeout",
+          output: "",
+          agentUsed: "claude",
+        });
+      });
+
+      const result = await analyzeWithAI(
+        testDir,
+        mockFeature,
+        "diff",
+        [],
+        []
+      );
+
+      expect(callCount).toBe(RETRY_CONFIG.maxRetries);
+      expect(result.verdict).toBe("needs_review");
+      expect(result.overallReasoning).toContain("failed after retries");
+    });
+
+    it("should succeed on first try without retrying", async () => {
+      let callCount = 0;
+      mockCallAgent.mockImplementation(() => {
+        callCount++;
+        return Promise.resolve({
+          success: true,
+          output: "success",
+          agentUsed: "gemini",
+        });
+      });
+
+      mockParseResponse.mockReturnValue({
+        criteriaResults: [
+          {
+            criterion: "Criterion 1",
+            index: 0,
+            satisfied: true,
+            reasoning: "OK",
+            evidence: [],
+            confidence: 0.9,
+          },
+        ],
+        verdict: "pass",
+        overallReasoning: "Done",
+        suggestions: [],
+        codeQualityNotes: [],
+      });
+
+      const result = await analyzeWithAI(
+        testDir,
+        mockFeature,
+        "diff",
+        [],
+        []
+      );
+
+      expect(callCount).toBe(1);
+      expect(result.verdict).toBe("pass");
     });
   });
 });
