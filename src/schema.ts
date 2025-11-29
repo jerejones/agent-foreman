@@ -93,6 +93,36 @@ export const featureListSchema = {
             default: "",
             description: "Additional context or notes",
           },
+          verification: {
+            type: "object",
+            properties: {
+              verifiedAt: {
+                type: "string",
+                format: "date-time",
+                description: "Last verification timestamp (ISO 8601)",
+              },
+              verdict: {
+                type: "string",
+                enum: ["pass", "fail", "needs_review"],
+                description: "Verification verdict",
+              },
+              verifiedBy: {
+                type: "string",
+                description: "Agent that performed verification",
+              },
+              commitHash: {
+                type: "string",
+                description: "Git commit hash at verification time",
+              },
+              summary: {
+                type: "string",
+                description: "Brief summary of the verification result",
+              },
+            },
+            required: ["verifiedAt", "verdict", "verifiedBy", "summary"],
+            additionalProperties: false,
+            description: "Last verification result",
+          },
         },
         additionalProperties: false,
       },
