@@ -17,7 +17,10 @@ import type {
   VerifyOptions,
   FeatureVerificationSummary,
 } from "./verification-types.js";
-import { detectVerificationCapabilities } from "./capability-detector.js";
+import {
+  detectVerificationCapabilities,
+  detectCapabilities,
+} from "./capability-detector.js";
 import { saveVerificationResult } from "./verification-store.js";
 import {
   buildVerificationPrompt,
@@ -350,7 +353,8 @@ export async function verifyFeature(
     if (verbose) {
       console.log(chalk.blue("\n   Detecting verification capabilities..."));
     }
-    const capabilities = await detectVerificationCapabilities(cwd);
+    // Use new three-tier detection system (cache -> preset -> AI)
+    const capabilities = await detectCapabilities(cwd, { verbose });
 
     if (verbose) {
       console.log(chalk.blue("\n   Running automated checks..."));

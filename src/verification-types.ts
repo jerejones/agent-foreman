@@ -214,3 +214,89 @@ export interface AIVerificationResponse {
   /** Code quality observations */
   codeQualityNotes?: string[];
 }
+
+// ============================================================================
+// Extended Capability Detection Types
+// ============================================================================
+
+/**
+ * Source of capability detection
+ */
+export type CapabilitySource = "preset" | "ai-discovered" | "cached";
+
+/**
+ * Type of custom rule
+ */
+export type CustomRuleType = "test" | "typecheck" | "lint" | "build" | "custom";
+
+/**
+ * Command configuration for a specific capability
+ * Used in ExtendedCapabilities for test, typecheck, lint, build
+ */
+export interface CapabilityCommand {
+  /** Whether this capability is available */
+  available: boolean;
+  /** Command to run (e.g., "npm test", "./gradlew test") */
+  command?: string;
+  /** Framework or tool name (e.g., "vitest", "junit", "pytest") */
+  framework?: string;
+  /** Detection confidence (0-1, where 1 is highest) */
+  confidence: number;
+}
+
+/**
+ * Custom verification rule discovered by AI
+ * Extends standard capabilities with project-specific commands
+ */
+export interface CustomRule {
+  /** Unique rule identifier (e.g., "spring-boot-integration") */
+  id: string;
+  /** Human-readable description */
+  description: string;
+  /** Command to execute */
+  command: string;
+  /** Type of rule */
+  type: CustomRuleType;
+  /** Optional: language this rule applies to */
+  language?: string;
+}
+
+/**
+ * Extended capabilities with metadata for dynamic language detection
+ * Extends base VerificationCapabilities with AI discovery support
+ */
+export interface ExtendedCapabilities extends VerificationCapabilities {
+  /** How these capabilities were detected */
+  source: CapabilitySource;
+  /** Overall detection confidence (0-1) */
+  confidence: number;
+  /** Detected programming languages (e.g., ["java", "kotlin"]) */
+  languages: string[];
+  /** When capabilities were detected (ISO 8601) */
+  detectedAt: string;
+  /** Optional: structured command info with per-capability confidence */
+  testInfo?: CapabilityCommand;
+  /** Optional: type check command info */
+  typeCheckInfo?: CapabilityCommand;
+  /** Optional: lint command info */
+  lintInfo?: CapabilityCommand;
+  /** Optional: build command info */
+  buildInfo?: CapabilityCommand;
+  /** Optional: custom project-specific rules */
+  customRules?: CustomRule[];
+}
+
+/**
+ * Capability cache structure stored in ai/capabilities.json
+ * Persists detected capabilities across sessions
+ */
+export interface CapabilityCache {
+  /** Cache schema version */
+  version: string;
+  /** Cached capabilities */
+  capabilities: ExtendedCapabilities;
+  /** Git commit hash when cache was created */
+  commitHash?: string;
+  /** List of build files used to detect staleness */
+  trackedFiles?: string[];
+}

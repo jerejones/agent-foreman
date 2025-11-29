@@ -40,6 +40,10 @@ import {
   createVerificationSummary,
   formatVerificationResult,
 } from "./verifier.js";
+import {
+  detectCapabilities,
+  formatExtendedCapabilities,
+} from "./capability-detector.js";
 import type { FeatureVerificationSummary } from "./verification-types.js";
 import type { InitMode, Feature } from "./types.js";
 
@@ -237,6 +241,32 @@ async function main() {
       {},
       async () => {
         printAgentStatus();
+      }
+    )
+    .command(
+      "detect-capabilities",
+      "Detect or refresh project verification capabilities",
+      (yargs) =>
+        yargs
+          .option("force", {
+            alias: "f",
+            type: "boolean",
+            default: false,
+            describe: "Force re-detection even if cache exists",
+          })
+          .option("ai", {
+            type: "boolean",
+            default: false,
+            describe: "Force AI-based detection (skip presets)",
+          })
+          .option("verbose", {
+            alias: "v",
+            type: "boolean",
+            default: false,
+            describe: "Show detailed detection output",
+          }),
+      async (argv) => {
+        await runDetectCapabilities(argv.force, argv.ai, argv.verbose);
       }
     )
     .demandCommand(1, "You need at least one command")
@@ -944,6 +974,53 @@ async function runComplete(featureId: string, notes?: string) {
     } catch {
       console.log(chalk.yellow("⚠ Could not regenerate survey (AI agent unavailable)"));
     }
+  }
+}
+
+/**
+ * Run detect-capabilities command
+ */
+async function runDetectCapabilities(
+  force: boolean,
+  forceAI: boolean,
+  verbose: boolean
+) {
+  const cwd = process.cwd();
+
+  console.log(chalk.blue("🔍 Detecting project verification capabilities..."));
+
+  if (force) {
+    console.log(chalk.gray("   (forcing re-detection, ignoring cache)"));
+  }
+  if (forceAI) {
+    console.log(chalk.gray("   (forcing AI-based detection)"));
+  }
+
+  try {
+    const capabilities = await detectCapabilities(cwd, {
+      force,
+      forceAI,
+      verbose,
+    });
+
+    console.log(chalk.green("\n✓ Capabilities detected:"));
+    console.log(formatExtendedCapabilities(capabilities));
+
+    // Show custom rules if any
+    if (capabilities.customRules && capabilities.customRules.length > 0) {
+      console.log(chalk.blue("\n  Custom Rules:"));
+      for (const rule of capabilities.customRules) {
+        console.log(chalk.white(`    ${rule.id}: ${rule.description}`));
+        console.log(chalk.gray(`      Command: ${rule.command}`));
+      }
+    }
+
+    // Show cache info
+    console.log(chalk.gray(`\n  Detected at: ${capabilities.detectedAt}`));
+    console.log(chalk.gray(`  Cache: ai/capabilities.json`));
+  } catch (error) {
+    console.error(chalk.red(`\n✗ Detection failed: ${(error as Error).message}`));
+    process.exit(1);
   }
 }
 

@@ -7,7 +7,19 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
-import type { VerificationCapabilities } from "./verification-types.js";
+import type {
+  VerificationCapabilities,
+  ExtendedCapabilities,
+  CapabilityCommand,
+} from "./verification-types.js";
+
+import {
+  loadCachedCapabilities,
+  saveCapabilities,
+  isStale,
+} from "./capability-cache.js";
+
+import { discoverCapabilitiesWithAI } from "./ai-capability-discovery.js";
 
 const execAsync = promisify(exec);
 
@@ -401,3 +413,309 @@ export function formatCapabilities(caps: VerificationCapabilities): string {
 
   return lines.join("\n");
 }
+
+// ============================================================================
+// Extended Capability Detection with Confidence
+// ============================================================================
+
+/**
+ * Known language patterns for preset detection
+ */
+type KnownLanguage = "nodejs" | "python" | "go" | "rust";
+
+/**
+ * Detect primary programming language(s) from project files
+ */
+async function detectLanguages(cwd: string): Promise<string[]> {
+  const languages: string[] = [];
+
+  // Node.js / JavaScript / TypeScript
+  if (await fileExists(path.join(cwd, "package.json"))) {
+    const pkg = await readPackageJson(cwd);
+    if (pkg) {
+      // Check if TypeScript project
+      if (await fileExists(path.join(cwd, "tsconfig.json"))) {
+        languages.push("typescript");
+      }
+      languages.push("nodejs");
+    }
+  }
+
+  // Python
+  if (
+    (await fileExists(path.join(cwd, "pyproject.toml"))) ||
+    (await fileExists(path.join(cwd, "setup.py"))) ||
+    (await fileExists(path.join(cwd, "requirements.txt"))) ||
+    (await fileExists(path.join(cwd, "Pipfile")))
+  ) {
+    languages.push("python");
+  }
+
+  // Go
+  if (await fileExists(path.join(cwd, "go.mod"))) {
+    languages.push("go");
+  }
+
+  // Rust
+  if (await fileExists(path.join(cwd, "Cargo.toml"))) {
+    languages.push("rust");
+  }
+
+  return languages;
+}
+
+/**
+ * Calculate confidence score based on detected capabilities
+ * Higher confidence when more capabilities are detected
+ */
+function calculateConfidence(
+  languages: string[],
+  caps: VerificationCapabilities
+): number {
+  // No languages detected = no confidence
+  if (languages.length === 0) {
+    return 0.0;
+  }
+
+  // Base confidence for recognized language
+  let confidence = 0.7;
+
+  // Add confidence for each detected capability
+  if (caps.hasTests) confidence += 0.075;
+  if (caps.hasTypeCheck) confidence += 0.05;
+  if (caps.hasLint) confidence += 0.05;
+  if (caps.hasBuild) confidence += 0.075;
+  if (caps.hasGit) confidence += 0.05;
+
+  // Cap at 1.0
+  return Math.min(confidence, 1.0);
+}
+
+/**
+ * Create CapabilityCommand from detection results
+ */
+function createCapabilityCommand(
+  available: boolean,
+  command?: string,
+  framework?: string,
+  confidence: number = 0.9
+): CapabilityCommand {
+  return {
+    available,
+    command,
+    framework,
+    confidence: available ? confidence : 0,
+  };
+}
+
+/**
+ * Detect project capabilities using preset rules for known languages
+ * Returns ExtendedCapabilities with confidence scoring
+ *
+ * This wraps the existing detection logic and adds:
+ * - Language detection
+ * - Confidence scoring
+ * - Structured command info
+ *
+ * @param cwd - Project root directory
+ * @returns ExtendedCapabilities with source='preset' or low confidence for unknown projects
+ */
+export async function detectWithPresets(
+  cwd: string
+): Promise<ExtendedCapabilities> {
+  // Detect languages first
+  const languages = await detectLanguages(cwd);
+
+  // Run existing detection in parallel
+  const [testResult, typeCheckResult, lintResult, buildResult, hasGit] =
+    await Promise.all([
+      detectTestFramework(cwd),
+      detectTypeChecker(cwd),
+      detectLinter(cwd),
+      detectBuildSystem(cwd),
+      detectGit(cwd),
+    ]);
+
+  // Build base capabilities (backward compatible)
+  const baseCaps: VerificationCapabilities = {
+    hasTests: testResult.hasTests,
+    testCommand: testResult.testCommand,
+    testFramework: testResult.testFramework,
+    hasTypeCheck: typeCheckResult.hasTypeCheck,
+    typeCheckCommand: typeCheckResult.typeCheckCommand,
+    hasLint: lintResult.hasLint,
+    lintCommand: lintResult.lintCommand,
+    hasBuild: buildResult.hasBuild,
+    buildCommand: buildResult.buildCommand,
+    hasGit,
+  };
+
+  // Calculate confidence
+  const confidence = calculateConfidence(languages, baseCaps);
+
+  // Build extended capabilities
+  const extended: ExtendedCapabilities = {
+    ...baseCaps,
+    source: "preset",
+    confidence,
+    languages,
+    detectedAt: new Date().toISOString(),
+    testInfo: createCapabilityCommand(
+      testResult.hasTests,
+      testResult.testCommand,
+      testResult.testFramework,
+      0.95
+    ),
+    typeCheckInfo: createCapabilityCommand(
+      typeCheckResult.hasTypeCheck,
+      typeCheckResult.typeCheckCommand,
+      undefined,
+      0.9
+    ),
+    lintInfo: createCapabilityCommand(
+      lintResult.hasLint,
+      lintResult.lintCommand,
+      undefined,
+      0.9
+    ),
+    buildInfo: createCapabilityCommand(
+      buildResult.hasBuild,
+      buildResult.buildCommand,
+      undefined,
+      0.9
+    ),
+  };
+
+  return extended;
+}
+
+/**
+ * Format extended capabilities for display
+ */
+export function formatExtendedCapabilities(caps: ExtendedCapabilities): string {
+  const lines: string[] = [];
+
+  lines.push(`  Source: ${caps.source}`);
+  lines.push(`  Confidence: ${(caps.confidence * 100).toFixed(0)}%`);
+  lines.push(`  Languages: ${caps.languages.join(", ") || "Unknown"}`);
+  lines.push("");
+
+  if (caps.testInfo?.available) {
+    lines.push(`  Tests: ${caps.testInfo.framework || "custom"} (${caps.testInfo.command})`);
+  } else {
+    lines.push("  Tests: Not detected");
+  }
+
+  if (caps.typeCheckInfo?.available) {
+    lines.push(`  Type Check: ${caps.typeCheckInfo.command}`);
+  } else {
+    lines.push("  Type Check: Not detected");
+  }
+
+  if (caps.lintInfo?.available) {
+    lines.push(`  Lint: ${caps.lintInfo.command}`);
+  } else {
+    lines.push("  Lint: Not detected");
+  }
+
+  if (caps.buildInfo?.available) {
+    lines.push(`  Build: ${caps.buildInfo.command}`);
+  } else {
+    lines.push("  Build: Not detected");
+  }
+
+  lines.push(`  Git: ${caps.hasGit ? "Available" : "Not available"}`);
+
+  return lines.join("\n");
+}
+
+// ============================================================================
+// Three-Tier Detection System
+// ============================================================================
+
+/** Confidence threshold for using preset detection */
+const PRESET_CONFIDENCE_THRESHOLD = 0.8;
+
+/**
+ * Detect project capabilities using three-tier system:
+ * 1. Cache - Return cached capabilities if valid and not stale
+ * 2. Preset - Use hardcoded detection for known languages (Node, Python, Go, Rust)
+ * 3. AI Discovery - Fall back to AI for unknown project types
+ *
+ * @param cwd - Project root directory
+ * @param options - Detection options
+ * @returns ExtendedCapabilities with detection source and confidence
+ */
+export async function detectCapabilities(
+  cwd: string,
+  options: {
+    /** Force re-detection even if cache exists */
+    force?: boolean;
+    /** Force AI-based detection (skip presets) */
+    forceAI?: boolean;
+    /** Show verbose output */
+    verbose?: boolean;
+  } = {}
+): Promise<ExtendedCapabilities> {
+  const { force = false, forceAI = false, verbose = false } = options;
+
+  // 1. Try loading from cache (unless forced refresh)
+  if (!force && !forceAI) {
+    const cached = await loadCachedCapabilities(cwd);
+    if (cached) {
+      // Check if cache is stale
+      const stale = await isStale(cwd);
+      if (!stale) {
+        if (verbose) {
+          console.log("  Using cached capabilities");
+        }
+        return cached;
+      }
+      if (verbose) {
+        console.log("  Cache is stale, re-detecting...");
+      }
+    }
+  }
+
+  // 2. Try preset detection for known languages (unless AI forced)
+  if (!forceAI) {
+    const preset = await detectWithPresets(cwd);
+
+    // If preset detection has high confidence, use it
+    if (preset.confidence >= PRESET_CONFIDENCE_THRESHOLD) {
+      if (verbose) {
+        console.log(`  Preset detection: ${preset.languages.join(", ")} (${(preset.confidence * 100).toFixed(0)}% confidence)`);
+      }
+      // Save to cache for future use
+      await saveCapabilities(cwd, preset);
+      return preset;
+    }
+
+    // If preset found some languages but low confidence, log it
+    if (preset.languages.length > 0 && verbose) {
+      console.log(`  Preset detection confidence too low (${(preset.confidence * 100).toFixed(0)}%), falling back to AI...`);
+    }
+  }
+
+  // 3. Fall back to AI discovery for unknown project types
+  if (verbose) {
+    console.log("  Using AI-based capability discovery...");
+  }
+
+  const aiDiscovered = await discoverCapabilitiesWithAI(cwd);
+
+  // Save to cache (even if AI discovery didn't find much)
+  await saveCapabilities(cwd, aiDiscovered);
+
+  return aiDiscovered;
+}
+
+/**
+ * Re-export cache functions for external use
+ */
+export { loadCachedCapabilities, saveCapabilities, isStale } from "./capability-cache.js";
+
+/**
+ * Re-export AI discovery for external use
+ */
+export { discoverCapabilitiesWithAI } from "./ai-capability-discovery.js";
