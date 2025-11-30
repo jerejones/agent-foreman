@@ -86,7 +86,7 @@ agent-foreman brings these same patterns to AI:
 Human Practice → AI Equivalent
 Scrum board → feature_list.json
 Sprint notes → progress.md
-CI/CD pipeline → agent-foreman complete
+CI/CD pipeline → init.sh verify
 Code review → Acceptance criteria
 
 ━━━━━━━━━━━━━━━━━━━━
@@ -218,7 +218,7 @@ agent-foreman 把这些模式带给了 AI：
 人类实践 → AI 等效
 看板 → feature_list.json
 会议纪要 → progress.md
-CI/CD → agent-foreman complete
+CI/CD → init.sh verify
 Code Review → 验收标准
 
 ━━━━━━━━━━━━━━━━━━━━
