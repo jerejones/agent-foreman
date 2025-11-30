@@ -12,9 +12,9 @@ import {
   fetchLatestVersion,
   compareVersions,
   checkForUpgrade,
-  performSilentUpgrade,
-  autoUpgradeCheck,
   forceUpgradeCheck,
+  interactiveUpgradeCheck,
+  performInteractiveUpgrade,
 } from "../src/upgrade.js";
 
 // ============================================================================
@@ -26,9 +26,6 @@ vi.mock("node:child_process", async () => {
   const actual = await vi.importActual("node:child_process");
   return {
     ...actual,
-    spawn: vi.fn().mockReturnValue({
-      unref: vi.fn(),
-    }),
     spawnSync: vi.fn().mockReturnValue({
       status: 0,
       stdout: "1.0.0\n",
@@ -205,43 +202,10 @@ describe("Upgrade Utils", () => {
   });
 
   // ============================================================================
-  // performSilentUpgrade Tests
+  // interactiveUpgradeCheck Tests
   // ============================================================================
 
-  describe("performSilentUpgrade", () => {
-    it("should spawn npm install in background", async () => {
-      const { spawn } = await import("node:child_process");
-
-      performSilentUpgrade();
-
-      expect(spawn).toHaveBeenCalledWith(
-        "npm",
-        ["install", "-g", "agent-foreman@latest"],
-        expect.objectContaining({
-          detached: true,
-          stdio: "ignore",
-        })
-      );
-    });
-
-    it("should call unref to detach child process", async () => {
-      const { spawn } = await import("node:child_process");
-      const mockUnref = vi.fn();
-      (spawn as ReturnType<typeof vi.fn>).mockReturnValueOnce({
-        unref: mockUnref,
-      });
-
-      performSilentUpgrade();
-
-      expect(mockUnref).toHaveBeenCalled();
-    });
-  });
-
-  // ============================================================================
-  // autoUpgradeCheck Tests
-  // ============================================================================
-
-  describe("autoUpgradeCheck", () => {
+  describe("interactiveUpgradeCheck", () => {
     const cacheFile = path.join(
       process.env.HOME || process.env.USERPROFILE || "/tmp",
       ".agent-foreman-upgrade-check"
@@ -273,7 +237,7 @@ describe("Upgrade Utils", () => {
         stderr: "",
       });
 
-      await autoUpgradeCheck();
+      await interactiveUpgradeCheck();
 
       // Cache file should be created
       const stat = await fs.stat(cacheFile);
@@ -287,7 +251,7 @@ describe("Upgrade Utils", () => {
       const { spawnSync } = await import("node:child_process");
       (spawnSync as ReturnType<typeof vi.fn>).mockClear();
 
-      await autoUpgradeCheck();
+      await interactiveUpgradeCheck();
 
       // spawnSync should not have been called (check was skipped)
       expect(spawnSync).not.toHaveBeenCalled();
@@ -307,7 +271,7 @@ describe("Upgrade Utils", () => {
         stderr: "",
       });
 
-      await autoUpgradeCheck();
+      await interactiveUpgradeCheck();
 
       expect(spawnSync).toHaveBeenCalled();
     });
@@ -319,7 +283,60 @@ describe("Upgrade Utils", () => {
       });
 
       // Should not throw
-      await expect(autoUpgradeCheck()).resolves.toBeUndefined();
+      await expect(interactiveUpgradeCheck()).resolves.toBeUndefined();
+    });
+
+    it("should skip prompt in non-TTY mode", async () => {
+      // Remove cache to force check
+      const { spawnSync } = await import("node:child_process");
+      (spawnSync as ReturnType<typeof vi.fn>).mockReturnValue({
+        status: 0,
+        stdout: "999.0.0\n", // Higher version, upgrade available
+        stderr: "",
+      });
+
+      // In test environment, stdin is not a TTY, so prompt should be skipped
+      // This should not throw and should complete without hanging
+      await interactiveUpgradeCheck();
+
+      // Cache file should still be created
+      const stat = await fs.stat(cacheFile);
+      expect(stat).toBeDefined();
+    });
+  });
+
+  // ============================================================================
+  // performInteractiveUpgrade Tests
+  // ============================================================================
+
+  describe("performInteractiveUpgrade", () => {
+    it("should return success when npm install succeeds", async () => {
+      const { spawnSync } = await import("node:child_process");
+      (spawnSync as ReturnType<typeof vi.fn>).mockReturnValue({
+        status: 0,
+        stdout: "",
+        stderr: "",
+      });
+
+      const result = await performInteractiveUpgrade("1.0.0", "2.0.0");
+
+      expect(result.success).toBe(true);
+      expect(result.fromVersion).toBe("1.0.0");
+      expect(result.toVersion).toBe("2.0.0");
+    });
+
+    it("should return error when npm install fails", async () => {
+      const { spawnSync } = await import("node:child_process");
+      (spawnSync as ReturnType<typeof vi.fn>).mockReturnValue({
+        status: 1,
+        stdout: "",
+        stderr: "Permission denied",
+      });
+
+      const result = await performInteractiveUpgrade("1.0.0", "2.0.0");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("npm upgrade failed");
     });
   });
 

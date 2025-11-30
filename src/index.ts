@@ -54,7 +54,7 @@ import {
   generateHarnessFiles,
 } from "./init-helpers.js";
 import { createSpinner, createProgressBar } from "./progress.js";
-import { autoUpgradeCheck } from "./upgrade.js";
+import { interactiveUpgradeCheck } from "./upgrade.js";
 
 /**
  * Auto-detect project goal from README or package.json
@@ -104,10 +104,8 @@ async function detectProjectGoal(cwd: string): Promise<string> {
 }
 
 async function main() {
-  // Run auto-upgrade check in background (non-blocking)
-  autoUpgradeCheck().catch(() => {
-    // Silently ignore any upgrade check errors
-  });
+  // Run interactive upgrade check (prompts user if new version available)
+  await interactiveUpgradeCheck();
 
   await yargs(hideBin(process.argv))
     .scriptName("agent-foreman")

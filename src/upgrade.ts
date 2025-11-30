@@ -1,16 +1,19 @@
 /**
  * Auto-upgrade utility for agent-foreman
- * Checks npm registry for newer versions and silently upgrades in background
+ * Checks npm registry for newer versions and prompts user for upgrade
  */
 
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import * as readline from "node:readline";
+import chalk from "chalk";
 
 const PACKAGE_NAME = "agent-foreman";
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const CACHE_FILE = ".agent-foreman-upgrade-check";
+const PLUGIN_DIR = ".claude/plugins/marketplaces/agent-foreman";
 
 export interface UpgradeCheckResult {
   needsUpgrade: boolean;
@@ -32,6 +35,14 @@ export interface UpgradeResult {
 function getCacheFilePath(): string {
   const homeDir = process.env.HOME || process.env.USERPROFILE || "/tmp";
   return path.join(homeDir, CACHE_FILE);
+}
+
+/**
+ * Get the plugin directory path in user's home directory
+ */
+function getPluginDirPath(): string {
+  const homeDir = process.env.HOME || process.env.USERPROFILE || "/tmp";
+  return path.join(homeDir, PLUGIN_DIR);
 }
 
 /**
@@ -157,29 +168,160 @@ export async function checkForUpgrade(): Promise<UpgradeCheckResult> {
 }
 
 /**
- * Perform a silent background upgrade
- * This spawns npm install in background and does not block
+ * Prompt user for yes/no confirmation
  */
-export function performSilentUpgrade(): void {
-  try {
-    // Spawn npm install -g in background (detached)
-    const child = spawn("npm", ["install", "-g", `${PACKAGE_NAME}@latest`], {
-      detached: true,
-      stdio: "ignore",
-    });
+async function promptUserConfirmation(message: string): Promise<boolean> {
+  // Check if stdin is a TTY (interactive terminal)
+  if (!process.stdin.isTTY) {
+    // Non-interactive mode, skip prompt
+    return false;
+  }
 
-    // Unref so parent can exit without waiting for child
-    child.unref();
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolve) => {
+    rl.question(message, (answer) => {
+      rl.close();
+      const normalized = answer.toLowerCase().trim();
+      resolve(normalized === "y" || normalized === "yes");
+    });
+  });
+}
+
+/**
+ * Check if Claude Code plugin directory exists
+ */
+async function pluginDirExists(): Promise<boolean> {
+  try {
+    const pluginDir = getPluginDirPath();
+    await fs.access(pluginDir);
+    return true;
   } catch {
-    // Silently ignore upgrade errors
+    return false;
   }
 }
 
 /**
- * Main auto-upgrade function to be called on CLI startup
- * This is non-blocking and runs checks/upgrades in background
+ * Update Claude Code plugin by git pull
  */
-export async function autoUpgradeCheck(): Promise<void> {
+async function updatePlugin(): Promise<{ success: boolean; error?: string }> {
+  const pluginDir = getPluginDirPath();
+
+  try {
+    // Check if plugin directory exists
+    if (!(await pluginDirExists())) {
+      return { success: true }; // No plugin to update, skip silently
+    }
+
+    // Check if it's a git repository
+    const gitCheckResult = spawnSync("git", ["rev-parse", "--git-dir"], {
+      cwd: pluginDir,
+      encoding: "utf-8",
+      timeout: 5000,
+    });
+
+    if (gitCheckResult.status !== 0) {
+      return { success: true }; // Not a git repo, skip silently
+    }
+
+    // Perform git pull
+    console.log(chalk.gray("  Updating Claude Code plugin..."));
+    const pullResult = spawnSync("git", ["pull", "--ff-only"], {
+      cwd: pluginDir,
+      encoding: "utf-8",
+      timeout: 30000,
+    });
+
+    if (pullResult.status !== 0) {
+      return {
+        success: false,
+        error: pullResult.stderr || "Git pull failed",
+      };
+    }
+
+    console.log(chalk.green("  ✓ Claude Code plugin updated"));
+    return { success: true };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+    };
+  }
+}
+
+/**
+ * Perform npm global upgrade
+ */
+function performNpmUpgrade(): { success: boolean; error?: string } {
+  try {
+    console.log(chalk.gray("  Installing latest npm package..."));
+    const result = spawnSync("npm", ["install", "-g", `${PACKAGE_NAME}@latest`], {
+      encoding: "utf-8",
+      timeout: 60000, // 60 second timeout
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    if (result.status !== 0) {
+      return {
+        success: false,
+        error: result.stderr || "npm install failed",
+      };
+    }
+
+    console.log(chalk.green("  ✓ npm package updated"));
+    return { success: true };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+    };
+  }
+}
+
+/**
+ * Perform full upgrade: npm package + Claude Code plugin
+ */
+export async function performInteractiveUpgrade(
+  currentVersion: string,
+  latestVersion: string
+): Promise<UpgradeResult> {
+  console.log(chalk.blue("\n📦 Upgrading agent-foreman..."));
+
+  // Step 1: Upgrade npm package
+  const npmResult = performNpmUpgrade();
+  if (!npmResult.success) {
+    return {
+      success: false,
+      fromVersion: currentVersion,
+      toVersion: latestVersion,
+      error: `npm upgrade failed: ${npmResult.error}`,
+    };
+  }
+
+  // Step 2: Update Claude Code plugin (if exists)
+  const pluginResult = await updatePlugin();
+  if (!pluginResult.success) {
+    console.log(chalk.yellow(`  ⚠ Plugin update failed: ${pluginResult.error}`));
+    // Don't fail the whole upgrade if plugin update fails
+  }
+
+  console.log(chalk.green(`\n✓ Upgraded from v${currentVersion} to v${latestVersion}`));
+
+  return {
+    success: true,
+    fromVersion: currentVersion,
+    toVersion: latestVersion,
+  };
+}
+
+/**
+ * Main interactive upgrade check function
+ * Called on CLI startup, prompts user if upgrade is available
+ */
+export async function interactiveUpgradeCheck(): Promise<void> {
   try {
     // Check if we should check for upgrades (throttled)
     if (!(await shouldCheckForUpgrade())) {
@@ -192,12 +334,40 @@ export async function autoUpgradeCheck(): Promise<void> {
     // Check for upgrade
     const result = await checkForUpgrade();
 
-    if (result.needsUpgrade && result.latestVersion) {
-      // Perform silent background upgrade
-      performSilentUpgrade();
+    if (!result.needsUpgrade || !result.latestVersion) {
+      return;
+    }
+
+    // Show upgrade notification
+    console.log(
+      chalk.yellow(
+        `\n⬆ New version available: v${result.currentVersion} → v${result.latestVersion}`
+      )
+    );
+
+    // Prompt user for confirmation
+    const confirmed = await promptUserConfirmation(
+      chalk.cyan("  Do you want to upgrade now? (y/n): ")
+    );
+
+    if (confirmed) {
+      const upgradeResult = await performInteractiveUpgrade(
+        result.currentVersion,
+        result.latestVersion
+      );
+
+      if (upgradeResult.success) {
+        console.log(chalk.gray("  Run 'agent-foreman' again to use the new version.\n"));
+        process.exit(0); // Exit after successful upgrade
+      } else {
+        console.log(chalk.red(`  Upgrade failed: ${upgradeResult.error}`));
+        console.log(chalk.gray("  You can manually upgrade with: npm install -g agent-foreman@latest\n"));
+      }
+    } else {
+      console.log(chalk.gray("  Skipping upgrade. Run 'npm install -g agent-foreman@latest' to upgrade manually.\n"));
     }
   } catch {
-    // Silently ignore any errors during auto-upgrade
+    // Silently ignore any errors during upgrade check
   }
 }
 

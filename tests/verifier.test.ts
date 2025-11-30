@@ -78,6 +78,8 @@ import {
   readRelatedFiles,
   analyzeWithAI,
   verifyFeature,
+  verifyFeatureAutonomous,
+  buildAutonomousVerificationPrompt,
   createVerificationSummary,
   formatVerificationResult,
   isTransientError,
@@ -1491,6 +1493,541 @@ describe("Verifier", () => {
       // Should only have typecheck result, not test
       const testCheck = result.automatedChecks.find(c => c.type === "test");
       expect(testCheck).toBeUndefined();
+    });
+  });
+
+  // ============================================================================
+  // Autonomous Verification Tests
+  // ============================================================================
+
+  describe("buildAutonomousVerificationPrompt", () => {
+    const mockFeature: Feature = {
+      id: "test.autonomous",
+      description: "Test autonomous verification",
+      module: "test",
+      priority: 1,
+      status: "failing",
+      acceptance: ["Criterion A", "Criterion B"],
+      dependsOn: [],
+      supersedes: [],
+      tags: [],
+      version: 1,
+      origin: "manual",
+      notes: "",
+    };
+
+    it("should include feature information in prompt", () => {
+      const prompt = buildAutonomousVerificationPrompt(
+        "/test/dir",
+        mockFeature,
+        []
+      );
+
+      expect(prompt).toContain("test.autonomous");
+      expect(prompt).toContain("Test autonomous verification");
+      expect(prompt).toContain("test");
+      expect(prompt).toContain("Criterion A");
+      expect(prompt).toContain("Criterion B");
+    });
+
+    it("should include working directory", () => {
+      const prompt = buildAutonomousVerificationPrompt(
+        "/my/project/dir",
+        mockFeature,
+        []
+      );
+
+      expect(prompt).toContain("/my/project/dir");
+    });
+
+    it("should format acceptance criteria as numbered list", () => {
+      const prompt = buildAutonomousVerificationPrompt(
+        "/test",
+        mockFeature,
+        []
+      );
+
+      expect(prompt).toContain("1. Criterion A");
+      expect(prompt).toContain("2. Criterion B");
+    });
+
+    it("should include automated check results when provided", () => {
+      const automatedResults: AutomatedCheckResult[] = [
+        { type: "test", success: true, output: "", duration: 1000 },
+        { type: "lint", success: false, output: "", duration: 500 },
+      ];
+
+      const prompt = buildAutonomousVerificationPrompt(
+        "/test",
+        mockFeature,
+        automatedResults
+      );
+
+      expect(prompt).toContain("TEST: PASSED");
+      expect(prompt).toContain("LINT: FAILED");
+      expect(prompt).toContain("1000ms");
+      expect(prompt).toContain("500ms");
+    });
+
+    it("should show no checks message when no automated results", () => {
+      const prompt = buildAutonomousVerificationPrompt(
+        "/test",
+        mockFeature,
+        []
+      );
+
+      expect(prompt).toContain("No automated checks were run");
+    });
+
+    it("should include JSON output format instructions", () => {
+      const prompt = buildAutonomousVerificationPrompt(
+        "/test",
+        mockFeature,
+        []
+      );
+
+      expect(prompt).toContain("criteriaResults");
+      expect(prompt).toContain("verdict");
+      expect(prompt).toContain("pass|fail|needs_review");
+    });
+  });
+
+  describe("verifyFeatureAutonomous", () => {
+    const mockFeature: Feature = {
+      id: "test.autonomous",
+      description: "Test autonomous verification",
+      module: "test",
+      priority: 1,
+      status: "failing",
+      acceptance: ["Criterion 1", "Criterion 2"],
+      dependsOn: [],
+      supersedes: [],
+      tags: [],
+      version: 1,
+      origin: "manual",
+      notes: "",
+    };
+
+    beforeEach(() => {
+      vi.spyOn(console, "log").mockImplementation(() => {});
+
+      setExecMock((cmd: string) => {
+        if (cmd.includes("rev-parse HEAD")) {
+          return { stdout: "autonomous123\n" };
+        }
+        return { stdout: "" };
+      });
+
+      mockDetectCapabilities.mockResolvedValue({
+        hasTests: false,
+        hasTypeCheck: false,
+        hasLint: false,
+        hasBuild: false,
+        hasGit: true,
+      });
+
+      mockSaveResult.mockResolvedValue(undefined);
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("should complete autonomous verification with successful AI response", async () => {
+      mockCallAgent.mockResolvedValue({
+        success: true,
+        output: JSON.stringify({
+          criteriaResults: [
+            {
+              index: 0,
+              criterion: "Criterion 1",
+              satisfied: true,
+              reasoning: "Found in src/file.ts:10",
+              evidence: ["src/file.ts:10"],
+              confidence: 0.9,
+            },
+            {
+              index: 1,
+              criterion: "Criterion 2",
+              satisfied: true,
+              reasoning: "Tests exist",
+              evidence: ["tests/file.test.ts:20"],
+              confidence: 0.85,
+            },
+          ],
+          verdict: "pass",
+          overallReasoning: "All criteria satisfied",
+          suggestions: [],
+          codeQualityNotes: [],
+        }),
+        agentUsed: "codex",
+      });
+
+      const result = await verifyFeatureAutonomous(testDir, mockFeature);
+
+      expect(result.featureId).toBe("test.autonomous");
+      expect(result.verdict).toBe("pass");
+      expect(result.verifiedBy).toBe("codex");
+      expect(result.criteriaResults).toHaveLength(2);
+      expect(result.criteriaResults[0].satisfied).toBe(true);
+      expect(result.criteriaResults[1].satisfied).toBe(true);
+      expect(result.diffSummary).toContain("Autonomous");
+      expect(mockSaveResult).toHaveBeenCalled();
+    });
+
+    it("should handle AI response in markdown code block", async () => {
+      mockCallAgent.mockResolvedValue({
+        success: true,
+        output: "```json\n" + JSON.stringify({
+          criteriaResults: [
+            { index: 0, criterion: "Criterion 1", satisfied: true, reasoning: "OK", evidence: [], confidence: 0.9 },
+            { index: 1, criterion: "Criterion 2", satisfied: false, reasoning: "Missing", evidence: [], confidence: 0.8 },
+          ],
+          verdict: "fail",
+          overallReasoning: "One criterion failed",
+          suggestions: ["Add test coverage"],
+          codeQualityNotes: [],
+        }) + "\n```",
+        agentUsed: "claude",
+      });
+
+      const result = await verifyFeatureAutonomous(testDir, mockFeature);
+
+      expect(result.verdict).toBe("fail");
+      expect(result.criteriaResults[0].satisfied).toBe(true);
+      expect(result.criteriaResults[1].satisfied).toBe(false);
+    });
+
+    it("should handle malformed JSON response", async () => {
+      mockCallAgent.mockResolvedValue({
+        success: true,
+        output: "This is not valid JSON { broken",
+        agentUsed: "gemini",
+      });
+
+      const result = await verifyFeatureAutonomous(testDir, mockFeature);
+
+      expect(result.verdict).toBe("needs_review");
+      expect(result.criteriaResults).toHaveLength(2);
+      result.criteriaResults.forEach(cr => {
+        expect(cr.satisfied).toBe(false);
+        expect(cr.reasoning).toContain("Failed to parse");
+      });
+    });
+
+    it("should handle missing criteria in response", async () => {
+      mockCallAgent.mockResolvedValue({
+        success: true,
+        output: JSON.stringify({
+          criteriaResults: [
+            // Only index 0, missing index 1
+            { index: 0, criterion: "Criterion 1", satisfied: true, reasoning: "OK", evidence: [], confidence: 0.9 },
+          ],
+          verdict: "pass",
+          overallReasoning: "Partial",
+          suggestions: [],
+          codeQualityNotes: [],
+        }),
+        agentUsed: "claude",
+      });
+
+      const result = await verifyFeatureAutonomous(testDir, mockFeature);
+
+      expect(result.criteriaResults).toHaveLength(2);
+      expect(result.criteriaResults[0].satisfied).toBe(true);
+      expect(result.criteriaResults[1].satisfied).toBe(false);
+      expect(result.criteriaResults[1].reasoning).toContain("not analyzed");
+    });
+
+    it("should skip automated checks with skipChecks option", async () => {
+      mockCallAgent.mockResolvedValue({
+        success: true,
+        output: JSON.stringify({
+          criteriaResults: [
+            { index: 0, criterion: "Criterion 1", satisfied: true, reasoning: "OK", evidence: [], confidence: 0.9 },
+            { index: 1, criterion: "Criterion 2", satisfied: true, reasoning: "OK", evidence: [], confidence: 0.9 },
+          ],
+          verdict: "pass",
+          overallReasoning: "Done",
+          suggestions: [],
+          codeQualityNotes: [],
+        }),
+        agentUsed: "claude",
+      });
+
+      const result = await verifyFeatureAutonomous(testDir, mockFeature, {
+        skipChecks: true,
+      });
+
+      expect(result.automatedChecks).toEqual([]);
+      expect(mockDetectCapabilities).not.toHaveBeenCalled();
+    });
+
+    it("should run automated checks when not skipped", async () => {
+      mockDetectCapabilities.mockResolvedValue({
+        hasTests: true,
+        testCommand: "npm test",
+        hasTypeCheck: false,
+        hasLint: false,
+        hasBuild: false,
+        hasGit: true,
+      });
+
+      setExecMock((cmd: string) => {
+        if (cmd.includes("rev-parse HEAD")) {
+          return { stdout: "commit123\n" };
+        }
+        if (cmd === "npm test") {
+          return { stdout: "tests passed" };
+        }
+        return { stdout: "" };
+      });
+
+      mockCallAgent.mockResolvedValue({
+        success: true,
+        output: JSON.stringify({
+          criteriaResults: [
+            { index: 0, criterion: "Criterion 1", satisfied: true, reasoning: "OK", evidence: [], confidence: 0.9 },
+            { index: 1, criterion: "Criterion 2", satisfied: true, reasoning: "OK", evidence: [], confidence: 0.9 },
+          ],
+          verdict: "pass",
+          overallReasoning: "Done",
+          suggestions: [],
+          codeQualityNotes: [],
+        }),
+        agentUsed: "claude",
+      });
+
+      const result = await verifyFeatureAutonomous(testDir, mockFeature);
+
+      expect(result.automatedChecks).toHaveLength(1);
+      expect(result.automatedChecks[0].type).toBe("test");
+    });
+
+    it("should handle AI failure with needs_review verdict", async () => {
+      mockCallAgent.mockResolvedValue({
+        success: false,
+        error: "Agent unavailable",
+        output: "",
+        agentUsed: "none",
+      });
+
+      const result = await verifyFeatureAutonomous(testDir, mockFeature, {
+        skipChecks: true,
+      });
+
+      expect(result.verdict).toBe("needs_review");
+      expect(result.verifiedBy).toBe("none");
+      result.criteriaResults.forEach(cr => {
+        expect(cr.satisfied).toBe(false);
+        expect(cr.reasoning).toContain("AI exploration failed");
+      });
+    });
+
+    it("should retry on transient errors", async () => {
+      let callCount = 0;
+      mockCallAgent.mockImplementation(() => {
+        callCount++;
+        if (callCount < 3) {
+          return Promise.resolve({
+            success: false,
+            error: "timeout",
+            output: "",
+            agentUsed: "claude",
+          });
+        }
+        return Promise.resolve({
+          success: true,
+          output: JSON.stringify({
+            criteriaResults: [
+              { index: 0, criterion: "Criterion 1", satisfied: true, reasoning: "OK", evidence: [], confidence: 0.9 },
+              { index: 1, criterion: "Criterion 2", satisfied: true, reasoning: "OK", evidence: [], confidence: 0.9 },
+            ],
+            verdict: "pass",
+            overallReasoning: "Done",
+            suggestions: [],
+            codeQualityNotes: [],
+          }),
+          agentUsed: "claude",
+        });
+      });
+
+      const result = await verifyFeatureAutonomous(testDir, mockFeature, {
+        skipChecks: true,
+      });
+
+      expect(callCount).toBe(3);
+      expect(result.verdict).toBe("pass");
+    });
+
+    it("should not retry on permanent errors", async () => {
+      let callCount = 0;
+      mockCallAgent.mockImplementation(() => {
+        callCount++;
+        return Promise.resolve({
+          success: false,
+          error: "Invalid API key",
+          output: "",
+          agentUsed: "claude",
+        });
+      });
+
+      const result = await verifyFeatureAutonomous(testDir, mockFeature, {
+        skipChecks: true,
+      });
+
+      expect(callCount).toBe(1);
+      expect(result.verdict).toBe("needs_review");
+    });
+
+    it("should fail after max retries exhausted", async () => {
+      let callCount = 0;
+      mockCallAgent.mockImplementation(() => {
+        callCount++;
+        return Promise.resolve({
+          success: false,
+          error: "network error",
+          output: "",
+          agentUsed: "claude",
+        });
+      });
+
+      const result = await verifyFeatureAutonomous(testDir, mockFeature, {
+        skipChecks: true,
+      });
+
+      expect(callCount).toBe(RETRY_CONFIG.maxRetries);
+      expect(result.verdict).toBe("needs_review");
+      expect(result.overallReasoning).toContain("failed after retries");
+    });
+
+    it("should get commit hash from git", async () => {
+      setExecMock((cmd: string) => {
+        if (cmd.includes("rev-parse HEAD")) {
+          return { stdout: "mycommithash456\n" };
+        }
+        return { stdout: "" };
+      });
+
+      mockCallAgent.mockResolvedValue({
+        success: true,
+        output: JSON.stringify({
+          criteriaResults: [
+            { index: 0, criterion: "Criterion 1", satisfied: true, reasoning: "OK", evidence: [], confidence: 0.9 },
+            { index: 1, criterion: "Criterion 2", satisfied: true, reasoning: "OK", evidence: [], confidence: 0.9 },
+          ],
+          verdict: "pass",
+          overallReasoning: "Done",
+          suggestions: [],
+          codeQualityNotes: [],
+        }),
+        agentUsed: "claude",
+      });
+
+      const result = await verifyFeatureAutonomous(testDir, mockFeature, {
+        skipChecks: true,
+      });
+
+      expect(result.commitHash).toBe("mycommithash456");
+    });
+
+    it("should handle git errors gracefully", async () => {
+      setExecMockWithErrors((cmd: string) => {
+        if (cmd.includes("rev-parse HEAD")) {
+          return new Error("Not a git repository");
+        }
+        return { stdout: "" };
+      });
+
+      mockCallAgent.mockResolvedValue({
+        success: true,
+        output: JSON.stringify({
+          criteriaResults: [
+            { index: 0, criterion: "Criterion 1", satisfied: true, reasoning: "OK", evidence: [], confidence: 0.9 },
+            { index: 1, criterion: "Criterion 2", satisfied: true, reasoning: "OK", evidence: [], confidence: 0.9 },
+          ],
+          verdict: "pass",
+          overallReasoning: "Done",
+          suggestions: [],
+          codeQualityNotes: [],
+        }),
+        agentUsed: "claude",
+      });
+
+      const result = await verifyFeatureAutonomous(testDir, mockFeature, {
+        skipChecks: true,
+      });
+
+      expect(result.commitHash).toBe("unknown");
+      expect(result.verdict).toBe("pass");
+    });
+
+    it("should handle response with missing optional fields", async () => {
+      mockCallAgent.mockResolvedValue({
+        success: true,
+        output: JSON.stringify({
+          criteriaResults: [
+            { index: 0, satisfied: true }, // Missing many fields
+          ],
+          verdict: "pass",
+        }),
+        agentUsed: "claude",
+      });
+
+      const result = await verifyFeatureAutonomous(testDir, mockFeature, {
+        skipChecks: true,
+      });
+
+      expect(result.verdict).toBe("pass");
+      expect(result.criteriaResults[0].reasoning).toBe("No reasoning provided");
+      expect(result.criteriaResults[0].evidence).toEqual([]);
+      expect(result.criteriaResults[0].confidence).toBe(0.5);
+    });
+
+    it("should save verification result", async () => {
+      mockCallAgent.mockResolvedValue({
+        success: true,
+        output: JSON.stringify({
+          criteriaResults: [
+            { index: 0, criterion: "Criterion 1", satisfied: true, reasoning: "OK", evidence: [], confidence: 0.9 },
+            { index: 1, criterion: "Criterion 2", satisfied: true, reasoning: "OK", evidence: [], confidence: 0.9 },
+          ],
+          verdict: "pass",
+          overallReasoning: "Done",
+          suggestions: [],
+          codeQualityNotes: [],
+        }),
+        agentUsed: "claude",
+      });
+
+      await verifyFeatureAutonomous(testDir, mockFeature, { skipChecks: true });
+
+      expect(mockSaveResult).toHaveBeenCalledWith(
+        testDir,
+        expect.objectContaining({
+          featureId: "test.autonomous",
+          verdict: "pass",
+        })
+      );
+    });
+
+    it("should save result even on failure", async () => {
+      mockCallAgent.mockResolvedValue({
+        success: false,
+        error: "permanent error",
+        output: "",
+        agentUsed: "none",
+      });
+
+      await verifyFeatureAutonomous(testDir, mockFeature, { skipChecks: true });
+
+      expect(mockSaveResult).toHaveBeenCalledWith(
+        testDir,
+        expect.objectContaining({
+          featureId: "test.autonomous",
+          verdict: "needs_review",
+        })
+      );
     });
   });
 });
