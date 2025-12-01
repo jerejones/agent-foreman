@@ -44,40 +44,74 @@ dev() {
 }
 
 # Check: Run all verification checks (tests, types, lint, build)
+# Usage: check [--quick] [test_pattern]
 check() {
   local exit_code=0
+  local quick_mode=false
+  local test_pattern=""
 
-  log_info "Running checks..."
+  # Parse arguments
+  while [[ \$# -gt 0 ]]; do
+    case "\$1" in
+      --quick)
+        quick_mode=true
+        shift
+        ;;
+      *)
+        test_pattern="\$1"
+        shift
+        ;;
+    esac
+  done
+
+  if [ "\$quick_mode" = true ]; then
+    log_info "Running checks (quick mode)..."
+  else
+    log_info "Running checks..."
+  fi
 
   # Run tests if available
   ${commands.test ? `log_info "Running tests..."
-  if ! ${commands.test}; then
-    log_error "Tests failed"
-    exit_code=1
-  fi` : "log_warn \"No test command configured\""}
-
-  # Run type check if TypeScript detected
-  if [ -f "tsconfig.json" ]; then
-    log_info "Running type check..."
-    if ! npx tsc --noEmit; then
-      log_error "Type check failed"
+  if [ -n "\$test_pattern" ]; then
+    log_info "Test pattern: \$test_pattern"
+    if ! ${commands.test} "\$test_pattern"; then
+      log_error "Tests failed"
       exit_code=1
     fi
+  else
+    if ! ${commands.test}; then
+      log_error "Tests failed"
+      exit_code=1
+    fi
+  fi` : "log_warn \"No test command configured\""}
+
+  # In quick mode, skip type check, lint, and build
+  if [ "\$quick_mode" = true ]; then
+    log_info "Quick mode: skipping type check, lint, and build"
+  else
+    # Run type check if TypeScript detected
+    if [ -f "tsconfig.json" ]; then
+      log_info "Running type check..."
+      if ! npx tsc --noEmit; then
+        log_error "Type check failed"
+        exit_code=1
+      fi
+    fi
+
+    # Run lint if available
+    ${commands.lint ? `log_info "Running linter..."
+    if ! ${commands.lint}; then
+      log_error "Lint failed"
+      exit_code=1
+    fi` : ""}
+
+    # Run build if available
+    ${commands.build ? `log_info "Running build..."
+    if ! ${commands.build}; then
+      log_error "Build failed"
+      exit_code=1
+    fi` : ""}
   fi
-
-  # Run lint if available
-  ${commands.lint ? `log_info "Running linter..."
-  if ! ${commands.lint}; then
-    log_error "Lint failed"
-    exit_code=1
-  fi` : ""}
-
-  # Run build if available
-  ${commands.build ? `log_info "Running build..."
-  if ! ${commands.build}; then
-    log_error "Build failed"
-    exit_code=1
-  fi` : ""}
 
   if [ \$exit_code -eq 0 ]; then
     log_info "All checks passed!"
@@ -125,15 +159,16 @@ status() {
 
 # Help
 show_help() {
-  echo "Usage: ./ai/init.sh <command>"
+  echo "Usage: ./ai/init.sh <command> [options]"
   echo ""
   echo "Commands:"
-  echo "  bootstrap  Install dependencies"
-  echo "  dev        Start development server"
-  echo "  check      Run all checks (tests, types, lint, build)"
-  echo "  build      Build for production"
-  echo "  status     Show project status"
-  echo "  help       Show this help message"
+  echo "  bootstrap           Install dependencies"
+  echo "  dev                 Start development server"
+  echo "  check [--quick]     Run all checks (tests, types, lint, build)"
+  echo "                      --quick: Run only tests, skip type check/lint/build"
+  echo "  build               Build for production"
+  echo "  status              Show project status"
+  echo "  help                Show this help message"
 }
 
 # Main entry point
@@ -145,7 +180,8 @@ case "\${1:-help}" in
     dev
     ;;
   check)
-    check
+    shift
+    check "\$@"
     ;;
   build)
     build
@@ -207,21 +243,48 @@ dev() {
 }
 
 # Check: Run all verification checks (tests, types, lint, build)
+# Usage: check [--quick] [test_pattern]
 check() {
   local exit_code=0
+  local quick_mode=false
+  local test_pattern=""
 
-  log_info "Running checks..."
+  # Parse arguments
+  while [[ \$# -gt 0 ]]; do
+    case "\$1" in
+      --quick)
+        quick_mode=true
+        shift
+        ;;
+      *)
+        test_pattern="\$1"
+        shift
+        ;;
+    esac
+  done
 
-  # Run type check if TypeScript detected
-  if [ -f "tsconfig.json" ]; then
-    log_info "Running type check..."
-    if ! npx tsc --noEmit; then
-      log_error "Type check failed"
-      exit_code=1
-    fi
+  if [ "\$quick_mode" = true ]; then
+    log_info "Running checks (quick mode)..."
+  else
+    log_info "Running checks..."
   fi
 
+  # TODO: Configure test command
   log_warn "Configure test/lint/build commands for full verification"
+
+  # In quick mode, skip type check, lint, and build
+  if [ "\$quick_mode" = true ]; then
+    log_info "Quick mode: skipping type check, lint, and build"
+  else
+    # Run type check if TypeScript detected
+    if [ -f "tsconfig.json" ]; then
+      log_info "Running type check..."
+      if ! npx tsc --noEmit; then
+        log_error "Type check failed"
+        exit_code=1
+      fi
+    fi
+  fi
 
   if [ \$exit_code -eq 0 ]; then
     log_info "All checks passed!"
@@ -259,15 +322,16 @@ status() {
 
 # Help
 show_help() {
-  echo "Usage: ./ai/init.sh <command>"
+  echo "Usage: ./ai/init.sh <command> [options]"
   echo ""
   echo "Commands:"
-  echo "  bootstrap  Install dependencies"
-  echo "  dev        Start development server"
-  echo "  check      Run all checks (tests, types, lint, build)"
-  echo "  build      Build for production"
-  echo "  status     Show project status"
-  echo "  help       Show this help message"
+  echo "  bootstrap           Install dependencies"
+  echo "  dev                 Start development server"
+  echo "  check [--quick]     Run all checks (tests, types, lint, build)"
+  echo "                      --quick: Run only tests, skip type check/lint/build"
+  echo "  build               Build for production"
+  echo "  status              Show project status"
+  echo "  help                Show this help message"
 }
 
 # Main entry point
@@ -279,7 +343,8 @@ case "\${1:-help}" in
     dev
     ;;
   check)
-    check
+    shift
+    check "\$@"
     ;;
   build)
     build

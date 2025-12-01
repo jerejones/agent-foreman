@@ -237,12 +237,19 @@ describe("Init Script", () => {
       const script = generateMinimalInitScript();
 
       expect(script).toContain("Usage: ./ai/init.sh <command>");
-      expect(script).toContain("bootstrap  Install dependencies");
-      expect(script).toContain("dev        Start development server");
-      expect(script).toContain("check      Run all checks");
-      expect(script).toContain("build      Build for production");
-      expect(script).toContain("status     Show project status");
-      expect(script).toContain("help       Show this help message");
+      expect(script).toContain("bootstrap");
+      expect(script).toContain("Install dependencies");
+      expect(script).toContain("dev");
+      expect(script).toContain("Start development server");
+      expect(script).toContain("check");
+      expect(script).toContain("--quick");
+      expect(script).toContain("Run all checks");
+      expect(script).toContain("build");
+      expect(script).toContain("Build for production");
+      expect(script).toContain("status");
+      expect(script).toContain("Show project status");
+      expect(script).toContain("help");
+      expect(script).toContain("Show this help message");
     });
 
     it("should include unknown command error handling", () => {
