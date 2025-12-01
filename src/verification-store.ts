@@ -117,6 +117,7 @@ export function createEmptyIndex(): VerificationIndex {
 /**
  * Load verification index from ai/verification/index.json
  * Returns null if file doesn't exist
+ * Triggers auto-migration from legacy results.json if needed
  */
 export async function loadVerificationIndex(
   cwd: string
@@ -138,6 +139,20 @@ export async function loadVerificationIndex(
     return index;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      // Index doesn't exist - check if we need to migrate from legacy
+      await performAutoMigration(cwd);
+
+      // Try loading again after migration
+      try {
+        const content = await fs.readFile(indexPath, "utf-8");
+        const index = JSON.parse(content) as VerificationIndex;
+        if (index.features && typeof index.features === "object") {
+          return index;
+        }
+      } catch {
+        // Still doesn't exist after migration attempt
+      }
+
       return null;
     }
 
@@ -145,6 +160,111 @@ export async function loadVerificationIndex(
       `[verification-store] Error loading index: ${error}, returning empty index`
     );
     return createEmptyIndex();
+  }
+}
+
+/**
+ * Internal auto-migration helper (called during loadVerificationIndex)
+ * Performs migration if old results.json exists and index.json doesn't
+ */
+async function performAutoMigration(cwd: string): Promise<void> {
+  const storePath = path.join(cwd, VERIFICATION_STORE_PATH);
+
+  try {
+    // Check if old store exists
+    await fs.access(storePath);
+
+    // Old store exists - perform migration
+    // We call the migration logic directly to avoid circular dependency
+    const store = await loadVerificationStore(cwd);
+    if (!store || Object.keys(store.results).length === 0) {
+      return;
+    }
+
+    // Create new index
+    const index = createEmptyIndex();
+    let migratedCount = 0;
+
+    for (const [featureId, result] of Object.entries(store.results)) {
+      try {
+        // Create feature directory
+        const featureDir = path.join(cwd, VERIFICATION_STORE_DIR, featureId);
+        await fs.mkdir(featureDir, { recursive: true });
+
+        // Run number is 1 for migrated data
+        const runNumber = 1;
+        const runStr = String(runNumber).padStart(3, "0");
+
+        // Write metadata JSON
+        const metadata = {
+          featureId: result.featureId,
+          runNumber,
+          timestamp: result.timestamp,
+          commitHash: result.commitHash,
+          changedFiles: result.changedFiles,
+          diffSummary: result.diffSummary,
+          automatedChecks: result.automatedChecks.map((c) => ({
+            type: c.type,
+            success: c.success,
+            duration: c.duration,
+            errorCount: c.errorCount,
+          })),
+          criteriaResults: result.criteriaResults.map((c) => ({
+            criterion: c.criterion,
+            index: c.index,
+            satisfied: c.satisfied,
+            confidence: c.confidence,
+          })),
+          verdict: result.verdict,
+          verifiedBy: result.verifiedBy,
+        };
+        const jsonPath = path.join(featureDir, `${runStr}.json`);
+        await fs.writeFile(jsonPath, JSON.stringify(metadata, null, 2), "utf-8");
+
+        // Write markdown report
+        const report = generateVerificationReport(result, runNumber);
+        const mdPath = path.join(featureDir, `${runStr}.md`);
+        await fs.writeFile(mdPath, report, "utf-8");
+
+        // Update index
+        index.features[featureId] = {
+          featureId,
+          latestRun: runNumber,
+          latestTimestamp: result.timestamp,
+          latestVerdict: result.verdict,
+          totalRuns: 1,
+          passCount: result.verdict === "pass" ? 1 : 0,
+          failCount: result.verdict === "fail" ? 1 : 0,
+        };
+
+        migratedCount++;
+      } catch (err) {
+        console.warn(
+          `[verification-store] Auto-migration: Failed to migrate ${featureId}: ${err}`
+        );
+      }
+    }
+
+    // Save new index
+    await ensureVerificationDir(cwd);
+    const indexPath = path.join(cwd, VERIFICATION_INDEX_PATH);
+    await fs.writeFile(indexPath, JSON.stringify(index, null, 2), "utf-8");
+
+    // Backup old results.json
+    const backupPath = path.join(cwd, VERIFICATION_STORE_DIR, "results.json.bak");
+    try {
+      await fs.copyFile(storePath, backupPath);
+    } catch {
+      // Ignore backup errors
+    }
+
+    if (migratedCount > 0) {
+      console.log(
+        `[verification-store] Auto-migrated ${migratedCount} verification results to new format`
+      );
+    }
+  } catch {
+    // Old store doesn't exist, nothing to migrate
   }
 }
 
@@ -521,3 +641,133 @@ export async function getFeatureSummary(
   }
   return index.features[featureId] || null;
 }
+
+// ============================================================================
+// Migration Operations
+// ============================================================================
+
+/**
+ * Check if migration is needed
+ * Returns true if old results.json exists but index.json doesn't
+ */
+export async function needsMigration(cwd: string): Promise<boolean> {
+  const storePath = path.join(cwd, VERIFICATION_STORE_PATH);
+  const indexPath = path.join(cwd, VERIFICATION_INDEX_PATH);
+
+  try {
+    // Check if old store exists
+    await fs.access(storePath);
+    // Check if new index doesn't exist
+    try {
+      await fs.access(indexPath);
+      return false; // Both exist, no migration needed
+    } catch {
+      return true; // Old exists, new doesn't - migration needed
+    }
+  } catch {
+    return false; // Old store doesn't exist, no migration needed
+  }
+}
+
+/**
+ * Migrate old results.json to new per-feature structure
+ * Creates subdirectories, JSON/MD files, and index.json
+ *
+ * @param cwd - Project root directory
+ * @returns Number of features migrated, or -1 if migration not needed
+ */
+export async function migrateResultsJson(cwd: string): Promise<number> {
+  // Check if migration is needed
+  if (!(await needsMigration(cwd))) {
+    return -1;
+  }
+
+  // Load old store
+  const store = await loadVerificationStore(cwd);
+  if (!store || Object.keys(store.results).length === 0) {
+    return 0;
+  }
+
+  // Create new index
+  const index = createEmptyIndex();
+  let migratedCount = 0;
+
+  // Migrate each feature result
+  for (const [featureId, result] of Object.entries(store.results)) {
+    try {
+      // Create feature directory
+      const featureDir = await ensureFeatureDir(cwd, featureId);
+
+      // Run number is 1 for migrated data
+      const runNumber = 1;
+      const runStr = formatRunNumber(runNumber);
+
+      // Write metadata JSON
+      const metadata = toMetadata(result, runNumber);
+      const jsonPath = path.join(featureDir, `${runStr}.json`);
+      await fs.writeFile(jsonPath, JSON.stringify(metadata, null, 2), "utf-8");
+
+      // Write markdown report
+      const report = generateVerificationReport(result, runNumber);
+      const mdPath = path.join(featureDir, `${runStr}.md`);
+      await fs.writeFile(mdPath, report, "utf-8");
+
+      // Update index
+      index.features[featureId] = {
+        featureId,
+        latestRun: runNumber,
+        latestTimestamp: result.timestamp,
+        latestVerdict: result.verdict,
+        totalRuns: 1,
+        passCount: result.verdict === "pass" ? 1 : 0,
+        failCount: result.verdict === "fail" ? 1 : 0,
+      };
+
+      migratedCount++;
+    } catch (error) {
+      console.warn(
+        `[verification-store] Failed to migrate feature ${featureId}: ${error}`
+      );
+    }
+  }
+
+  // Save new index
+  await saveIndex(cwd, index);
+
+  // Backup old results.json
+  const storePath = path.join(cwd, VERIFICATION_STORE_PATH);
+  const backupPath = path.join(cwd, VERIFICATION_STORE_DIR, "results.json.bak");
+  try {
+    await fs.copyFile(storePath, backupPath);
+  } catch (error) {
+    console.warn(
+      `[verification-store] Failed to backup results.json: ${error}`
+    );
+  }
+
+  return migratedCount;
+}
+
+/**
+ * Auto-migrate if needed (called on first access)
+ * Silent migration - logs but doesn't throw on errors
+ */
+export async function autoMigrateIfNeeded(cwd: string): Promise<void> {
+  try {
+    if (await needsMigration(cwd)) {
+      const count = await migrateResultsJson(cwd);
+      if (count > 0) {
+        console.log(
+          `[verification-store] Migrated ${count} verification results to new format`
+        );
+      }
+    }
+  } catch (error) {
+    console.warn(
+      `[verification-store] Auto-migration failed: ${error}`
+    );
+  }
+}
+
+// Note: toMetadata, formatRunNumber, ensureFeatureDir, and saveIndex are
+// defined earlier in this file and reused by the migration functions above.
