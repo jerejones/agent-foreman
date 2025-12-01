@@ -54,7 +54,7 @@ import {
   generateHarnessFiles,
 } from "./init-helpers.js";
 import { createSpinner, createProgressBar } from "./progress.js";
-import { interactiveUpgradeCheck } from "./upgrade.js";
+import { interactiveUpgradeCheck, getCurrentVersion } from "./upgrade.js";
 
 /**
  * Auto-detect project goal from README or package.json
@@ -390,7 +390,7 @@ async function main() {
     )
     .demandCommand(1, "You need at least one command")
     .help()
-    .version()
+    .version(getCurrentVersion())
     .parseAsync();
 }
 
