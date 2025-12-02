@@ -84,6 +84,13 @@ export interface Feature {
    * Examples: "tests/auth/**", "src/auth/*.test.ts", "--grep auth"
    */
   testPattern?: string;
+  /**
+   * E2E test tags for selective E2E test execution (optional)
+   * Array of Playwright test tags to filter E2E tests
+   * Examples: ["@feature-auth", "@smoke"], ["@critical"]
+   * Used with Playwright's --grep flag for tag-based filtering
+   */
+  e2eTags?: string[];
 }
 
 /**

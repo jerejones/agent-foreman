@@ -127,6 +127,11 @@ export const featureListSchema = {
             type: "string",
             description: "Test pattern for selective test execution (e.g., 'tests/auth/**', '--grep login')",
           },
+          e2eTags: {
+            type: "array",
+            items: { type: "string" },
+            description: "E2E test tags for selective Playwright test execution (e.g., ['@feature-auth', '@smoke'])",
+          },
         },
         additionalProperties: false,
       },
