@@ -57,6 +57,16 @@ export interface FallbackCommands {
 }
 
 /**
+ * E2E commands interface for init.sh generation
+ */
+export interface E2ECommands {
+  /** Base E2E test command (e.g., "npx playwright test") */
+  command?: string;
+  /** Grep template for tag filtering (e.g., "npx playwright test --grep {tags}") */
+  grepTemplate?: string;
+}
+
+/**
  * Generate init.sh script from ExtendedCapabilities
  * This is the primary function for generating init.sh from capabilities detection
  */
@@ -74,16 +84,58 @@ export function generateInitScriptFromCapabilities(
     lint: caps.lintCommand,
   };
 
+  // Extract E2E commands from capabilities
+  const e2eCommands: E2ECommands | undefined = caps.e2eInfo?.available
+    ? {
+        command: caps.e2eInfo.command,
+        grepTemplate: caps.e2eInfo.grepTemplate,
+      }
+    : undefined;
+
   // Use capabilities typeCheckCommand instead of hardcoded "npx tsc --noEmit"
-  return generateInitScriptWithTypeCheck(commands, caps.typeCheckCommand);
+  return generateInitScriptWithTypeCheck(commands, caps.typeCheckCommand, e2eCommands);
 }
 
 /**
- * Generate init.sh with explicit typecheck command support
+ * Build E2E test section for init.sh
+ * Generates bash code that handles E2E testing with mode support
+ */
+function buildE2ESection(e2eCommands: E2ECommands): string {
+  const baseCommand = e2eCommands.command || "npx playwright test";
+  const grepTemplate = e2eCommands.grepTemplate || `${baseCommand} --grep {tags}`;
+
+  return `# Run E2E tests based on mode
+    if [ "\$skip_e2e" = true ]; then
+      log_info "E2E tests: skipped (--skip-e2e)"
+    elif [ "\$full_mode" = true ]; then
+      log_info "Running E2E tests (full)..."
+      if ! ${baseCommand}; then
+        log_error "E2E tests failed"
+        e2e_exit_code=1
+      fi
+    elif [ -n "\$e2e_tags" ]; then
+      log_info "Running E2E tests (tags: \$e2e_tags)..."
+      local e2e_cmd="${grepTemplate.replace("{tags}", "\\$e2e_tags")}"
+      if ! eval "\$e2e_cmd"; then
+        log_error "E2E tests failed"
+        e2e_exit_code=1
+      fi
+    else
+      log_info "Running E2E tests (@smoke)..."
+      if ! ${grepTemplate.replace("{tags}", "@smoke")}; then
+        log_error "E2E tests failed"
+        e2e_exit_code=1
+      fi
+    fi`;
+}
+
+/**
+ * Generate init.sh with explicit typecheck command support and E2E test support
  */
 export function generateInitScriptWithTypeCheck(
   commands: ProjectCommands,
-  typeCheckCommand?: string
+  typeCheckCommand?: string,
+  e2eCommands?: E2ECommands
 ): string {
   // Build typecheck section based on provided command
   const typeCheckSection = typeCheckCommand
@@ -100,6 +152,11 @@ export function generateInitScriptWithTypeCheck(
         exit_code=1
       fi
     fi`;
+
+  // Build E2E test section if E2E commands are available
+  const e2eSection = e2eCommands?.command
+    ? buildE2ESection(e2eCommands)
+    : "# No E2E tests configured";
 
   return `#!/usr/bin/env bash
 # ai/init.sh - Bootstrap script for agent-foreman harness
@@ -137,18 +194,31 @@ dev() {
   ${commands.dev || "echo 'No dev command configured'"}
 }
 
-# Check: Run all verification checks (tests, types, lint, build)
-# Usage: check [--quick] [test_pattern]
+# Check: Run all verification checks (tests, types, lint, build, e2e)
+# Usage: check [--quick] [--full] [--skip-e2e] [test_pattern]
+# Environment: E2E_TAGS - comma-separated tags for E2E filtering in quick mode
 check() {
   local exit_code=0
+  local e2e_exit_code=0
   local quick_mode=false
+  local full_mode=false
+  local skip_e2e=false
   local test_pattern=""
+  local e2e_tags="\${E2E_TAGS:-}"
 
   # Parse arguments
   while [[ \$# -gt 0 ]]; do
     case "\$1" in
       --quick)
         quick_mode=true
+        shift
+        ;;
+      --full)
+        full_mode=true
+        shift
+        ;;
+      --skip-e2e)
+        skip_e2e=true
         shift
         ;;
       *)
@@ -158,23 +228,25 @@ check() {
     esac
   done
 
-  if [ "\$quick_mode" = true ]; then
+  if [ "\$full_mode" = true ]; then
+    log_info "Running checks (full mode)..."
+  elif [ "\$quick_mode" = true ]; then
     log_info "Running checks (quick mode)..."
   else
     log_info "Running checks..."
   fi
 
-  # Run tests if available
-  ${commands.test ? `log_info "Running tests..."
+  # Run unit tests if available
+  ${commands.test ? `log_info "Running unit tests..."
   if [ -n "\$test_pattern" ]; then
     log_info "Test pattern: \$test_pattern"
     if ! ${commands.test} "\$test_pattern"; then
-      log_error "Tests failed"
+      log_error "Unit tests failed"
       exit_code=1
     fi
   else
     if ! ${commands.test}; then
-      log_error "Tests failed"
+      log_error "Unit tests failed"
       exit_code=1
     fi
   fi` : "log_warn \"No test command configured\""}
@@ -200,13 +272,23 @@ check() {
     fi` : ""}
   fi
 
-  if [ \$exit_code -eq 0 ]; then
+  # Run E2E tests (after unit tests)
+  ${e2eSection}
+
+  # Report final status
+  if [ \$exit_code -eq 0 ] && [ \$e2e_exit_code -eq 0 ]; then
     log_info "All checks passed!"
   else
-    log_error "Some checks failed"
+    if [ \$exit_code -ne 0 ]; then
+      log_error "Unit tests/checks failed"
+    fi
+    if [ \$e2e_exit_code -ne 0 ]; then
+      log_error "E2E tests failed"
+    fi
   fi
 
-  return \$exit_code
+  # Return combined exit code
+  return \$(( exit_code + e2e_exit_code ))
 }
 
 # Build: Build for production
@@ -251,11 +333,16 @@ show_help() {
   echo "Commands:"
   echo "  bootstrap           Install dependencies"
   echo "  dev                 Start development server"
-  echo "  check [--quick]     Run all checks (tests, types, lint, build)"
-  echo "                      --quick: Run only tests, skip type check/lint/build"
+  echo "  check [options]     Run all checks (tests, types, lint, build, e2e)"
+  echo "    --quick           Run only unit tests + E2E by E2E_TAGS (or @smoke)"
+  echo "    --full            Run all tests including full E2E suite"
+  echo "    --skip-e2e        Skip E2E tests entirely (unit tests only)"
   echo "  build               Build for production"
   echo "  status              Show project status"
   echo "  help                Show this help message"
+  echo ""
+  echo "Environment:"
+  echo "  E2E_TAGS            Tags for E2E filtering in quick mode (e.g., @feature-auth)"
 }
 
 # Main entry point
@@ -423,11 +510,16 @@ show_help() {
   echo "Commands:"
   echo "  bootstrap           Install dependencies"
   echo "  dev                 Start development server"
-  echo "  check [--quick]     Run all checks (tests, types, lint, build)"
-  echo "                      --quick: Run only tests, skip type check/lint/build"
+  echo "  check [options]     Run all checks (tests, types, lint, build, e2e)"
+  echo "    --quick           Run only unit tests + E2E by E2E_TAGS (or @smoke)"
+  echo "    --full            Run all tests including full E2E suite"
+  echo "    --skip-e2e        Skip E2E tests entirely (unit tests only)"
   echo "  build               Build for production"
   echo "  status              Show project status"
   echo "  help                Show this help message"
+  echo ""
+  echo "Environment:"
+  echo "  E2E_TAGS            Tags for E2E filtering in quick mode (e.g., @feature-auth)"
 }
 
 # Main entry point

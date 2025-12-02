@@ -116,8 +116,12 @@ describe("Init Script", () => {
       const script = generateInitScript(commands);
 
       expect(script).toContain("local exit_code=0");
-      expect(script).toContain("return $exit_code");
-      expect(script).toContain("Some checks failed");
+      expect(script).toContain("local e2e_exit_code=0");
+      // Return combined exit code for unit tests + E2E tests
+      expect(script).toContain("return $(( exit_code + e2e_exit_code ))");
+      // Separate failure messages for unit and E2E tests
+      expect(script).toContain("Unit tests/checks failed");
+      expect(script).toContain("E2E tests failed");
       expect(script).toContain("All checks passed!");
     });
 
@@ -481,6 +485,134 @@ describe("Init Script", () => {
 
       expect(script).toContain("mypy src/");
       expect(script).toContain("Running type check...");
+    });
+
+    it("should include E2E test section when e2eCommands provided", () => {
+      const e2eCommands = {
+        command: "npx playwright test",
+        grepTemplate: "npx playwright test --grep {tags}",
+      };
+
+      const script = generateInitScriptWithTypeCheck(commands, undefined, e2eCommands);
+
+      // Should include E2E mode handling
+      expect(script).toContain("e2e_exit_code=0");
+      expect(script).toContain("skip_e2e=false");
+      expect(script).toContain("full_mode=false");
+      expect(script).toContain("e2e_tags=");
+      expect(script).toContain("E2E_TAGS:-");
+
+      // Should include E2E execution branches
+      expect(script).toContain('if [ "$skip_e2e" = true ]');
+      expect(script).toContain("E2E tests: skipped (--skip-e2e)");
+      expect(script).toContain('elif [ "$full_mode" = true ]');
+      expect(script).toContain("Running E2E tests (full)...");
+      expect(script).toContain('elif [ -n "$e2e_tags" ]');
+      expect(script).toContain("Running E2E tests (tags:");
+      expect(script).toContain("Running E2E tests (@smoke)...");
+
+      // Should include E2E commands
+      expect(script).toContain("npx playwright test");
+      expect(script).toContain("npx playwright test --grep");
+      expect(script).toContain("@smoke");
+    });
+
+    it("should not include E2E section when no e2eCommands", () => {
+      const script = generateInitScriptWithTypeCheck(commands);
+
+      // Should have placeholder comment
+      expect(script).toContain("# No E2E tests configured");
+      // Should NOT have E2E execution branches
+      expect(script).not.toContain('if [ "$skip_e2e" = true ]');
+      expect(script).not.toContain("Running E2E tests (full)...");
+    });
+
+    it("should include --full and --skip-e2e flags in help", () => {
+      const script = generateInitScriptWithTypeCheck(commands);
+
+      expect(script).toContain("--full");
+      expect(script).toContain("--skip-e2e");
+      expect(script).toContain("E2E_TAGS");
+      expect(script).toContain("Run all tests including full E2E suite");
+      expect(script).toContain("Skip E2E tests entirely");
+    });
+
+    it("should parse --full and --skip-e2e arguments", () => {
+      const script = generateInitScriptWithTypeCheck(commands);
+
+      expect(script).toContain("--full)");
+      expect(script).toContain("full_mode=true");
+      expect(script).toContain("--skip-e2e)");
+      expect(script).toContain("skip_e2e=true");
+    });
+  });
+
+  describe("E2E integration with generateInitScriptFromCapabilities", () => {
+    const baseCapabilities: ExtendedCapabilities = {
+      hasTests: true,
+      testCommand: "pnpm test",
+      testFramework: "vitest",
+      hasTypeCheck: true,
+      typeCheckCommand: "pnpm tsc --noEmit",
+      hasLint: true,
+      lintCommand: "pnpm lint",
+      hasBuild: true,
+      buildCommand: "pnpm build",
+      hasGit: true,
+      source: "ai" as const,
+      confidence: 0.95,
+      languages: ["typescript"],
+      detectedAt: new Date().toISOString(),
+    };
+
+    it("should include E2E section when e2eInfo is available", () => {
+      const capsWithE2E: ExtendedCapabilities = {
+        ...baseCapabilities,
+        e2eInfo: {
+          available: true,
+          framework: "playwright",
+          command: "npx playwright test",
+          grepTemplate: "npx playwright test --grep {tags}",
+        },
+      };
+
+      const script = generateInitScriptFromCapabilities(capsWithE2E);
+
+      expect(script).toContain("npx playwright test");
+      expect(script).toContain("Running E2E tests (full)...");
+      expect(script).toContain("Running E2E tests (@smoke)...");
+      expect(script).toContain('if [ "$skip_e2e" = true ]');
+    });
+
+    it("should not include E2E section when e2eInfo is not available", () => {
+      const capsWithoutE2E: ExtendedCapabilities = {
+        ...baseCapabilities,
+        e2eInfo: {
+          available: false,
+        },
+      };
+
+      const script = generateInitScriptFromCapabilities(capsWithoutE2E);
+
+      expect(script).toContain("# No E2E tests configured");
+      expect(script).not.toContain("Running E2E tests (full)...");
+    });
+
+    it("should use custom grep template for E2E filtering", () => {
+      const capsWithCustomGrep: ExtendedCapabilities = {
+        ...baseCapabilities,
+        e2eInfo: {
+          available: true,
+          framework: "playwright",
+          command: "pnpm exec playwright test",
+          grepTemplate: "pnpm exec playwright test -g {tags}",
+        },
+      };
+
+      const script = generateInitScriptFromCapabilities(capsWithCustomGrep);
+
+      expect(script).toContain("pnpm exec playwright test");
+      expect(script).toContain("pnpm exec playwright test -g");
     });
   });
 });
