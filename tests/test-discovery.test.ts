@@ -13,10 +13,14 @@ import {
   discoverTestsForFeature,
   buildSelectiveTestCommand,
   getSelectiveTestCommand,
+  buildE2ECommand,
+  getE2ETagsForFeature,
+  determineE2EMode,
   type TestDiscoveryResult,
+  type E2EMode,
 } from "../src/test-discovery.js";
 import type { Feature } from "../src/types.js";
-import type { VerificationCapabilities } from "../src/verification-types.js";
+import type { VerificationCapabilities, E2ECapabilityInfo } from "../src/verification-types.js";
 
 // Mock child_process exec
 vi.mock("node:child_process", () => ({
@@ -634,6 +638,154 @@ describe("Test Discovery", () => {
       const result = await getSelectiveTestCommand("/test/cwd", feature, caps);
 
       expect(result.command).toBe(null);
+    });
+  });
+});
+
+// ============================================================================
+// E2E Command Building Tests
+// ============================================================================
+
+describe("E2E Test Command Building", () => {
+  // Helper to create mock E2E capability info
+  function createMockE2EInfo(overrides: Partial<E2ECapabilityInfo> = {}): E2ECapabilityInfo {
+    return {
+      available: true,
+      command: "npx playwright test",
+      framework: "playwright",
+      confidence: 0.95,
+      configFile: "playwright.config.ts",
+      grepTemplate: "npx playwright test --grep {tags}",
+      fileTemplate: "npx playwright test {files}",
+      ...overrides,
+    };
+  }
+
+  describe("buildE2ECommand", () => {
+    it("should return null when e2eInfo is undefined", () => {
+      const result = buildE2ECommand(undefined, ["@smoke"]);
+      expect(result).toBe(null);
+    });
+
+    it("should return null when e2eInfo is not available", () => {
+      const e2eInfo = createMockE2EInfo({ available: false });
+      const result = buildE2ECommand(e2eInfo, ["@smoke"]);
+      expect(result).toBe(null);
+    });
+
+    it("should return null when command is missing", () => {
+      const e2eInfo = createMockE2EInfo({ command: undefined });
+      const result = buildE2ECommand(e2eInfo, ["@smoke"]);
+      expect(result).toBe(null);
+    });
+
+    it("should return null when mode is skip", () => {
+      const e2eInfo = createMockE2EInfo();
+      const result = buildE2ECommand(e2eInfo, ["@smoke"], "skip");
+      expect(result).toBe(null);
+    });
+
+    it("should return full command when mode is full", () => {
+      const e2eInfo = createMockE2EInfo();
+      const result = buildE2ECommand(e2eInfo, ["@smoke"], "full");
+      expect(result).toBe("npx playwright test");
+    });
+
+    it("should return full command when tags is ['*']", () => {
+      const e2eInfo = createMockE2EInfo();
+      const result = buildE2ECommand(e2eInfo, ["*"], "tags");
+      expect(result).toBe("npx playwright test");
+    });
+
+    it("should return smoke command when no tags provided", () => {
+      const e2eInfo = createMockE2EInfo();
+      const result = buildE2ECommand(e2eInfo, [], "tags");
+      expect(result).toBe('npx playwright test --grep "@smoke"');
+    });
+
+    it("should return smoke command when mode is smoke", () => {
+      const e2eInfo = createMockE2EInfo();
+      const result = buildE2ECommand(e2eInfo, ["@feature-auth"], "smoke");
+      expect(result).toBe('npx playwright test --grep "@smoke"');
+    });
+
+    it("should join multiple tags with | for OR matching", () => {
+      const e2eInfo = createMockE2EInfo();
+      const result = buildE2ECommand(e2eInfo, ["@feature-auth", "@smoke"], "tags");
+      expect(result).toBe('npx playwright test --grep "@feature-auth|@smoke"');
+    });
+
+    it("should use grepTemplate when available", () => {
+      const e2eInfo = createMockE2EInfo({
+        grepTemplate: "npx playwright test --grep {tags}",
+      });
+      const result = buildE2ECommand(e2eInfo, ["@critical"], "tags");
+      expect(result).toBe('npx playwright test --grep "@critical"');
+    });
+
+    it("should fall back to framework-specific pattern for Playwright when no grepTemplate", () => {
+      const e2eInfo = createMockE2EInfo({
+        framework: "playwright",
+        grepTemplate: undefined,
+      });
+      const result = buildE2ECommand(e2eInfo, ["@smoke"], "tags");
+      expect(result).toBe('npx playwright test --grep "@smoke"');
+    });
+
+    it("should fall back to framework-specific pattern for Cypress when no grepTemplate", () => {
+      const e2eInfo = createMockE2EInfo({
+        framework: "cypress",
+        command: "npx cypress run",
+        grepTemplate: undefined,
+      });
+      const result = buildE2ECommand(e2eInfo, ["@smoke"], "tags");
+      expect(result).toBe('npx cypress run --spec "**/*" --env grep="@smoke"');
+    });
+
+    it("should fall back to generic grep pattern for unknown frameworks", () => {
+      const e2eInfo = createMockE2EInfo({
+        framework: "unknown",
+        command: "npm run e2e",
+        grepTemplate: undefined,
+      });
+      const result = buildE2ECommand(e2eInfo, ["@smoke"], "tags");
+      expect(result).toBe('npm run e2e --grep "@smoke"');
+    });
+  });
+
+  describe("getE2ETagsForFeature", () => {
+    it("should return e2eTags when defined", () => {
+      const feature = createMockFeature({ e2eTags: ["@feature-auth", "@smoke"] });
+      const result = getE2ETagsForFeature(feature);
+      expect(result).toEqual(["@feature-auth", "@smoke"]);
+    });
+
+    it("should return empty array when e2eTags is undefined", () => {
+      const feature = createMockFeature({ e2eTags: undefined });
+      const result = getE2ETagsForFeature(feature);
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe("determineE2EMode", () => {
+    it("should return skip when testMode is skip", () => {
+      const result = determineE2EMode("skip", true);
+      expect(result).toBe("skip");
+    });
+
+    it("should return full when testMode is full", () => {
+      const result = determineE2EMode("full", false);
+      expect(result).toBe("full");
+    });
+
+    it("should return tags when testMode is quick and feature has e2eTags", () => {
+      const result = determineE2EMode("quick", true);
+      expect(result).toBe("tags");
+    });
+
+    it("should return smoke when testMode is quick and feature has no e2eTags", () => {
+      const result = determineE2EMode("quick", false);
+      expect(result).toBe("smoke");
     });
   });
 });
