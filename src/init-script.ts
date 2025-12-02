@@ -237,15 +237,16 @@ check() {
   fi
 
   # Run unit tests if available
+  # CI=true disables watch mode in Vitest/Jest and ensures single-run execution
   ${commands.test ? `log_info "Running unit tests..."
   if [ -n "\$test_pattern" ]; then
     log_info "Test pattern: \$test_pattern"
-    if ! ${commands.test} "\$test_pattern"; then
+    if ! CI=true ${commands.test} "\$test_pattern"; then
       log_error "Unit tests failed"
       exit_code=1
     fi
   else
-    if ! ${commands.test}; then
+    if ! CI=true ${commands.test}; then
       log_error "Unit tests failed"
       exit_code=1
     fi
