@@ -382,7 +382,7 @@ export async function runAutomatedChecks(
 
     const spinner = verbose ? createSpinner(`Running ${check.name}`) : null;
     // CI=true disables watch mode in Vitest/Jest and ensures proper CI behavior in Playwright
-    const ciEnv = (check.type === "test" || check.type === "e2e") ? { CI: "true" } : {};
+    const ciEnv: Record<string, string> = (check.type === "test" || check.type === "e2e") ? { CI: "true" } : {};
     const result = await runCheckWithEnv(cwd, check.type, check.command, ciEnv);
     results.push(result);
 
