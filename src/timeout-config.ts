@@ -19,52 +19,53 @@ export const DEFAULT_TIMEOUTS = {
   /**
    * Project survey/scan operation - AI explores entire codebase
    * This is the most intensive operation, exploring all source files.
-   * Large monorepos may need the full 10 minutes.
+   * Large monorepos may need the full 15 minutes.
    */
-  AI_SCAN_PROJECT: 600000, // 10 minutes
+  AI_SCAN_PROJECT: 900000, // 15 minutes
 
   /**
    * Generate features from existing survey document
-   * Text-to-JSON conversion, typically fast (< 1 min)
+   * Text-to-JSON conversion, may take 2-3 minutes for large surveys
    */
-  AI_GENERATE_FROM_SURVEY: 180000, // 3 minutes
+  AI_GENERATE_FROM_SURVEY: 300000, // 5 minutes
 
   /**
    * Generate features from goal description for empty projects
-   * Text-to-JSON conversion, typically fast (< 1 min)
+   * Text-to-JSON conversion, typically faster than survey parsing
    */
-  AI_GENERATE_FROM_GOAL: 180000, // 3 minutes
+  AI_GENERATE_FROM_GOAL: 300000, // 5 minutes
 
   /**
    * Merge init.sh script with AI
-   * Simple text merge, very fast
+   * Script merging can take 2-3 minutes for complex customizations
    */
-  AI_MERGE_INIT_SCRIPT: 120000, // 2 minutes
+  AI_MERGE_INIT_SCRIPT: 300000, // 5 minutes
 
   /**
    * Merge CLAUDE.md with AI
-   * Simple text merge, very fast
+   * Document merging can take 3-4 minutes for large CLAUDE.md files
    */
-  AI_MERGE_CLAUDE_MD: 120000, // 2 minutes
+  AI_MERGE_CLAUDE_MD: 300000, // 5 minutes
 
   /**
    * AI verification of feature completion
    * Includes running tests/builds + AI analysis
-   * May take longer for projects with slow test suites
+   * Large projects with slow test suites may need 10+ minutes
    */
-  AI_VERIFICATION: 300000, // 5 minutes
+  AI_VERIFICATION: 600000, // 10 minutes
 
   /**
    * AI capability discovery
    * Analyzes project structure to detect test/build commands
+   * Complex projects may take 3-4 minutes
    */
-  AI_CAPABILITY_DISCOVERY: 120000, // 2 minutes
+  AI_CAPABILITY_DISCOVERY: 300000, // 5 minutes
 
   /**
    * Default timeout for any AI agent call
    * Used as fallback when no specific timeout is configured
    */
-  AI_DEFAULT: 300000, // 5 minutes
+  AI_DEFAULT: 600000, // 10 minutes
 } as const;
 
 /**

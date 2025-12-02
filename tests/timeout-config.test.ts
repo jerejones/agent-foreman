@@ -59,23 +59,23 @@ describe("Timeout Configuration", () => {
     });
 
     it("should have reasonable default values", () => {
-      // AI scan is the longest operation (10 minutes) - for large monorepos
-      expect(DEFAULT_TIMEOUTS.AI_SCAN_PROJECT).toBe(600000);
+      // AI scan is the longest operation (15 minutes) - for large monorepos
+      expect(DEFAULT_TIMEOUTS.AI_SCAN_PROJECT).toBe(900000);
 
-      // Feature generation (3 minutes) - text-to-JSON, typically fast
-      expect(DEFAULT_TIMEOUTS.AI_GENERATE_FROM_SURVEY).toBe(180000);
-      expect(DEFAULT_TIMEOUTS.AI_GENERATE_FROM_GOAL).toBe(180000);
+      // Feature generation (5 minutes) - text-to-JSON, may take longer for large surveys
+      expect(DEFAULT_TIMEOUTS.AI_GENERATE_FROM_SURVEY).toBe(300000);
+      expect(DEFAULT_TIMEOUTS.AI_GENERATE_FROM_GOAL).toBe(300000);
 
-      // Verification (5 minutes) - includes tests/builds + AI analysis
-      expect(DEFAULT_TIMEOUTS.AI_VERIFICATION).toBe(300000);
+      // Verification (10 minutes) - includes tests/builds + AI analysis
+      expect(DEFAULT_TIMEOUTS.AI_VERIFICATION).toBe(600000);
 
-      // Merge operations (2 minutes) - simple text merges
-      expect(DEFAULT_TIMEOUTS.AI_MERGE_INIT_SCRIPT).toBe(120000);
-      expect(DEFAULT_TIMEOUTS.AI_MERGE_CLAUDE_MD).toBe(120000);
-      expect(DEFAULT_TIMEOUTS.AI_CAPABILITY_DISCOVERY).toBe(120000);
+      // Merge and capability operations (5 minutes each)
+      expect(DEFAULT_TIMEOUTS.AI_MERGE_INIT_SCRIPT).toBe(300000);
+      expect(DEFAULT_TIMEOUTS.AI_MERGE_CLAUDE_MD).toBe(300000);
+      expect(DEFAULT_TIMEOUTS.AI_CAPABILITY_DISCOVERY).toBe(300000);
 
-      // Default (5 minutes)
-      expect(DEFAULT_TIMEOUTS.AI_DEFAULT).toBe(300000);
+      // Default (10 minutes)
+      expect(DEFAULT_TIMEOUTS.AI_DEFAULT).toBe(600000);
     });
   });
 
