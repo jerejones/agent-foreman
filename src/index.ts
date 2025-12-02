@@ -988,13 +988,17 @@ async function runCheck(
     console.log(chalk.white(`   ${i + 1}. ${a}`));
   });
 
+  // Derive skipE2E from feature.e2eTags: undefined or empty array means skip
+  const featureSkipsE2E = !feature.e2eTags || feature.e2eTags.length === 0;
+  const effectiveSkipE2E = skipE2E || featureSkipsE2E;
+
   // Run verification (choose mode)
   const verifyOptions = {
     verbose,
     skipChecks,
     testMode,
     testPattern,
-    skipE2E,
+    skipE2E: effectiveSkipE2E,
     e2eTags: feature.e2eTags,
     e2eMode,
   };
@@ -1107,13 +1111,17 @@ async function runComplete(
       console.log(chalk.white(`   ${i + 1}. ${a}`));
     });
 
+    // Derive skipE2E from feature.e2eTags: undefined or empty array means skip
+    const featureSkipsE2E = !feature.e2eTags || feature.e2eTags.length === 0;
+    const effectiveSkipE2E = skipE2E || featureSkipsE2E;
+
     // Run verification (choose mode)
     const verifyOptions = {
       verbose,
       skipChecks: false,
       testMode,
       testPattern,
-      skipE2E,
+      skipE2E: effectiveSkipE2E,
       e2eTags: feature.e2eTags,
       e2eMode,
     };

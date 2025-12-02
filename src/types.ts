@@ -87,8 +87,14 @@ export interface Feature {
   /**
    * E2E test tags for selective E2E test execution (optional)
    * Array of Playwright test tags to filter E2E tests
-   * Examples: ["@feature-auth", "@smoke"], ["@critical"]
    * Used with Playwright's --grep flag for tag-based filtering
+   *
+   * Semantic meaning:
+   * - undefined or not set: Skip E2E tests (feature has no UI)
+   * - []: Skip E2E tests (explicit no-UI marker)
+   * - ["@smoke"]: Run smoke E2E tests
+   * - ["@feature-auth", "@login"]: Run specific feature E2E tests
+   * - ["*"]: Run all E2E tests
    */
   e2eTags?: string[];
 }
