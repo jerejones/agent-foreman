@@ -47,6 +47,7 @@ ${goal}
 3. **Update status promptly** - Mark features passing when criteria met
 4. **Leave clean state** - No broken code between sessions
 5. **Use single-line log format** - One line per entry, not verbose Markdown
+6. **Never kill running processes** - Let \`agent-foreman\` commands complete naturally, even if they appear slow or timed out. Just wait for completion.
 
 ### Progress Log Format
 

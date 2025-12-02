@@ -91,3 +91,4 @@ agent-foreman complete <id>    # 4. Verify + complete + commit
 2. **Use complete command** - It auto-verifies before marking passing
 3. **Read before coding** - Always check feature list and progress log first
 4. **Leave clean state** - No broken code between sessions
+5. **Never kill running processes** - Let `agent-foreman` commands complete naturally, even if they appear slow or timed out. Just wait for completion.

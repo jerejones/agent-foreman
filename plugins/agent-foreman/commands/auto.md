@@ -62,3 +62,4 @@ Stop the loop when:
 2. **One feature at a time** - Complete current feature before moving to next
 3. **Follow acceptance criteria** - Implement exactly what the criteria specify
 4. **Do not modify acceptance criteria** - Only implement, never change the requirements
+5. **Never kill running processes** - Let `agent-foreman` commands complete naturally, even if they appear slow or timed out. Just wait for completion.
