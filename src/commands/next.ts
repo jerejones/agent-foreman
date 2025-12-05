@@ -306,6 +306,7 @@ export async function runNext(
     let guidance: TDDGuidance | CachedTDDGuidance;
     let isCached = false;
     let isAIGenerated = false;
+    let capabilities: Awaited<ReturnType<typeof detectCapabilities>> | null = null;
 
     if (isCacheValid && feature.tddGuidance) {
       // Use cached AI guidance - no need for capabilities detection
@@ -314,7 +315,7 @@ export async function runNext(
       isAIGenerated = true;
     } else {
       // Cache miss - need to generate new guidance, detect capabilities
-      const capabilities = await detectCapabilities(cwd, { verbose: false });
+      capabilities = await detectCapabilities(cwd, { verbose: false });
 
       // Try AI generation
       const aiGuidance = await generateTDDGuidanceWithAI(feature, capabilities, cwd);
