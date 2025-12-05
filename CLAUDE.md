@@ -22,6 +22,7 @@ Long Task Harness for AI agents - feature-driven development with external memor
 - `passing` - Acceptance criteria met
 - `blocked` - External dependency blocking
 - `needs_review` - Potentially affected by recent changes
+- `failed` - Implementation attempted but verification failed
 - `deprecated` - No longer needed
 
 ### Workflow for Each Session
@@ -174,7 +175,7 @@ When adding or modifying features in `ai/feature_list.json`, use this schema:
 - `pattern` → Glob pattern for selective test execution in quick mode
 - `cases`/`scenarios` → Expected test names (optional, for documentation)
 
-**Status values**: `failing` | `passing` | `blocked` | `needs_review` | `deprecated`
+**Status values**: `failing` | `passing` | `blocked` | `needs_review` | `failed` | `deprecated`
 
 **Origin values**: `init-auto` | `init-from-routes` | `init-from-tests` | `manual` | `replan`
 

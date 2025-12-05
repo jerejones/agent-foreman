@@ -52,10 +52,10 @@ agent-foreman next
 # STEP 4: Complete feature
 agent-foreman done <feature_id>
 
-# STEP 5: Decision
-# - More features remaining? → Go to STEP 1
-# - All passing/deprecated? → STOP, report success
-# - Verification failed? → STOP, report failure
+# STEP 5: Handle result
+# - Verification passed? → Continue to STEP 1
+# - Verification failed? → Mark as failed, continue to STEP 1
+# - All features processed? → STOP, show summary
 ```
 
 ---
@@ -69,14 +69,42 @@ agent-foreman done <feature_id>
 | No editing criteria | Implement exactly as specified |
 | Never kill processes | Let commands finish naturally |
 
+## On Verification Failure
+
+When `agent-foreman done` reports verification failure:
+
+1. **DO NOT STOP** - Continue to the next feature
+2. Mark the failed feature as `failed`:
+   - Edit `ai/feature_list.json`
+   - Change status from `failing` to `failed`
+   - Add to notes: `Verification failed: [reason from output]`
+3. Log the failure in `ai/progress.log`:
+   ```
+   YYYY-MM-DDTHH:MM:SSZ VERIFY feature=<id> verdict=fail summary="Marked as failed"
+   ```
+4. Continue to the next feature immediately
+
 ## Exit Conditions
 
 | Condition | Action |
 |-----------|--------|
-| All features `passing`/`deprecated` | ✅ STOP - Success |
-| Verification fails | ❌ STOP - Report failure |
-| User interrupts | ⏹️ STOP - Clean state |
+| All features processed | ✅ STOP - Show summary |
 | Single feature completed | ✅ STOP - Feature done |
+| User interrupts | ⏹️ STOP - Clean state |
+
+**CRITICAL: NEVER stop due to verification failure - always mark as `failed` and continue!**
+
+## Loop Completion
+
+When all features have been processed:
+
+1. Run `agent-foreman status` to show final summary
+2. Report counts:
+   - ✓ X features passing
+   - ⚡ Y features failed (need investigation)
+   - ⚠ Z features needs_review (dependency changes)
+   - ✗ W features still failing (not attempted)
+3. List features that failed verification with their failure reasons
 
 ## Priority Order (Auto-Selected)
 

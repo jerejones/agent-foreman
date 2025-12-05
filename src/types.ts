@@ -13,6 +13,7 @@
  * - passing: Acceptance criteria met
  * - blocked: External dependency blocking progress
  * - needs_review: Potentially affected by recent changes
+ * - failed: Implementation attempted but verification failed
  * - deprecated: No longer needed, superseded by another feature
  */
 export type FeatureStatus =
@@ -20,6 +21,7 @@ export type FeatureStatus =
   | "passing"
   | "blocked"
   | "needs_review"
+  | "failed"
   | "deprecated";
 
 /**

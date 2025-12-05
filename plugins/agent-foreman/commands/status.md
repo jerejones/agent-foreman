@@ -24,7 +24,7 @@ Wait for completion. Review the status shown.
 
 The command displays:
 - **Project goal** - What the project aims to achieve
-- **Feature counts** - Passing, failing, blocked, needs_review, deprecated
+- **Feature counts** - Passing, failing, blocked, needs_review, failed, deprecated
 - **Completion percentage** - Visual progress bar
 - **Recent activity** - Latest entries from progress log
 
@@ -35,6 +35,7 @@ The command displays:
 | ✓ | Passing | Acceptance criteria met |
 | ✗ | Failing | Not yet implemented |
 | ⚠ | Needs Review | May be affected by changes |
+| ⚡ | Failed | Verification failed |
 | ⏸ | Blocked | External dependency blocking |
 | ⊘ | Deprecated | No longer needed |
 

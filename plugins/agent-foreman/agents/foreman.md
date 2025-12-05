@@ -81,6 +81,7 @@ agent-foreman done <id>    # 4. Verify + complete + commit
 | `passing` | Acceptance criteria met |
 | `blocked` | External dependency blocking |
 | `needs_review` | May be affected by recent changes |
+| `failed` | Implementation attempted but verification failed |
 | `deprecated` | No longer needed |
 
 ## Feature Selection Priority
@@ -114,3 +115,21 @@ agent-foreman done <id>    # 4. Verify + complete + commit
 3. **Read before coding** - Always check feature list and progress log first
 4. **Leave clean state** - No broken code between sessions
 5. **Never kill running processes** - Let `agent-foreman` commands complete naturally, even if they appear slow or timed out. Just wait for completion.
+
+## Loop Behavior
+
+When running in loop mode (processing all features):
+
+1. **NEVER stop due to verification failure**
+2. If verification fails, mark feature as `failed` and continue
+3. Only stop when ALL features have been processed
+4. At the end, report summary of passed/failed/failed features
+
+### Handling Verification Failures
+
+When `agent-foreman done` fails:
+
+1. Update feature status to `failed`
+2. Add note explaining the failure reason (e.g., `Verification failed: [reason]`)
+3. Log to `ai/progress.log`
+4. Move to next feature immediately - do not stop the loop

@@ -51,7 +51,7 @@ export const featureListSchema = {
           },
           status: {
             type: "string",
-            enum: ["failing", "passing", "blocked", "needs_review", "deprecated"],
+            enum: ["failing", "passing", "blocked", "needs_review", "failed", "deprecated"],
             description: "Current feature status",
           },
           acceptance: {
@@ -360,5 +360,5 @@ export function isValidFeatureId(id: string): boolean {
  * Validate feature status value
  */
 export function isValidStatus(status: string): status is FeatureList["features"][0]["status"] {
-  return ["failing", "passing", "blocked", "needs_review", "deprecated"].includes(status);
+  return ["failing", "passing", "blocked", "needs_review", "failed", "deprecated"].includes(status);
 }

@@ -73,9 +73,10 @@ export function selectNextFeature(features: Feature[]): Feature | null {
     const statusOrder: Record<FeatureStatus, number> = {
       needs_review: 0,
       failing: 1,
-      blocked: 2,
-      passing: 3,
-      deprecated: 4,
+      failed: 2,
+      blocked: 3,
+      passing: 4,
+      deprecated: 5,
     };
     const statusDiff = statusOrder[a.status] - statusOrder[b.status];
     if (statusDiff !== 0) return statusDiff;
@@ -243,6 +244,7 @@ export function getFeatureStats(features: Feature[]): Record<FeatureStatus, numb
     passing: 0,
     blocked: 0,
     needs_review: 0,
+    failed: 0,
     deprecated: 0,
   };
 
