@@ -383,11 +383,13 @@ describe("CLI Integration", () => {
       expect(result.stdout).toContain("Skipping verification");
       expect(result.stdout).toContain("Marked 'test.feature1' as passing");
 
-      // Verify the feature was updated in the new modular storage format
-      // After auto-migration, features are stored in ai/features/{module}/{id}.md
-      const featureFile = path.join(tempDir, "ai/features/test/feature1.md");
-      const featureContent = await fs.readFile(featureFile, "utf-8");
-      expect(featureContent).toContain("status: passing");
+      // Verify the file was updated
+      const updatedContent = await fs.readFile(
+        path.join(tempDir, "ai/feature_list.json"),
+        "utf-8"
+      );
+      const updated = JSON.parse(updatedContent);
+      expect(updated.features[0].status).toBe("passing");
     });
 
     it("should show error for non-existent feature", async () => {

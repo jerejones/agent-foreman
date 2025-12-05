@@ -123,20 +123,12 @@ describe("E2E Workflow Tests", () => {
 
       expect(completeResult.stdout).toContain("Marked 'core.setup' as passing");
 
-      // Step 6: Verify feature was updated in modular storage format
-      // After auto-migration, features are stored in ai/features/{module}/{id}.md
-      const coreSetupContent = await fs.readFile(
-        path.join(tempDir, "ai/features/core/setup.md"),
-        "utf-8"
+      // Step 6: Verify feature list was updated
+      const updatedFeatureList = JSON.parse(
+        await fs.readFile(path.join(tempDir, "ai/feature_list.json"), "utf-8")
       );
-      expect(coreSetupContent).toContain("status: passing");
-
-      // Verify second feature is still failing
-      const coreTestsContent = await fs.readFile(
-        path.join(tempDir, "ai/features/core/tests.md"),
-        "utf-8"
-      );
-      expect(coreTestsContent).toContain("status: failing");
+      expect(updatedFeatureList.features[0].status).toBe("passing");
+      expect(updatedFeatureList.features[1].status).toBe("failing");
 
       // Step 7: Verify status shows updated stats
       const statusResult2 = spawnSync("node", [CLI_PATH, "status"], {
