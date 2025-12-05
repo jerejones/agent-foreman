@@ -16,9 +16,21 @@ export default defineConfig({
         // Type-only files (no executable code)
         "src/types.ts",
         "src/verification-types.ts",
+        // Re-export wrapper files (backward compatibility)
         "src/verifier.ts",
+        "src/project-capabilities.ts",
+        "src/tdd-guidance.ts",
+        "src/verification-store.ts",
+        // Module index files (re-exports only)
         "src/verifier/index.ts",
         "src/verifier/types.ts",
+        "src/capabilities/index.ts",
+        "src/tdd-guidance/index.ts",
+        "src/tdd-guidance/types.ts",
+        "src/verification-store/index.ts",
+        "src/verification-store/constants.ts",
+        // CLI command handlers (tested through integration tests)
+        "src/commands/**/*.ts",
       ],
       reportsDirectory: "./coverage",
     },

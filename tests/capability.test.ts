@@ -803,3 +803,84 @@ describe("Capability Formatting", () => {
     });
   });
 });
+
+// ============================================================================
+// Git Invalidation Tests (for coverage)
+// ============================================================================
+
+describe("Git Invalidation", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "git-invalidation-test-"));
+    await fs.mkdir(path.join(tempDir, "ai"), { recursive: true });
+  });
+
+  afterEach(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  describe("isStale - empty trackedFiles", () => {
+    it("should check commit hash only when trackedFiles is empty", async () => {
+      // Create cache with empty trackedFiles
+      const cache: CapabilityCache = {
+        version: CACHE_VERSION,
+        capabilities: createTestCapabilities(),
+        commitHash: "abc123",
+        trackedFiles: [], // Empty tracked files
+      };
+      await fs.writeFile(
+        path.join(tempDir, "ai/capabilities.json"),
+        JSON.stringify(cache)
+      );
+
+      // Initialize git repo
+      const { execSync } = await import("node:child_process");
+      try {
+        execSync("git init", { cwd: tempDir, stdio: "pipe" });
+        await fs.writeFile(path.join(tempDir, ".gitignore"), "");
+        execSync("git add .gitignore && git commit -m 'init'", { cwd: tempDir, stdio: "pipe" });
+      } catch {
+        // Skip test if git not available
+        return;
+      }
+
+      const result = await isStale(tempDir);
+
+      // Should be stale because commit hash changed (abc123 != current)
+      expect(result).toBe(true);
+    });
+
+    it("should return not stale when trackedFiles empty and commit matches", async () => {
+      // Initialize git repo first to get commit hash
+      const { execSync } = await import("node:child_process");
+      let currentCommit: string;
+      try {
+        execSync("git init", { cwd: tempDir, stdio: "pipe" });
+        await fs.writeFile(path.join(tempDir, ".gitignore"), "");
+        execSync("git add .gitignore && git commit -m 'init'", { cwd: tempDir, stdio: "pipe" });
+        currentCommit = execSync("git rev-parse HEAD", { cwd: tempDir, encoding: "utf-8" }).trim();
+      } catch {
+        // Skip test if git not available
+        return;
+      }
+
+      // Create cache with matching commit and empty trackedFiles
+      const cache: CapabilityCache = {
+        version: CACHE_VERSION,
+        capabilities: createTestCapabilities(),
+        commitHash: currentCommit,
+        trackedFiles: [], // Empty tracked files
+      };
+      await fs.writeFile(
+        path.join(tempDir, "ai/capabilities.json"),
+        JSON.stringify(cache)
+      );
+
+      const result = await isStale(tempDir);
+
+      // Should NOT be stale because commit hash matches and no tracked files
+      expect(result).toBe(false);
+    });
+  });
+});
