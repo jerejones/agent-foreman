@@ -12,6 +12,7 @@ import { hideBin } from "yargs/helpers";
 import type { InitMode } from "./types.js";
 import { getCurrentVersion } from "./upgrade.js";
 import { interactiveUpgradeCheck } from "./upgrade.js";
+import { checkAndInstallPlugins } from "./plugin-installer.js";
 import {
   runAnalyze,
   runInit,
@@ -28,6 +29,9 @@ import {
 async function main() {
   // Run interactive upgrade check (prompts user if new version available)
   await interactiveUpgradeCheck();
+
+  // Check and install/update plugins (for compiled binary)
+  await checkAndInstallPlugins();
 
   await yargs(hideBin(process.argv))
     .scriptName("agent-foreman")

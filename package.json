@@ -19,7 +19,13 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "build:embed": "bun scripts/embed-assets.ts",
+    "build:bin": "npm run build:embed && bun scripts/build.ts",
+    "build:bin:macos": "npm run build:embed && bun scripts/build.ts --target macos",
+    "build:bin:linux": "npm run build:embed && bun scripts/build.ts --target linux",
+    "build:bin:windows": "npm run build:embed && bun scripts/build.ts --target windows",
+    "build:all": "npm run build && npm run build:bin"
   },
   "dependencies": {
     "ajv": "^8.12.0",

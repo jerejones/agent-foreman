@@ -11,7 +11,7 @@ Long Task Harness for AI agents - feature-driven development with external memor
 ### Core Files
 
 | File | Purpose |
-|------|---------|
+|------|---------||
 | `ai/feature_list.json` | Feature backlog with status tracking |
 | `ai/progress.log` | Session handoff audit log |
 | `ai/init.sh` | Bootstrap script (install/dev/check) |
@@ -24,6 +24,14 @@ Long Task Harness for AI agents - feature-driven development with external memor
 - `needs_review` - Potentially affected by recent changes
 - `failed` - Implementation attempted but verification failed
 - `deprecated` - No longer needed
+
+### Feature Selection Priority
+
+When running `agent-foreman next`, features are selected in this order:
+1. **Status first**: `needs_review` > `failing` (other statuses excluded)
+2. **Then priority number**: Lower number = higher priority (1 is highest)
+
+Example: A feature with `priority: 1` runs before `priority: 10`
 
 ### Workflow for Each Session
 
@@ -124,7 +132,9 @@ Write criteria as testable statements:
 
 ### Feature JSON Schema
 
-**IMPORTANT**: When adding or modifying features in `ai/feature_list.json`, use this exact schema:
+**IMPORTANT**: When adding or modifying features in `ai/feature_list.json`, use this exact schema.
+
+**Note**: `priority` uses lower number = higher priority (1 is highest, 10 is lower).
 
 ```json
 {
@@ -190,6 +200,41 @@ Write criteria as testable statements:
 **Status values**: `failing` | `passing` | `blocked` | `needs_review` | `failed` | `deprecated`
 
 **Origin values**: `init-auto` | `init-from-routes` | `init-from-tests` | `manual` | `replan`
+
+### TDD Mode Configuration
+
+The project's TDD enforcement is controlled by `metadata.tddMode` in `ai/feature_list.json`:
+
+| Mode | Effect |
+|------|--------|
+| `strict` (default) | Tests REQUIRED - check/done fail without tests |
+| `recommended` | Tests suggested but not enforced |
+| `disabled` | No TDD guidance |
+
+#### Strict Mode Behavior
+
+When `tddMode: "strict"`:
+- `agent-foreman check` blocks if test files missing
+- `agent-foreman done` blocks if test files missing
+- All features auto-migrate to `testRequirements.unit.required: true`
+- TDD workflow enforced: RED → GREEN → REFACTOR
+
+#### User Control via Natural Language
+
+| User Says | Action |
+|-----------|--------|
+| "enable strict TDD" / "require tests" | Set `tddMode: "strict"` |
+| "disable strict TDD" / "optional tests" | Set `tddMode: "recommended"` |
+| "turn off TDD" | Set `tddMode: "disabled"` |
+
+To change mode manually, edit `ai/feature_list.json`:
+```json
+{
+  "metadata": {
+    "tddMode": "strict"
+  }
+}
+```
 
 ### TDD Workflow
 

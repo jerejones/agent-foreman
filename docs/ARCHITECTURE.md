@@ -2,7 +2,7 @@
 
 ## Summary
 
-agent-foreman is a Long Task Harness for AI agents enabling feature-driven development with external memory. It provides a CLI tool that manages feature backlogs, tracks progress across sessions, and uses AI agents (Claude, Gemini, Codex) for autonomous verification of feature completion. The system includes TDD guidance generation, selective test execution, impact analysis, and Claude Code plugin integration.
+agent-foreman is a Long Task Harness CLI tool for AI agents, enabling feature-driven development with external memory. It provides AI-powered project analysis, feature tracking, TDD workflow enforcement, and verification via Claude, Gemini, or Codex agents. The tool manages feature lists, progress logs, and generates CLAUDE.md documentation for seamless AI agent session handoffs.
 
 > Analyzed by: claude
 
@@ -12,8 +12,8 @@ agent-foreman is a Long Task Harness for AI agents enabling feature-driven devel
 |--------|-------|
 | Language | TypeScript |
 | Framework | none |
-| Build Tool | tsc |
-| Test Framework | vitest |
+| Build Tool | tsc (TypeScript Compiler) |
+| Test Framework | Vitest |
 | Package Manager | npm |
 
 ## Directory Structure
@@ -26,105 +26,105 @@ agent-foreman is a Long Task Harness for AI agents enabling feature-driven devel
 
 ## Modules
 
+### cli
+- **Path**: `src/index.ts`
+- **Status**: complete
+- **Description**: CLI entry point using yargs for command parsing with commands: analyze, init, next, status, impact, done, check, agents, scan
+
 ### commands
-- **Path**: `src/commands`
+- **Path**: `src/commands/`
 - **Status**: complete
-- **Description**: CLI command handlers (analyze, init, next, status, impact, check, done, scan, agents)
-
-### verifier
-- **Path**: `src/verifier`
-- **Status**: complete
-- **Description**: AI-powered feature verification system with automated checks and autonomous exploration
-
-### capabilities
-- **Path**: `src/capabilities`
-- **Status**: complete
-- **Description**: Project capability detection with AI discovery, caching, and git invalidation
-
-### tdd-guidance
-- **Path**: `src/tdd-guidance`
-- **Status**: complete
-- **Description**: TDD guidance generation - converts acceptance criteria to test case suggestions
-
-### verification-store
-- **Path**: `src/verification-store`
-- **Status**: complete
-- **Description**: Persistence layer for verification results with per-feature subdirectories
-
-### agents
-- **Path**: `src/agents.ts`
-- **Status**: complete
-- **Description**: AI agent subprocess management (Claude, Gemini, Codex CLI integration)
+- **Description**: Command handlers for all CLI subcommands (init, next, status, check, done, impact, analyze, scan, agents)
 
 ### feature-list
 - **Path**: `src/feature-list.ts`
 - **Status**: complete
-- **Description**: Feature list operations - load, save, merge, status management
+- **Description**: Feature list CRUD operations, selection algorithms, status management, TDD migration, and statistics
 
-### progress-log
-- **Path**: `src/progress-log.ts`
+### types
+- **Path**: `src/types.ts`
 - **Status**: complete
-- **Description**: Progress log operations for session handoff and audit
+- **Description**: Core TypeScript type definitions for features, progress logs, surveys, and CLI options
+
+### verifier
+- **Path**: `src/verifier/`
+- **Status**: complete
+- **Description**: AI-powered feature verification system with TDD verification, autonomous mode, check execution, and result formatting
+
+### capabilities
+- **Path**: `src/capabilities/`
+- **Status**: complete
+- **Description**: Project capability detection with memory cache, disk cache, git invalidation, and AI discovery
+
+### tdd-guidance
+- **Path**: `src/tdd-guidance/`
+- **Status**: complete
+- **Description**: TDD guidance generation with criterion mapping, skeleton generation, and E2E scenario generation
+
+### verification-store
+- **Path**: `src/verification-store/`
+- **Status**: complete
+- **Description**: Verification result persistence with index operations, migration support, and legacy store compatibility
+
+### gitignore
+- **Path**: `src/gitignore/`
+- **Status**: complete
+- **Description**: .gitignore generation with GitHub API client, bundled templates, and language-based detection
+
+### agents
+- **Path**: `src/agents.ts`
+- **Status**: complete
+- **Description**: AI agent subprocess management for Claude, Gemini, and Codex CLI tools
 
 ### ai-scanner
 - **Path**: `src/ai-scanner.ts`
 - **Status**: complete
-- **Description**: AI-powered autonomous project scanner for codebase analysis
+- **Description**: AI-powered project scanner for autonomous codebase analysis and feature discovery
 
-### init-helpers
-- **Path**: `src/init-helpers.ts`
+### progress-log
+- **Path**: `src/progress-log.ts`
 - **Status**: complete
-- **Description**: Helper functions for harness initialization with AI-assisted merging
-
-### test-discovery
-- **Path**: `src/test-discovery.ts`
-- **Status**: complete
-- **Description**: Test discovery and selective test execution based on changes
+- **Description**: Progress log operations for session handoff with entry formatting and parsing
 
 ### impact-analyzer
 - **Path**: `src/impact-analyzer.ts`
 - **Status**: complete
-- **Description**: Dependency graph and impact analysis for feature changes
-
-### git-utils
-- **Path**: `src/git-utils.ts`
-- **Status**: complete
-- **Description**: Git operations for auto-commit, diff, and status checking
-
-### upgrade
-- **Path**: `src/upgrade.ts`
-- **Status**: complete
-- **Description**: Auto-upgrade utility with npm version checking and interactive prompts
-
-### schema
-- **Path**: `src/schema.ts`
-- **Status**: complete
-- **Description**: JSON Schema validation for feature_list.json using ajv
-
-### prompts
-- **Path**: `src/prompts.ts`
-- **Status**: complete
-- **Description**: Prompt templates for CLAUDE.md generation and documentation
-
-### timeout-config
-- **Path**: `src/timeout-config.ts`
-- **Status**: complete
-- **Description**: Centralized timeout configuration with environment variable support
-
-### debug
-- **Path**: `src/debug.ts`
-- **Status**: complete
-- **Description**: Debug logging utility with namespace-based conditional logging
+- **Description**: Impact analysis for feature changes with dependency graphs and topological sorting
 
 ### test-gate
 - **Path**: `src/test-gate.ts`
 - **Status**: complete
-- **Description**: Test file gate verification before feature completion
+- **Description**: Test file gate verification for TDD workflow enforcement
+
+### git-utils
+- **Path**: `src/git-utils.ts`
+- **Status**: complete
+- **Description**: Git utility functions for commit, add, status checks, and repository initialization
+
+### schema
+- **Path**: `src/schema.ts`
+- **Status**: complete
+- **Description**: JSON Schema validation for feature_list.json using AJV
+
+### upgrade
+- **Path**: `src/upgrade.ts`
+- **Status**: complete
+- **Description**: Auto-upgrade utility with npm registry version checking and interactive upgrade prompts
+
+### prompts
+- **Path**: `src/prompts.ts`
+- **Status**: complete
+- **Description**: Prompt templates for CLAUDE.md generation and feature guidance
+
+### init-helpers
+- **Path**: `src/init-helpers.ts`
+- **Status**: complete
+- **Description**: Helper functions for init command including project detection and file generation
 
 ### plugins
-- **Path**: `plugins/agent-foreman`
+- **Path**: `plugins/`
 - **Status**: complete
-- **Description**: Claude Code plugin with commands, skills, and agent definitions
+- **Description**: Claude Code plugin with slash commands, skills, and agent definitions
 
 ## Feature Completion Status
 
@@ -192,6 +192,12 @@ agent-foreman is a Long Task Harness for AI agents enabling feature-driven devel
 | refactor.capabilities.split | Split project-capabilities.ts (837 lines) into 5 focused modules under src/capabilities/ directory. | refactor | ✅ passing |
 | refactor.verification-store.split | Split verification-store.ts (773 lines) into 4 focused modules under src/verification-store/ directory. | refactor | ✅ passing |
 | refactor.tdd-guidance.split | Split tdd-guidance.ts (705 lines) into 5 focused modules under src/tdd-guidance/ directory. | refactor | ✅ passing |
+| gitignore.bundledTemplates | Bundle top 6 GitHub gitignore templates (Node, Python, Go, Rust, Java, Nextjs) for offline/instant access. | gitignore | ✅ passing |
+| gitignore.githubApi | GitHub API client for fetching gitignore templates with local caching (7-day TTL) at ~/.agent-foreman/gitignore-cache/. | gitignore | ✅ passing |
+| gitignore.generator | Main gitignore generator with config file and language detection, template mapping, and section-based content generation. | gitignore | ✅ passing |
+| gitignore.minimalProtection | Add minimal .gitignore creation in gitInit() for immediate protection when initializing a new git repository. | gitignore | ✅ passing |
+| gitignore.comprehensiveGeneration | Add comprehensive .gitignore generation in generateHarnessFiles() using detected capabilities and config files. | gitignore | ✅ passing |
+| gitignore.tests | Comprehensive test coverage for gitignore generation including API client, generator, and integration tests. | gitignore | ✅ passing |
 
 ## Completion Assessment
 
@@ -199,15 +205,16 @@ agent-foreman is a Long Task Harness for AI agents enabling feature-driven devel
 
 **Notes:**
 - All features are passing
-- Completed 62/62 features
-- Last updated: 2025-12-05
+- Completed 68/68 features
+- Last updated: 2025-12-08
 
 ## Recommendations
 
-- Consider adding E2E tests for CLI commands
-- Add more comprehensive error handling documentation
-- Consider adding telemetry for usage analytics
-- Document the plugin development workflow for third-party extensions
+- Add integration tests for full CLI workflow end-to-end scenarios
+- Consider adding web dashboard for visual feature tracking
+- Add support for additional AI agents as they become available
+- Implement feature branching support for parallel development
+- Add metrics/analytics for feature completion velocity tracking
 
 ## Commands
 

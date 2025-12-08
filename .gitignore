@@ -33,3 +33,9 @@ npm-debug.log*
 # Generated harness files (for testing)
 ai/
 CLAUDE.md
+
+# Generated files (build)
+src/gitignore/embedded-templates.generated.ts
+src/plugins-bundle.generated.ts
+src/version.generated.ts
+dist/bin/

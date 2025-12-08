@@ -12,6 +12,16 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// Try to import embedded templates (available in compiled binary)
+// Falls back to file system access in development mode
+let EMBEDDED_TEMPLATES: Record<string, string> = {};
+try {
+  const embedded = await import("./embedded-templates.generated.js");
+  EMBEDDED_TEMPLATES = embedded.EMBEDDED_TEMPLATES;
+} catch {
+  // Not in compiled mode or generated file doesn't exist
+}
+
 /**
  * List of bundled template names
  */
@@ -43,12 +53,22 @@ export function getBundledTemplatePath(name: BundledTemplateName): string {
 /**
  * Get a bundled template by name (synchronous)
  * Returns null if template doesn't exist
+ *
+ * Priority:
+ * 1. Embedded templates (for compiled binary)
+ * 2. File system (for development)
  */
 export function getBundledTemplate(name: string): string | null {
   if (!isBundledTemplate(name)) {
     return null;
   }
 
+  // Try embedded templates first (compiled binary mode)
+  if (EMBEDDED_TEMPLATES[name]) {
+    return EMBEDDED_TEMPLATES[name];
+  }
+
+  // Fall back to file system (development mode)
   const templatePath = getBundledTemplatePath(name);
 
   if (!existsSync(templatePath)) {
@@ -95,11 +115,16 @@ export function verifyBundledTemplates(): {
   const missing: BundledTemplateName[] = [];
 
   for (const name of BUNDLED_TEMPLATES) {
-    const templatePath = getBundledTemplatePath(name);
-    if (existsSync(templatePath)) {
+    // Check embedded first, then file system
+    if (EMBEDDED_TEMPLATES[name]) {
       available.push(name);
     } else {
-      missing.push(name);
+      const templatePath = getBundledTemplatePath(name);
+      if (existsSync(templatePath)) {
+        available.push(name);
+      } else {
+        missing.push(name);
+      }
     }
   }
 

@@ -16,6 +16,15 @@ const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const CACHE_FILE = ".agent-foreman-upgrade-check";
 const PLUGIN_DIR = ".claude/plugins/marketplaces/agent-foreman";
 
+// Try to import embedded version (available in compiled binary)
+let EMBEDDED_VERSION: string | null = null;
+try {
+  const embedded = await import("./version.generated.js");
+  EMBEDDED_VERSION = embedded.EMBEDDED_VERSION;
+} catch {
+  // Not in compiled mode or generated file doesn't exist
+}
+
 export interface UpgradeCheckResult {
   needsUpgrade: boolean;
   currentVersion: string;
@@ -48,8 +57,15 @@ function getPluginDirPath(): string {
 
 /**
  * Get the current package version from package.json
+ * Uses embedded version in compiled binary, falls back to package.json
  */
 export function getCurrentVersion(): string {
+  // Try embedded version first (compiled binary mode)
+  if (EMBEDDED_VERSION) {
+    return EMBEDDED_VERSION;
+  }
+
+  // Fall back to package.json (development mode)
   try {
     // Get the directory of this module
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
