@@ -18,6 +18,8 @@ import { callAnyAvailableAgent, printAgentStatus } from "./agents.js";
 import { appendProgressLog, createInitEntry } from "./progress-log.js";
 import { debugInit } from "./debug.js";
 import { getTimeout, type TimeoutKey } from "./timeout-config.js";
+import { ensureComprehensiveGitignore } from "./gitignore/generator.js";
+import { loadFullCache } from "./capabilities/disk-cache.js";
 
 /**
  * Result from parsing combined AI merge response
@@ -292,6 +294,29 @@ export async function generateHarnessFiles(
   console.log(chalk.gray("  Detecting project capabilities..."));
   const capabilities = await detectCapabilities(cwd, { force: true, verbose: false });
   console.log(chalk.green("✓ Capabilities detected and cached"));
+
+  // Step 6b: Ensure comprehensive .gitignore exists
+  if (mode !== "scan") {
+    const cache = await loadFullCache(cwd);
+    const configFiles = cache?.trackedFiles || [];
+
+    const gitignoreResult = await ensureComprehensiveGitignore(
+      cwd,
+      configFiles,
+      capabilities.languages || [],
+      { bundledOnly: false }
+    );
+
+    if (gitignoreResult.action === "created") {
+      const templateInfo = gitignoreResult.templates?.length
+        ? ` (using ${gitignoreResult.templates.join(", ")} templates)`
+        : "";
+      console.log(chalk.green(`✓ Generated .gitignore${templateInfo}`));
+    } else if (gitignoreResult.action === "updated") {
+      console.log(chalk.green("✓ Updated .gitignore (added missing patterns)"));
+    }
+    // If skipped, no message needed
+  }
 
   // Check if we can use combined merge optimization
   const initScriptPath = path.join(cwd, "ai/init.sh");
