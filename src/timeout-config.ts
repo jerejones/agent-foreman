@@ -137,8 +137,9 @@ function loadEnvFile(): void {
               (value.startsWith("'") && value.endsWith("'"))) {
             value = value.slice(1, -1);
           }
-          // Only set if not already set in environment
-          if (!process.env[key]) {
+          // For AGENT_FOREMAN_AGENTS: .env always wins (project-level config)
+          // For other vars: only set if not already in environment
+          if (key === AGENT_ENV_VAR || !process.env[key]) {
             process.env[key] = value;
           }
         }
@@ -298,4 +299,12 @@ export function getAgentPriority(): string[] {
   }
 
   return validAgents;
+}
+
+/**
+ * Reset env loaded state for testing purposes
+ * @internal This function is only for use in tests
+ */
+export function _resetEnvLoadedForTesting(): void {
+  envLoaded = false;
 }
