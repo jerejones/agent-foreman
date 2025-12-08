@@ -31,7 +31,7 @@ agent-foreman done <id>         # 4. Mark complete + commit
 
 1. `needs_review` → may be broken
 2. `failing` → not implemented
-3. Lower `priority` number → higher priority
+3. Lower `priority` number = higher priority (1 is highest, 10 is lower)
 
 ## Options
 

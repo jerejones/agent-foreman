@@ -31,6 +31,14 @@ ${goal}
 - \`failed\` - Implementation attempted but verification failed
 - \`deprecated\` - No longer needed
 
+### Feature Selection Priority
+
+When running \`agent-foreman next\`, features are selected in this order:
+1. **Status first**: \`needs_review\` > \`failing\` (other statuses excluded)
+2. **Then priority number**: Lower number = higher priority (1 is highest)
+
+Example: A feature with \`priority: 1\` runs before \`priority: 10\`
+
 ### Workflow for Each Session
 
 1. **Start** - Read \`ai/feature_list.json\` and recent \`ai/progress.log\`
@@ -130,7 +138,9 @@ Write criteria as testable statements:
 
 ### Feature JSON Schema
 
-**IMPORTANT**: When adding or modifying features in \`ai/feature_list.json\`, use this exact schema:
+**IMPORTANT**: When adding or modifying features in \`ai/feature_list.json\`, use this exact schema.
+
+**Note**: \`priority\` uses lower number = higher priority (1 is highest, 10 is lower).
 
 \`\`\`json
 {

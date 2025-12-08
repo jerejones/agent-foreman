@@ -98,7 +98,7 @@ agent-foreman done <id>        # 5. Mark complete + commit
 
 1. `needs_review` status (highest)
 2. `failing` status
-3. Lower priority number
+3. By priority number (lower number = higher priority, e.g., 1 > 10)
 
 ## TDD Mode Configuration
 
