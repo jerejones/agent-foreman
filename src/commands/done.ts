@@ -71,16 +71,7 @@ export async function runDone(
     feature.testRequirements?.unit?.required ||
     feature.testRequirements?.e2e?.required;
 
-  // In strict mode, warn if skipping check
-  if (skipCheck && isStrictMode) {
-    console.log(
-      chalk.bold.yellow("\n⚠ WARNING: Strict TDD mode is enabled but verification is being skipped.")
-    );
-    console.log(
-      chalk.yellow("   In strict mode, tests are required for all features.")
-    );
-    console.log(chalk.gray("   Use --no-skip-check to enforce TDD verification.\n"));
-  }
+  // In strict mode, skip warning output (keep output minimal for AI agents)
 
   // ─────────────────────────────────────────────────────────────────
   // TDD Gate: Verify test files exist (strict mode or explicit requirements)
@@ -377,15 +368,19 @@ Feature: ${featureId}
       console.log(chalk.white(`   Next up: ${next.id}`));
       console.log(chalk.white(`   Progress: ${percent}% complete`));
 
-      console.log(chalk.bold.yellow("\n   LOOP INSTRUCTION (DO NOT IGNORE):"));
-      console.log(chalk.white("   You are in ALL-FEATURES loop mode. Continue workflow:"));
+      console.log(chalk.bold.red("\n   ⛔ NO QUESTIONS ALLOWED"));
+      console.log(chalk.white("   - NEVER ask: \"Should I...\", \"Do you want...\", \"Which approach...\""));
+      console.log(chalk.white("   - ALWAYS make autonomous decisions and proceed"));
+      console.log(chalk.white("   - On ANY error: mark as failed, continue to next"));
+
+      console.log(chalk.bold.yellow("\n   LOOP INSTRUCTION:"));
       console.log(chalk.gray("   1. agent-foreman next"));
       console.log(chalk.gray("   2. Implement feature"));
       console.log(chalk.gray("   3. agent-foreman check <feature_id>"));
       console.log(chalk.gray("   4. agent-foreman done <feature_id>"));
       console.log(chalk.gray("   5. REPEAT until all features processed"));
 
-      console.log(chalk.bold.green("\n   ➤ Do NOT stop. Continue to next feature NOW."));
+      console.log(chalk.bold.green("\n   ➤ Do NOT stop. Do NOT ask questions. Continue NOW."));
       console.log(chalk.bold.cyan("══════════════════════════════════════════════════════════════\n"));
     }
   } else {
