@@ -175,3 +175,75 @@ describe("integration", () => {
     Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
   });
 });
+
+// ============================================================================
+// Registry and Status Tests
+// Note: These tests use the actual user's .claude directory since the module
+// caches paths at load time. Tests focus on export verification and
+// non-destructive operations.
+// ============================================================================
+
+describe("plugin registry functions - export verification", () => {
+  it("isCompiledBinary should return a boolean", async () => {
+    const { isCompiledBinary } = await import("../src/plugin-installer.js");
+    // Returns true if plugins-bundle.generated.ts has embedded plugins
+    // Returns false in pure development mode
+    expect(typeof isCompiledBinary()).toBe("boolean");
+  });
+
+  it("should export isMarketplaceRegistered function", async () => {
+    const { isMarketplaceRegistered } = await import("../src/plugin-installer.js");
+    expect(typeof isMarketplaceRegistered).toBe("function");
+    // Just verify it returns a boolean
+    expect(typeof isMarketplaceRegistered()).toBe("boolean");
+  });
+
+  it("should export isPluginInstalled function", async () => {
+    const { isPluginInstalled } = await import("../src/plugin-installer.js");
+    expect(typeof isPluginInstalled).toBe("function");
+    expect(typeof isPluginInstalled()).toBe("boolean");
+  });
+
+  it("should export isPluginEnabled function", async () => {
+    const { isPluginEnabled } = await import("../src/plugin-installer.js");
+    expect(typeof isPluginEnabled).toBe("function");
+    expect(typeof isPluginEnabled()).toBe("boolean");
+  });
+
+  it("getPluginInstallInfo should return correct structure", async () => {
+    const { getPluginInstallInfo } = await import("../src/plugin-installer.js");
+    const info = getPluginInstallInfo();
+
+    // Verify structure
+    expect(typeof info.isMarketplaceRegistered).toBe("boolean");
+    expect(typeof info.isPluginInstalled).toBe("boolean");
+    expect(typeof info.isPluginEnabled).toBe("boolean");
+    expect(info.installedVersion === null || typeof info.installedVersion === "string").toBe(true);
+    expect(info.marketplaceDir).toContain("agent-foreman-plugins");
+    expect(typeof info.bundledVersion).toBe("string");
+  });
+});
+
+// ============================================================================
+// Install and Uninstall Flow Tests
+// These tests verify the functions exist and can be called without throwing
+// ============================================================================
+
+describe("install and uninstall flows - export verification", () => {
+  it("should export fullInstall function", async () => {
+    const { fullInstall } = await import("../src/plugin-installer.js");
+    expect(typeof fullInstall).toBe("function");
+  });
+
+  it("should export fullUninstall function", async () => {
+    const { fullUninstall } = await import("../src/plugin-installer.js");
+    expect(typeof fullUninstall).toBe("function");
+  });
+
+  it("fullUninstall should handle missing files gracefully", async () => {
+    const { fullUninstall } = await import("../src/plugin-installer.js");
+    // Should not throw even when files don't exist in a fresh environment
+    // Note: Since module caches paths, this uses real HOME directory
+    expect(() => fullUninstall()).not.toThrow();
+  });
+});

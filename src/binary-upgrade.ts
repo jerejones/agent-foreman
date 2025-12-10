@@ -51,10 +51,23 @@ export function getBinaryName(): string {
 
 /**
  * Get current executable path
- * For Bun compiled binaries, process.execPath points to the binary itself
+ *
+ * For Bun compiled binaries, we need to find the actual agent-foreman binary.
+ * process.execPath can return node/bun runtime instead of our binary in some cases.
+ *
+ * Detection strategy:
+ * 1. Check process.argv[0] - often contains the actual script/binary path
+ * 2. Check process.execPath - for standalone Bun binaries
+ * 3. Validate the path actually points to agent-foreman, not node/bun
  */
 export function getCurrentExecutablePath(): string {
-  let execPath = process.execPath;
+  // Strategy 1: Check argv[0] which often has the actual binary/script path
+  let execPath = process.argv[0];
+
+  // If argv[0] is a relative path or doesn't exist, try execPath
+  if (!execPath || !path.isAbsolute(execPath) || !fs.existsSync(execPath)) {
+    execPath = process.execPath;
+  }
 
   // Resolve any symbolic links to get the actual file
   try {
@@ -64,6 +77,55 @@ export function getCurrentExecutablePath(): string {
   }
 
   return execPath;
+}
+
+/**
+ * Validate that a path is safe to replace (is actually agent-foreman binary)
+ * Returns null if safe, error message if unsafe
+ */
+export function validateExecutablePath(execPath: string): string | null {
+  const basename = path.basename(execPath).toLowerCase();
+  // Normalize path separators for cross-platform checks
+  const normalizedPath = execPath.toLowerCase().replace(/\\/g, "/");
+
+  // List of known runtime executables we should NEVER replace
+  const forbiddenBinaries = ["node", "bun", "deno", "npm", "npx", "pnpm", "yarn"];
+
+  // Check if basename matches a forbidden binary
+  for (const forbidden of forbiddenBinaries) {
+    if (basename === forbidden || basename === `${forbidden}.exe`) {
+      return `Refusing to replace ${forbidden} binary. Path: ${execPath}`;
+    }
+  }
+
+  // Check if the path looks like a node/bun installation directory
+  // These patterns work after normalizing backslashes to forward slashes
+  const forbiddenPaths = [
+    "/node_modules/",
+    "/.nvm/",
+    "/.bun/",
+    "/nodejs/",
+    "/node/bin/",
+    "/bun/bin/",
+  ];
+
+  for (const forbidden of forbiddenPaths) {
+    if (normalizedPath.includes(forbidden.toLowerCase())) {
+      return `Refusing to replace binary in ${forbidden}. Path: ${execPath}`;
+    }
+  }
+
+  // Ensure the binary name contains "agent-foreman" or "foreman"
+  const validNames = ["agent-foreman", "foreman"];
+  const hasValidName = validNames.some(
+    (name) => basename.includes(name) || normalizedPath.includes(name)
+  );
+
+  if (!hasValidName) {
+    return `Binary path does not appear to be agent-foreman: ${execPath}`;
+  }
+
+  return null; // Safe to proceed
 }
 
 /**
@@ -222,6 +284,22 @@ export async function performBinaryUpgrade(
   console.log(chalk.blue("\n📦 Upgrading agent-foreman binary..."));
 
   try {
+    // CRITICAL: Validate current executable path before any operations
+    const currentPath = getCurrentExecutablePath();
+    const validationError = validateExecutablePath(currentPath);
+
+    if (validationError) {
+      return {
+        success: false,
+        error:
+          `Safety check failed: ${validationError}\n` +
+          `  This prevents accidental replacement of system binaries.\n` +
+          `  Download manually: https://github.com/${GITHUB_REPO}/releases/latest`,
+      };
+    }
+
+    console.log(chalk.gray(`  Current binary: ${currentPath}`));
+
     // Fetch release info
     const release = await fetchLatestRelease();
     if (!release) {

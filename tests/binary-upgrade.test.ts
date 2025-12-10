@@ -10,6 +10,7 @@ import * as path from "node:path";
 import {
   getBinaryName,
   getCurrentExecutablePath,
+  validateExecutablePath,
   parseVersionFromTag,
   fetchLatestRelease,
   fetchLatestGitHubVersion,
@@ -147,6 +148,104 @@ describe("Binary Upgrade Utils", () => {
       const execPath = getCurrentExecutablePath();
       // Falls back to process.execPath
       expect(typeof execPath).toBe("string");
+    });
+  });
+
+  // ============================================================================
+  // validateExecutablePath Tests - Critical Safety Checks
+  // ============================================================================
+
+  describe("validateExecutablePath", () => {
+    it("should return null (safe) for valid agent-foreman paths", () => {
+      expect(validateExecutablePath("/usr/local/bin/agent-foreman")).toBeNull();
+      expect(validateExecutablePath("/home/user/.local/bin/agent-foreman")).toBeNull();
+      expect(validateExecutablePath("/opt/agent-foreman-darwin-arm64")).toBeNull();
+      expect(validateExecutablePath("C:\\Program Files\\agent-foreman.exe")).toBeNull();
+      expect(validateExecutablePath("/Users/test/Downloads/agent-foreman-linux-x64")).toBeNull();
+    });
+
+    it("should return null (safe) for paths containing foreman", () => {
+      expect(validateExecutablePath("/usr/bin/foreman")).toBeNull();
+      expect(validateExecutablePath("/home/user/foreman-cli")).toBeNull();
+    });
+
+    it("should block node binary - CRITICAL SAFETY CHECK", () => {
+      const error = validateExecutablePath("/usr/local/bin/node");
+      expect(error).not.toBeNull();
+      expect(error).toContain("Refusing to replace node binary");
+    });
+
+    it("should block bun binary - CRITICAL SAFETY CHECK", () => {
+      const error = validateExecutablePath("/home/user/.bun/bin/bun");
+      expect(error).not.toBeNull();
+      expect(error).toContain("Refusing to replace");
+    });
+
+    it("should block node.exe on Windows - CRITICAL SAFETY CHECK", () => {
+      const error = validateExecutablePath("C:\\Program Files\\nodejs\\node.exe");
+      expect(error).not.toBeNull();
+      // May match either the forbidden binary check or the forbidden path check
+      expect(error).toContain("Refusing to replace");
+    });
+
+    it("should block deno binary", () => {
+      const error = validateExecutablePath("/usr/bin/deno");
+      expect(error).not.toBeNull();
+      expect(error).toContain("Refusing to replace deno binary");
+    });
+
+    it("should block npm binary", () => {
+      const error = validateExecutablePath("/usr/local/bin/npm");
+      expect(error).not.toBeNull();
+      expect(error).toContain("Refusing to replace npm binary");
+    });
+
+    it("should block npx binary", () => {
+      const error = validateExecutablePath("/usr/local/bin/npx");
+      expect(error).not.toBeNull();
+      expect(error).toContain("Refusing to replace npx binary");
+    });
+
+    it("should block pnpm binary", () => {
+      const error = validateExecutablePath("/usr/local/bin/pnpm");
+      expect(error).not.toBeNull();
+      expect(error).toContain("Refusing to replace pnpm binary");
+    });
+
+    it("should block yarn binary", () => {
+      const error = validateExecutablePath("/usr/local/bin/yarn");
+      expect(error).not.toBeNull();
+      expect(error).toContain("Refusing to replace yarn binary");
+    });
+
+    it("should block paths inside node_modules", () => {
+      const error = validateExecutablePath("/home/user/project/node_modules/.bin/something");
+      expect(error).not.toBeNull();
+      expect(error).toContain("Refusing to replace binary in /node_modules/");
+    });
+
+    it("should block paths inside .nvm directory", () => {
+      const error = validateExecutablePath("/home/user/.nvm/versions/node/v18.0.0/bin/node");
+      expect(error).not.toBeNull();
+      expect(error).toContain("Refusing to replace");
+    });
+
+    it("should block paths inside .bun directory", () => {
+      const error = validateExecutablePath("/home/user/.bun/bin/bun");
+      expect(error).not.toBeNull();
+      expect(error).toContain("Refusing to replace");
+    });
+
+    it("should block unrecognized binaries without agent-foreman in name", () => {
+      const error = validateExecutablePath("/usr/local/bin/some-other-tool");
+      expect(error).not.toBeNull();
+      expect(error).toContain("does not appear to be agent-foreman");
+    });
+
+    it("should be case-insensitive for safety checks", () => {
+      expect(validateExecutablePath("/usr/local/bin/NODE")).not.toBeNull();
+      expect(validateExecutablePath("/usr/local/bin/Node.exe")).not.toBeNull();
+      expect(validateExecutablePath("/usr/local/bin/AGENT-FOREMAN")).toBeNull();
     });
   });
 
@@ -342,6 +441,43 @@ describe("Binary Upgrade Utils", () => {
       (fs.writeFileSync as ReturnType<typeof vi.fn>).mockImplementation(() => {});
       (os.platform as ReturnType<typeof vi.fn>).mockReturnValue("darwin");
       (os.arch as ReturnType<typeof vi.fn>).mockReturnValue("arm64");
+      // Default to safe agent-foreman path
+      (fs.realpathSync as ReturnType<typeof vi.fn>).mockReturnValue("/usr/local/bin/agent-foreman");
+    });
+
+    it("should return error when safety validation fails - blocks node replacement", async () => {
+      // Simulate the bug scenario: process.execPath returns node
+      (fs.realpathSync as ReturnType<typeof vi.fn>).mockReturnValue("/usr/local/bin/node");
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+      const result = await performBinaryUpgrade("1.0.0", "2.0.0");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Safety check failed");
+      expect(result.error).toContain("Refusing to replace node binary");
+    });
+
+    it("should return error when safety validation fails - blocks bun replacement", async () => {
+      // Simulate bun runtime being detected
+      (fs.realpathSync as ReturnType<typeof vi.fn>).mockReturnValue("/home/user/.bun/bin/bun");
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+      const result = await performBinaryUpgrade("1.0.0", "2.0.0");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Safety check failed");
+    });
+
+    it("should return error when safety validation fails - unrecognized binary", async () => {
+      // Simulate unrecognized binary
+      (fs.realpathSync as ReturnType<typeof vi.fn>).mockReturnValue("/usr/bin/some-random-binary");
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+      const result = await performBinaryUpgrade("1.0.0", "2.0.0");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Safety check failed");
+      expect(result.error).toContain("does not appear to be agent-foreman");
     });
 
     it("should return error when release fetch fails", async () => {
