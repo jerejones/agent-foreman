@@ -118,6 +118,21 @@ When `tddMode: "strict"`:
 - All features auto-migrate to `testRequirements.unit.required: true`
 - TDD workflow enforced: RED → GREEN → REFACTOR
 
+### TDD Workflow (MANDATORY in strict mode)
+
+**AI agents MUST follow this exact sequence:**
+
+1. **Get feature**: `agent-foreman next <id>`
+2. **RED** - Create test file, write failing tests
+3. **Run tests** - MUST FAIL (confirms tests are valid)
+4. **GREEN** - Write MINIMUM code to pass tests
+5. **Run tests** - MUST PASS
+6. **REFACTOR** - Clean up under test protection
+7. **Verify**: `agent-foreman check <id>`
+8. **Complete**: `agent-foreman done <id>`
+
+**CRITICAL: DO NOT write implementation code before tests exist!**
+
 ### User Control via Natural Language
 
 | User Says | Action |

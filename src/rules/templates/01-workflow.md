@@ -12,7 +12,91 @@
 
 ---
 
-## Single Feature Mode
+## IMPORTANT: TDD Mode Check
+
+Before implementing ANY feature, check if strict TDD mode is active:
+- Look for `!!! TDD ENFORCEMENT ACTIVE !!!` in `agent-foreman next` output
+- Or check `ai/feature_list.json` for `"tddMode": "strict"`
+
+**If TDD mode is strict → MUST follow TDD Workflow below**
+**If TDD mode is recommended/disabled → May follow Standard Workflow**
+
+---
+
+## TDD Workflow (MANDATORY when tddMode: strict)
+
+**AI agents MUST follow these steps EXACTLY in order. DO NOT skip any step.**
+
+```bash
+# STEP 1: Get feature and TDD guidance
+agent-foreman next <feature_id>
+# Read the TDD GUIDANCE section carefully
+# Note the suggested test files and test cases
+```
+
+### STEP 2: RED - Write Failing Tests FIRST
+
+**This step is MANDATORY. DO NOT write implementation code yet.**
+
+1. Create test file at the suggested path (e.g., `tests/module/feature.test.ts`)
+2. Write test cases for EACH acceptance criterion
+3. Run tests to verify they FAIL:
+   ```bash
+   CI=true <your-test-command>  # e.g., npm test, pnpm test, yarn test, vitest
+   ```
+4. **Tests MUST fail** - this confirms tests are valid and testing the right thing
+
+Example test structure:
+```typescript
+describe('feature-name', () => {
+  it('should satisfy acceptance criterion 1', () => {
+    // Test implementation
+    expect(result).toBe(expected);
+  });
+
+  it('should satisfy acceptance criterion 2', () => {
+    // Test implementation
+  });
+});
+```
+
+### STEP 3: GREEN - Implement Minimum Code
+
+**Only now may you write implementation code.**
+
+1. Write the MINIMUM code needed to pass tests
+2. Do not add extra features or optimizations yet
+3. Run tests to verify they PASS:
+   ```bash
+   CI=true <your-test-command>
+   ```
+4. **All tests MUST pass** before proceeding
+
+### STEP 4: REFACTOR - Clean Up Under Test Protection
+
+1. Improve code structure, naming, readability
+2. Remove duplication
+3. Run tests after EACH change to ensure they still pass:
+   ```bash
+   CI=true <your-test-command>
+   ```
+4. **Tests MUST remain passing** throughout refactoring
+
+### STEP 5: Verify and Complete
+
+```bash
+# Verify implementation meets all criteria
+agent-foreman check <feature_id>
+
+# If check passes, complete the feature
+agent-foreman done <feature_id>
+```
+
+---
+
+## Standard Workflow (when tddMode: recommended or disabled)
+
+### Single Feature Mode
 
 When feature_id is provided:
 
@@ -30,9 +114,7 @@ agent-foreman check <feature_id>
 agent-foreman done <feature_id>
 ```
 
----
-
-## All Features Mode
+### All Features Mode
 
 When no feature_id:
 
@@ -64,6 +146,7 @@ agent-foreman done <feature_id>
 
 | Rule | Action |
 |------|--------|
+| TDD mode strict? | MUST follow TDD Workflow (RED → GREEN → REFACTOR) |
 | No skipping | Always: status → next → implement → check → done |
 | One at a time | Complete current before next |
 | No editing criteria | Implement exactly as specified |

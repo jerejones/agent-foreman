@@ -238,15 +238,37 @@ To change mode manually, edit `ai/feature_list.json`:
 
 ### TDD Workflow
 
-Run `agent-foreman next` to see TDD guidance:
-- Suggested test files for the current feature
-- Acceptance criteria → test case mapping
-- Test skeleton preview
+**IMPORTANT: When `tddMode: "strict"`, AI agents MUST follow this workflow exactly:**
 
-Follow the **RED → GREEN → REFACTOR** cycle:
-1. **RED**: View acceptance criteria (they are your failing tests)
-2. **GREEN**: Write minimum code to satisfy criteria
-3. **REFACTOR**: Clean up under test protection
+#### Step 1: Get Feature
+```bash
+agent-foreman next <feature_id>
+```
+Read the TDD GUIDANCE section - note suggested test files.
+
+#### Step 2: RED - Write Failing Tests FIRST
+**DO NOT write implementation code yet.**
+
+1. Create test file at suggested path
+2. Write test cases for EACH acceptance criterion
+3. Run tests: `CI=true pnpm test` (or your test command)
+4. **Verify tests FAIL** - confirms tests are valid
+
+#### Step 3: GREEN - Implement Minimum Code
+**Only now write implementation code.**
+
+1. Write MINIMUM code to pass tests
+2. Run tests: verify they PASS
+
+#### Step 4: REFACTOR
+1. Improve code quality
+2. Run tests after each change - must stay passing
+
+#### Step 5: Complete
+```bash
+agent-foreman check <feature_id>
+agent-foreman done <feature_id>
+```
 
 ---
 

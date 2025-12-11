@@ -21,7 +21,23 @@ Wait for completion. Review the feature shown.
 | "preview" / "dry-run" | `agent-foreman next --dry-run` |
 | (default) | `agent-foreman next` |
 
-## After Step Command
+## After Next Command
+
+### Check TDD Mode First
+
+Look for `!!! TDD ENFORCEMENT ACTIVE !!!` in the output.
+
+**If TDD strict mode active → MUST follow TDD Workflow:**
+
+1. **RED** - Write failing tests FIRST (DO NOT write implementation yet)
+2. **Run tests** - Verify they FAIL
+3. **GREEN** - Implement MINIMUM code to pass tests
+4. **Run tests** - Verify they PASS
+5. **REFACTOR** - Clean up, run tests after each change
+6. **Verify** with: `agent-foreman check <feature_id>`
+7. **Complete** with: `agent-foreman done <feature_id>`
+
+**If TDD not strict → Standard Workflow:**
 
 1. **Read** the acceptance criteria shown
 2. **Implement** the feature to satisfy ALL criteria

@@ -29,6 +29,29 @@ description: Work on features - auto-complete all pending features or work on a 
 
 When feature_id is provided:
 
+### Check TDD Mode First
+
+Look for `!!! TDD ENFORCEMENT ACTIVE !!!` in `agent-foreman next` output.
+
+### TDD Workflow (when strict mode active)
+
+```bash
+# STEP 1: Get feature + TDD guidance
+agent-foreman next <feature_id>
+
+# STEP 2: RED - Write failing tests FIRST
+# Create test file, run tests - MUST FAIL
+
+# STEP 3: GREEN - Implement minimum code
+# Run tests - MUST PASS
+
+# STEP 4: REFACTOR + Verify + Complete
+agent-foreman check <feature_id>
+agent-foreman done <feature_id>
+```
+
+### Standard Workflow (when TDD not strict)
+
 ```bash
 # STEP 1: Get the specified feature
 agent-foreman next <feature_id>
