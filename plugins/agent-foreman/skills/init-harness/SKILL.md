@@ -1,9 +1,9 @@
 ---
 name: init-harness
-description: Creates AI agent task management structure with feature backlog, TDD enforcement, and progress tracking. Use when setting up agent-foreman, initializing feature-driven development, creating feature_list.json, or enabling TDD mode. Triggers on "init harness", "setup feature tracking", "create feature backlog", "enable strict TDD".
+description: Creates AI agent task management structure with feature backlog (ai/feature_list.json), TDD enforcement, and progress tracking. Use when setting up agent-foreman, initializing feature-driven development, creating feature backlog, or enabling TDD mode. Triggers on 'init harness', 'setup feature tracking', 'create feature backlog', 'enable strict TDD', 'initialize agent-foreman'.
 ---
 
-# ⚡ Init Harness
+# Init Harness
 
 **One command**: `agent-foreman init`
 
@@ -25,12 +25,7 @@ During init, you'll be prompted for TDD mode. **Recommended is the default** (te
 | "recommended" / "optional tests" / (default) | `recommended` | Tests suggested but not enforced |
 | "disable TDD" / "no TDD" | `disabled` | No TDD guidance |
 
-### Strict Mode Behavior
-
-- `agent-foreman check` blocks if test files missing
-- `agent-foreman done` blocks if test files missing
-- Features auto-migrate to `testRequirements.unit.required: true`
-- TDD workflow: RED → GREEN → REFACTOR enforced
+The prompt auto-skips after 10 seconds with recommended mode.
 
 ## Modes
 
@@ -64,15 +59,4 @@ ai/
 └── capabilities.json   # Detected test/lint/build
 CLAUDE.md               # AI agent instructions
 docs/ARCHITECTURE.md    # Auto-generated architecture doc
-```
-
-## Change TDD Mode Later
-
-Edit `ai/feature_list.json`:
-```json
-{
-  "metadata": {
-    "tddMode": "strict"
-  }
-}
 ```

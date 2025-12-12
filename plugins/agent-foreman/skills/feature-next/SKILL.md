@@ -1,9 +1,9 @@
 ---
 name: feature-next
-description: Implements a single feature following the next → implement → check → done workflow with TDD support. Use when working on one specific feature, implementing a single task from the backlog, or following TDD red-green-refactor cycle. Triggers on "next feature", "implement feature", "work on feature", "single feature mode".
+description: Implements a single feature following the next → implement → check → done workflow with TDD support. Use when working on one specific feature, implementing a single feature from the backlog, or following TDD red-green-refactor cycle. Triggers on 'next feature', 'next task', 'implement feature', 'work on feature', 'single feature mode', 'what should I work on'.
 ---
 
-# 🚀 Feature Next
+# Feature Next
 
 **One command**: `agent-foreman next`
 
@@ -16,45 +16,52 @@ agent-foreman next auth.login  # Specific feature
 
 ## Workflow
 
-### Check TDD Mode First
-
-Look for "!!! TDD ENFORCEMENT ACTIVE !!!" in agent-foreman next output.
-
-### TDD Workflow (when strict mode active)
-
-```
-next → RED (tests) → GREEN (implement) → REFACTOR → check → done
-```
-
-```bash
-agent-foreman next              # 1. Get task + TDD guidance
-# Create test file FIRST        # 2. Write failing tests
-# Run tests - MUST FAIL         # 3. Verify RED phase
-# ... implement minimum code    # 4. GREEN - pass tests
-# Run tests - MUST PASS         # 5. Verify GREEN phase
-# Refactor under test safety    # 6. Clean up
-agent-foreman check <id>        # 7. Verify implementation
-agent-foreman done <id>         # 8. Mark complete + commit
-```
-
-### Standard Workflow (when TDD not strict)
-
 ```
 next → implement → check → done
 ```
 
 ```bash
-agent-foreman next              # 1. Get task + acceptance criteria
+agent-foreman next              # 1. Get feature + acceptance criteria
 # ... implement the feature ... # 2. Write code
 agent-foreman check <id>        # 3. Verify implementation
 agent-foreman done <id>         # 4. Mark complete + commit
 ```
 
+### Check TDD Mode First
+
+Look for "!!! TDD ENFORCEMENT ACTIVE !!!" in `agent-foreman next` output.
+
+### TDD Workflow (when strict mode active)
+
+```bash
+# STEP 1: Get feature + TDD guidance
+agent-foreman next <feature_id>
+
+# STEP 2: RED - Write failing tests FIRST
+# Create test file at suggested path
+# Run tests: <your-test-command>
+# Verify tests FAIL (confirms tests are valid)
+
+# STEP 3: GREEN - Implement minimum code
+# Write minimum code to pass tests
+# Run tests: <your-test-command>
+# Verify tests PASS
+
+# STEP 4: REFACTOR - Clean up
+# Clean up code while keeping tests passing
+
+# STEP 5: Verify + Complete
+agent-foreman check <feature_id>
+agent-foreman done <feature_id>
+```
+
+**CRITICAL: DO NOT write implementation code before tests exist in strict TDD mode!**
+
 ## Priority Order
 
 1. `needs_review` → may be broken
 2. `failing` → not implemented
-3. Lower `priority` number = higher priority (1 is highest, 10 is lower)
+3. Lower `priority` number → higher priority
 
 ## Options
 
@@ -62,14 +69,16 @@ agent-foreman done <id>         # 4. Mark complete + commit
 |------|--------|
 | `--check` | Run tests before showing feature |
 | `--dry-run` | Preview without changes |
+| `--json` | Output as JSON for scripting |
+| `--quiet` | Suppress decorative output |
+| `--allow-dirty` | Allow with uncommitted changes |
+| `--refresh-guidance` | Force regenerate TDD guidance |
 
 ## Complete Options
 
 ```bash
-agent-foreman done <id>             # Skip verification + commit (default)
-agent-foreman done <id> --no-skip-check  # Run verification before marking complete
-agent-foreman done <id> --full --no-skip-check  # Run all tests + verification
-agent-foreman done <id> --skip-e2e  # Skip E2E tests
+agent-foreman done <id>            # Mark complete + commit
+agent-foreman done <id> --full     # Run all tests
+agent-foreman done <id> --skip-e2e # Skip E2E tests
 agent-foreman done <id> --no-commit # Manual commit
-agent-foreman done <id> --no-loop   # Disable continuation reminder
 ```

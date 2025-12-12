@@ -1,5 +1,7 @@
 ---
 description: Show current project status with feature completion and recent activity
+allowed-tools: Bash, Read, Glob, Grep
+argument-hint: [--json|--quiet]
 ---
 
 # EXECUTE NOW

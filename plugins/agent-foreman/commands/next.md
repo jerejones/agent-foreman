@@ -1,10 +1,12 @@
 ---
 description: Work on the next priority feature with guided implementation workflow
+allowed-tools: Bash, Read, Glob, Grep, Write, Edit
+argument-hint: [feature_id] [--check|--dry-run|--json|--quiet]
 ---
 
 # EXECUTE NOW
 
-Run this command immediately:
+**IMPORTANT**: Load the `feature-next` skill for TDD workflow details if strict mode is active.
 
 ```bash
 agent-foreman next
@@ -12,13 +14,19 @@ agent-foreman next
 
 Wait for completion. Review the feature shown.
 
-## If User Specifies Feature
+**Check for TDD Mode**: Look for "!!! TDD ENFORCEMENT ACTIVE !!!" in output.
+
+## Options
 
 | User Says | Execute |
 |-----------|---------|
 | Feature ID provided | `agent-foreman next <feature_id>` |
 | "check" / "test first" | `agent-foreman next --check` |
 | "preview" / "dry-run" | `agent-foreman next --dry-run` |
+| "json" / "as json" | `agent-foreman next --json` |
+| "quiet" / "minimal" | `agent-foreman next --quiet` |
+| "refresh guidance" / "regenerate" | `agent-foreman next --refresh-guidance` |
+| "allow dirty" / "uncommitted ok" | `agent-foreman next --allow-dirty` |
 | (default) | `agent-foreman next` |
 
 ## After Next Command

@@ -1,5 +1,7 @@
 ---
 description: Initialize or upgrade the long-task harness for feature-driven development
+allowed-tools: Bash, Read, Glob, Grep, Write, Edit
+argument-hint: [--mode new|scan]
 ---
 
 # EXECUTE NOW

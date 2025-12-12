@@ -1,9 +1,9 @@
 ---
 name: feature-run
-description: Executes unattended batch processing of all pending features with autonomous decision-making. Use when running all features automatically, batch processing features without supervision, or completing entire feature backlog. Triggers on "run all features", "complete all features", "batch feature processing", "unattended mode", "auto-complete features".
+description: Executes unattended batch processing of all pending features with autonomous decision-making. Use when running all features automatically, batch processing without supervision, completing entire feature backlog, or working on a specific feature by ID. Triggers on 'run all features', 'complete all features', 'batch processing', 'unattended mode', 'auto-complete features', 'run feature'.
 ---
 
-# 🔄 Feature Run
+# Feature Run
 
 **Mode**: Work on all features or a specific one
 
@@ -29,29 +29,6 @@ description: Executes unattended batch processing of all pending features with a
 
 When feature_id is provided:
 
-### Check TDD Mode First
-
-Look for "!!! TDD ENFORCEMENT ACTIVE !!!" in agent-foreman next output.
-
-### TDD Workflow (when strict mode active)
-
-```bash
-# STEP 1: Get feature + TDD guidance
-agent-foreman next <feature_id>
-
-# STEP 2: RED - Write failing tests FIRST
-# Create test file, run tests - MUST FAIL
-
-# STEP 3: GREEN - Implement minimum code
-# Run tests - MUST PASS
-
-# STEP 4: REFACTOR + Verify + Complete
-agent-foreman check <feature_id>
-agent-foreman done <feature_id>
-```
-
-### Standard Workflow (when TDD not strict)
-
 ```bash
 # STEP 1: Get the specified feature
 agent-foreman next <feature_id>
@@ -59,10 +36,10 @@ agent-foreman next <feature_id>
 # STEP 2: Implement (satisfy ALL acceptance criteria)
 # ... write code ...
 
-# STEP 3: Verify implementation (required)
+# STEP 3: Verify implementation
 agent-foreman check <feature_id>
 
-# STEP 4: Mark complete + commit (skips re-verification since we just checked)
+# STEP 4: Mark complete + commit
 agent-foreman done <feature_id>
 ```
 
@@ -82,15 +59,15 @@ agent-foreman next
 # STEP 3: Implement (satisfy ALL acceptance criteria)
 # ... write code ...
 
-# STEP 4: Verify implementation (required)
+# STEP 4: Verify implementation
 agent-foreman check <feature_id>
 
-# STEP 5: Mark complete + commit (skips re-verification since we just checked)
+# STEP 5: Mark complete + commit
 agent-foreman done <feature_id>
 
 # STEP 6: Handle result
 # - Verification passed? → Continue to STEP 1
-# - Verification failed? → Mark as failed, continue to STEP 1
+# - Verification failed? → Run 'agent-foreman fail <feature_id> -r "reason"', continue to STEP 1
 # - All features processed? → DONE (show summary)
 ```
 
@@ -101,9 +78,47 @@ agent-foreman done <feature_id>
 | Rule | Description |
 |------|-------------|
 | One at a time | Complete current before next |
-| No skipping | Always status → next → implement → done |
+| No skipping | Always status → next → implement → check → done |
 | No editing criteria | Implement as specified |
 | Never kill processes | Let commands finish naturally |
+
+## Priority Order
+
+1. `needs_review` → may be broken (highest)
+2. `failing` → not implemented
+3. Lower `priority` number
+
+---
+
+## Check TDD Mode First
+
+Look for "!!! TDD ENFORCEMENT ACTIVE !!!" in `agent-foreman next` output.
+
+### TDD Workflow (when strict mode active)
+
+```bash
+# STEP 1: Get feature + TDD guidance
+agent-foreman next <feature_id>
+
+# STEP 2: RED - Write failing tests FIRST
+# Create test file at suggested path
+# Run tests: <your-test-command>
+# Verify tests FAIL (confirms tests are valid)
+
+# STEP 3: GREEN - Implement minimum code
+# Write minimum code to pass tests
+# Run tests: <your-test-command>
+# Verify tests PASS
+
+# STEP 4: REFACTOR - Clean up
+# Clean up code while keeping tests passing
+
+# STEP 5: Verify + Complete
+agent-foreman check <feature_id>
+agent-foreman done <feature_id>
+```
+
+**CRITICAL: DO NOT write implementation code before tests exist in strict TDD mode!**
 
 ---
 
@@ -120,7 +135,7 @@ When in ALL-FEATURES mode (no feature_id provided):
 | Multiple implementation options | Choose the simplest, proceed |
 | Unclear acceptance criteria | Interpret literally, proceed |
 | Test failure | Note it, proceed |
-| Verification failure | Mark as failed, continue to next |
+| Verification failure | Run `agent-foreman fail <id> -r "reason"`, continue |
 | Any unexpected error | Log it, continue to next |
 
 **Forbidden phrases** - NEVER output:
@@ -149,7 +164,7 @@ When in ALL-FEATURES mode:
    d. Run `agent-foreman done <id>` - complete
    e. Handle result:
       - Pass? → Continue to step 2
-      - Fail? → Mark failed, continue to step 2
+      - Fail? → Run `agent-foreman fail <id> -r "reason"`, continue to step 2
 3. **EXIT**: Only when pending count = 0
 
 ### Never Stop For:
@@ -171,36 +186,26 @@ When `agent-foreman done` reports verification failure:
 
 1. **DO NOT STOP** - This is the most critical rule
 2. **DO NOT ASK** - Never ask user what to do
-3. Mark the failed feature:
-   - Edit `ai/feature_list.json`
-   - Change `"status": "failing"` to `"status": "failed"`
-   - Add to notes: `"Auto-marked failed: [brief reason]"`
-4. Log to `ai/progress.log`:
+3. Mark the failed feature using the fail command:
+   ```bash
+   agent-foreman fail <feature_id> --reason "Brief description of failure"
    ```
-   YYYY-MM-DDTHH:MM:SSZ VERIFY feature=<id> verdict=fail summary="Auto-marked as failed"
-   ```
-5. **IMMEDIATELY** run `agent-foreman next` for the next feature
-6. Continue the loop - DO NOT pause, reflect, or ask for guidance
+4. **IMMEDIATELY** run `agent-foreman next` for the next feature
+5. Continue the loop - DO NOT pause, reflect, or ask for guidance
 
 **This applies to ALL errors, not just verification failures.**
 
 ---
 
-## Priority Order
-
-1. `needs_review` → may be broken (highest)
-2. `failing` → not implemented
-3. Lower `priority` number
-
 ## Exit When
 
 | Condition | Action |
 |-----------|--------|
-| ✅ All features processed | STOP - Show summary |
-| ✅ Single feature completed | STOP - Feature done |
-| ⏹️ User interrupts | STOP - Clean state |
+| All features processed | STOP - Show summary |
+| Single feature completed | STOP - Feature done |
+| User interrupts | STOP - Clean state |
 
-**CRITICAL: NEVER stop due to verification failure - always mark as `failed` and continue!**
+**CRITICAL: NEVER stop due to verification failure - always use `agent-foreman fail` and continue!**
 
 ## Loop Completion
 
@@ -208,8 +213,8 @@ When all features have been processed:
 
 1. Run `agent-foreman status` to show final summary
 2. Report counts:
-   - ✓ X features passing
-   - ⚡ Y features failed (need investigation)
-   - ⚠ Z features needs_review (dependency changes)
-   - ✗ W features still failing (not attempted)
+   - X features passing
+   - Y features failed (need investigation)
+   - Z features needs_review (dependency changes)
+   - W features still failing (not attempted)
 3. List features that failed verification with their failure reasons

@@ -1,32 +1,29 @@
 ---
 description: Work on features - auto-complete all pending features or work on a specific one
+argument-hint: [feature_id]
 ---
 
 # EXECUTE FEATURE WORKFLOW
 
-⚡ **UNATTENDED MODE** (when no feature_id provided)
-- NO questions allowed
-- NO stopping for errors
-- MUST complete all features
+**IMPORTANT**: Load the `feature-run` skill for complete workflow rules including TDD enforcement, unattended mode, and loop behavior.
 
 Start immediately. Do not ask for confirmation.
 
 ## Mode Detection
 
-**If a feature_id is provided** (e.g., `/agent-foreman:run auth.login`):
+**If feature_id provided** (e.g., `/agent-foreman:run <feature_id>`):
+
 - Work on that specific feature only
 - Complete it and stop
 
 **If no feature_id** (e.g., `/agent-foreman:run`):
+
 - Auto-complete all pending features in priority order
-- Loop until all done
-- **UNATTENDED MODE ACTIVE** - see rules below
+- **UNATTENDED MODE** - no questions, no stopping for errors
 
 ---
 
 ## Single Feature Mode
-
-When feature_id is provided:
 
 ### Check TDD Mode First
 
@@ -93,7 +90,7 @@ agent-foreman done <feature_id>
 
 # STEP 6: Handle result
 # - Verification passed? → Continue to STEP 1
-# - Verification failed? → Mark as failed, continue to STEP 1
+# - Verification failed? → Run 'agent-foreman fail <feature_id> -r "reason"', continue to STEP 1
 # - All features processed? → STOP, show summary
 ```
 
@@ -123,7 +120,7 @@ When in ALL-FEATURES mode (no feature_id provided):
 | Multiple implementation options | Choose the simplest, proceed |
 | Unclear acceptance criteria | Interpret literally, proceed |
 | Test failure | Note it, proceed |
-| Verification failure | Mark as failed, continue to next |
+| Verification failure | Run `agent-foreman fail <id> -r "reason"`, continue |
 | Any unexpected error | Log it, continue to next |
 
 **Forbidden phrases** - NEVER output:
@@ -152,7 +149,7 @@ When in ALL-FEATURES mode:
    d. Run `agent-foreman done <id>` - complete
    e. Handle result:
       - Pass? → Continue to step 2
-      - Fail? → Mark failed, continue to step 2
+      - Fail? → Run `agent-foreman fail <id> -r "reason"`, continue to step 2
 3. **EXIT**: Only when pending count = 0
 
 ### Never Stop For:
@@ -174,16 +171,12 @@ When `agent-foreman done` reports verification failure:
 
 1. **DO NOT STOP** - This is the most critical rule
 2. **DO NOT ASK** - Never ask user what to do
-3. Mark the failed feature:
-   - Edit `ai/feature_list.json`
-   - Change `"status": "failing"` to `"status": "failed"`
-   - Add to notes: `"Auto-marked failed: [brief reason]"`
-4. Log to `ai/progress.log`:
+3. Mark the failed feature using the fail command:
+   ```bash
+   agent-foreman fail <feature_id> --reason "Brief description of failure"
    ```
-   YYYY-MM-DDTHH:MM:SSZ VERIFY feature=<id> verdict=fail summary="Auto-marked as failed"
-   ```
-5. **IMMEDIATELY** run `agent-foreman next` for the next feature
-6. Continue the loop - DO NOT pause, reflect, or ask for guidance
+4. **IMMEDIATELY** run `agent-foreman next` for the next feature
+5. Continue the loop - DO NOT pause, reflect, or ask for guidance
 
 **This applies to ALL errors, not just verification failures.**
 

@@ -1,5 +1,7 @@
 ---
 description: Analyze existing project structure and generate comprehensive survey report
+allowed-tools: Bash, Read, Glob, Grep
+argument-hint: [path] [--verbose]
 ---
 
 # EXECUTE NOW
