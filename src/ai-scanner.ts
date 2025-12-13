@@ -6,8 +6,9 @@
  * rather than us collecting context and passing it to the agent.
  */
 import chalk from "chalk";
-import { callAnyAvailableAgent, checkAvailableAgents } from "./agents.js";
+import { callAnyAvailableAgent, checkAvailableAgents, getAvailableAgent } from "./agents.js";
 import { getTimeout } from "./timeout-config.js";
+import { isTTY } from "./progress.js";
 import type {
   ProjectSurvey,
   TechStackInfo,
@@ -174,16 +175,17 @@ export async function aiScanProject(
 ): Promise<AIAnalysisResult> {
   const { verbose = false } = options;
 
-  // Check if any AI agent is available
-  const agents = checkAvailableAgents();
-  const hasAgent = agents.some((a) => a.available);
+  // Get available agent upfront to show which one we'll use
+  const agent = getAvailableAgent();
 
-  if (!hasAgent) {
+  if (!agent) {
     return {
       success: false,
       error: "No AI agents available. Install gemini, codex, or claude CLI.",
     };
   }
+
+  const agentName = agent.name.charAt(0).toUpperCase() + agent.name.slice(1);
 
   // Build autonomous exploration prompt
   console.log(chalk.gray("  [1/2] Preparing autonomous exploration..."));
@@ -193,21 +195,52 @@ export async function aiScanProject(
     console.log(chalk.gray(`        Project path: ${basePath}`));
   }
 
-  // Launch agent - it will explore the project autonomously
-  console.log(chalk.gray("  [2/2] Agent exploring project..."));
+  // Launch agent with custom progress indicator
+  // (suppress nested progress to avoid conflicts)
+  const startTime = Date.now();
+  const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+  let spinnerIdx = 0;
+  let spinnerInterval: NodeJS.Timeout | null = null;
+
+  if (isTTY()) {
+    process.stdout.write(chalk.gray(`  [2/2] Exploring with ${agentName}...`));
+    spinnerInterval = setInterval(() => {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+      process.stdout.clearLine(0);
+      process.stdout.cursorTo(0);
+      process.stdout.write(chalk.gray(`  [2/2] Exploring with ${agentName}... ${chalk.cyan(spinnerFrames[spinnerIdx])} ${chalk.gray(`(${elapsed}s)`)}`));
+      spinnerIdx = (spinnerIdx + 1) % spinnerFrames.length;
+    }, 100);
+  } else {
+    console.log(chalk.gray(`  [2/2] Exploring with ${agentName}...`));
+  }
 
   const result = await callAnyAvailableAgent(prompt, {
     verbose,
     cwd: basePath, // Run agent in project directory so it can explore
     timeoutMs: getTimeout("AI_SCAN_PROJECT"),
+    showProgress: false, // Suppress nested progress indicator
   });
 
+  if (spinnerInterval) {
+    clearInterval(spinnerInterval);
+  }
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+  if (isTTY()) {
+    process.stdout.clearLine(0);
+    process.stdout.cursorTo(0);
+  }
+
   if (!result.success) {
+    console.log(chalk.gray(`  [2/2] Exploring with ${agentName}... ${chalk.red("✗")} ${chalk.gray(`(${elapsed}s)`)}`));
     return {
       success: false,
       error: result.error,
     };
   }
+
+  console.log(chalk.gray(`  [2/2] Exploring with ${agentName}... ${chalk.green("✓")} ${chalk.gray(`(${elapsed}s)`)}`));
 
   // Parse the exploration results
   process.stdout.write(chalk.gray("  [✓] Parsing exploration results..."));

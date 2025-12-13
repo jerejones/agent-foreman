@@ -921,6 +921,41 @@ describe("Verifier", () => {
       expect(output).toContain("test");
       expect(output).toContain("PASSED");
     });
+
+    it("should format skipped checks with yellow SKIPPED status", () => {
+      const resultWithSkippedCheck: VerificationResult = {
+        ...baseResult,
+        automatedChecks: [
+          { type: "test", success: true, output: "", duration: 1000 },
+          { type: "e2e", success: false, output: "", duration: 0, skipped: true, skipReason: "unit tests failed" },
+        ],
+      };
+
+      const output = formatVerificationResult(resultWithSkippedCheck);
+
+      expect(output).toContain("test");
+      expect(output).toContain("PASSED");
+      expect(output).toContain("e2e");
+      expect(output).toContain("SKIPPED");
+      expect(output).toContain("unit tests failed");
+    });
+
+    it("should format skipped check without skip reason", () => {
+      const resultWithSkippedCheck: VerificationResult = {
+        ...baseResult,
+        automatedChecks: [
+          { type: "e2e", success: false, output: "", duration: 0, skipped: true },
+        ],
+      };
+
+      const output = formatVerificationResult(resultWithSkippedCheck);
+
+      expect(output).toContain("e2e");
+      expect(output).toContain("SKIPPED");
+      // Should not show undefined/null
+      expect(output).not.toContain("undefined");
+      expect(output).not.toContain("null");
+    });
   });
 
   describe("isTransientError", () => {

@@ -61,6 +61,10 @@ export interface AutomatedCheckResult {
   duration?: number;
   /** Number of errors found (for lint/type checks) */
   errorCount?: number;
+  /** Whether this check was skipped (not a failure) */
+  skipped?: boolean;
+  /** Reason for skipping (e.g., "unit tests failed", "no matching tests") */
+  skipReason?: string;
 }
 
 // ============================================================================

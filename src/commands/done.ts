@@ -36,6 +36,18 @@ import { promptConfirmation } from "./helpers.js";
 
 /**
  * Run the done command
+ *
+ * @param featureId - Task ID to mark as complete
+ * @param notes - Additional notes
+ * @param autoCommit - Automatically commit changes
+ * @param skipCheck - Skip verification (default: true)
+ * @param verbose - Show detailed output
+ * @param ai - Enable AI autonomous exploration for verification
+ * @param testMode - Test execution mode
+ * @param testPattern - Explicit test pattern
+ * @param skipE2E - Skip E2E tests
+ * @param e2eMode - E2E test mode
+ * @param loopMode - Loop mode for continuous processing
  */
 export async function runDone(
   featureId: string,
@@ -43,7 +55,7 @@ export async function runDone(
   autoCommit: boolean = true,
   skipCheck: boolean = false,
   verbose: boolean = false,
-  autonomous: boolean = false,
+  ai: boolean = false,
   testMode: "full" | "quick" | "skip" = "full",
   testPattern?: string,
   skipE2E: boolean = false,
@@ -204,10 +216,10 @@ export async function runDone(
     console.log(chalk.bold.blue("                    FEATURE VERIFICATION"));
     console.log(chalk.bold.blue("═══════════════════════════════════════════════════════════════\n"));
 
-    console.log(chalk.bold(`📋 Feature: ${chalk.cyan(feature.id)}`));
+    console.log(chalk.bold(`📋 Task: ${chalk.cyan(feature.id)}`));
     console.log(chalk.gray(`   Module: ${feature.module} | Priority: ${feature.priority}`));
-    if (autonomous) {
-      console.log(chalk.cyan(`   Mode: Autonomous AI exploration`));
+    if (ai) {
+      console.log(chalk.cyan(`   Mode: AI autonomous exploration`));
     }
     if (testMode === "quick") {
       console.log(chalk.cyan(`   Test mode: Quick (selective tests)`));
@@ -222,7 +234,7 @@ export async function runDone(
     const featureSkipsE2E = !feature.e2eTags || feature.e2eTags.length === 0;
     const effectiveSkipE2E = skipE2E || featureSkipsE2E;
 
-    // Run verification (choose mode)
+    // Run verification (choose mode based on --ai flag)
     const verifyOptions = {
       verbose,
       skipChecks: false,
@@ -232,7 +244,7 @@ export async function runDone(
       e2eTags: feature.e2eTags,
       e2eMode,
     };
-    const result = autonomous
+    const result = ai
       ? await verifyFeatureAutonomous(cwd, feature, verifyOptions)
       : await verifyFeature(cwd, feature, verifyOptions);
 

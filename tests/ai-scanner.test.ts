@@ -19,9 +19,18 @@ import type { DirectoryStructure, ProjectSurvey } from "../src/types.js";
 vi.mock("../src/agents.js", () => ({
   callAnyAvailableAgent: vi.fn(),
   checkAvailableAgents: vi.fn(() => [{ name: "gemini", available: true }]),
+  getAvailableAgent: vi.fn(() => ({ name: "gemini", command: ["gemini"], promptViaStdin: true })),
 }));
 
-import { callAnyAvailableAgent, checkAvailableAgents } from "../src/agents.js";
+// Mock progress module
+vi.mock("../src/progress.js", () => ({
+  isTTY: vi.fn(() => false),
+  createProgressBar: vi.fn(() => ({ start: vi.fn(), update: vi.fn(), complete: vi.fn() })),
+  createSpinner: vi.fn(() => ({ start: vi.fn(), succeed: vi.fn(), fail: vi.fn() })),
+  createStepProgress: vi.fn(() => ({ start: vi.fn(), completeStep: vi.fn() })),
+}));
+
+import { callAnyAvailableAgent, checkAvailableAgents, getAvailableAgent } from "../src/agents.js";
 
 describe("AI Scanner", () => {
   describe("aiResultToSurvey", () => {
@@ -633,17 +642,16 @@ describe("AI Scanner", () => {
     });
 
     it("should return error when no agents available", async () => {
-      // Override the mock to return no available agents
-      vi.mocked(checkAvailableAgents).mockReturnValue([
-        { name: "claude", available: false },
-        { name: "gemini", available: false },
-        { name: "codex", available: false },
-      ]);
+      // Override the mock to return no available agent
+      vi.mocked(getAvailableAgent).mockReturnValue(null);
 
       const result = await aiScanProject("/test/path");
 
       expect(result.success).toBe(false);
       expect(result.error).toContain("No AI agents available");
+
+      // Restore the mock for other tests
+      vi.mocked(getAvailableAgent).mockReturnValue({ name: "gemini", command: ["gemini"], promptViaStdin: true });
     });
 
     it("should return parsed AI analysis result on success", async () => {

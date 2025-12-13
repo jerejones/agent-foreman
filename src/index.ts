@@ -196,10 +196,10 @@ async function main() {
             default: false,
             describe: "Show detailed verification output",
           })
-          .option("no-autonomous", {
+          .option("ai", {
             type: "boolean",
             default: false,
-            describe: "Disable autonomous AI exploration (use diff-based)",
+            describe: "Enable AI autonomous exploration for verification",
           })
           .option("quick", {
             alias: "q",
@@ -245,7 +245,7 @@ async function main() {
           !argv.noCommit,
           argv.skipCheck,
           argv.verbose,
-          !argv.noAutonomous,
+          argv.ai,
           testMode,
           argv.testPattern,
           argv.skipE2e,
@@ -260,7 +260,7 @@ async function main() {
       (yargs) =>
         yargs
           .positional("feature_id", {
-            describe: "Task/feature ID for full verification (omit for fast mode)",
+            describe: "Task/feature ID for task verification (omit for fast mode)",
             type: "string",
           })
           .option("full", {
@@ -271,7 +271,7 @@ async function main() {
           .option("ai", {
             type: "boolean",
             default: false,
-            describe: "Run AI verification for affected tasks",
+            describe: "Enable AI verification (autonomous exploration for tasks)",
           })
           .option("verbose", {
             alias: "v",
@@ -284,11 +284,6 @@ async function main() {
             type: "boolean",
             default: false,
             describe: "Skip automated checks, AI only",
-          })
-          .option("no-autonomous", {
-            type: "boolean",
-            default: false,
-            describe: "Disable autonomous AI exploration",
           })
           .option("quick", {
             type: "boolean",
@@ -312,13 +307,12 @@ async function main() {
           argv.feature_id,
           argv.verbose,
           argv.skipChecks,
-          !argv.noAutonomous,
+          argv.ai,
           testMode,
           argv.testPattern,
           argv.skipE2e,
           e2eMode,
-          argv.full,
-          argv.ai
+          argv.full
         );
       }
     )

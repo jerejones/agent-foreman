@@ -276,6 +276,13 @@ export async function callAgentWithRetry(
  * Uses AGENT_FOREMAN_AGENTS env var for priority order if set
  * Default priority: Claude > Codex > Gemini
  * No timeout by default - let the AI agent complete
+ *
+ * @param prompt - The prompt to send to the agent
+ * @param options.preferredOrder - Custom agent priority order
+ * @param options.timeoutMs - Timeout in milliseconds
+ * @param options.verbose - Show detailed output
+ * @param options.cwd - Working directory for the agent
+ * @param options.showProgress - Show progress indicator (default: true)
  */
 export async function callAnyAvailableAgent(
   prompt: string,
@@ -284,9 +291,10 @@ export async function callAnyAvailableAgent(
     timeoutMs?: number;
     verbose?: boolean;
     cwd?: string;
+    showProgress?: boolean;
   } = {}
 ): Promise<{ success: boolean; output: string; agentUsed?: string; error?: string }> {
-  const { preferredOrder, timeoutMs, verbose = false, cwd } = options;
+  const { preferredOrder, timeoutMs, verbose = false, cwd, showProgress = true } = options;
   const agentOrder = preferredOrder ?? getAgentPriority();
 
   for (const name of agentOrder) {
@@ -294,32 +302,34 @@ export async function callAnyAvailableAgent(
     if (!agent) continue;
 
     if (!commandExists(agent.command[0])) {
-      if (verbose) {
+      if (verbose && showProgress) {
         console.log(chalk.gray(`        ${name} not installed, skipping...`));
       }
       continue;
     }
 
-    // Show which agent we're using with animated spinner
+    // Show which agent we're using with animated spinner (only if showProgress is enabled)
     const startTime = Date.now();
     const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
     let spinnerIdx = 0;
     let spinnerInterval: NodeJS.Timeout | null = null;
 
-    // Only use animated spinner in TTY mode to avoid conflicts
-    if (isTTY()) {
-      // Print initial message without newline
-      process.stdout.write(chalk.blue(`        Using ${name}...`));
-      spinnerInterval = setInterval(() => {
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
-        // Clear just this line and rewrite (don't use \r from column 0 to avoid parent spinner conflicts)
-        process.stdout.clearLine(0);
-        process.stdout.cursorTo(0);
-        process.stdout.write(chalk.blue(`        Using ${name}... ${chalk.cyan(spinnerFrames[spinnerIdx])} ${chalk.gray(`(${elapsed}s)`)}`));
-        spinnerIdx = (spinnerIdx + 1) % spinnerFrames.length;
-      }, 100);
-    } else {
-      console.log(`        Using ${name}...`);
+    if (showProgress) {
+      // Only use animated spinner in TTY mode to avoid conflicts
+      if (isTTY()) {
+        // Print initial message without newline
+        process.stdout.write(chalk.blue(`        Using ${name}...`));
+        spinnerInterval = setInterval(() => {
+          const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+          // Clear just this line and rewrite (don't use \r from column 0 to avoid parent spinner conflicts)
+          process.stdout.clearLine(0);
+          process.stdout.cursorTo(0);
+          process.stdout.write(chalk.blue(`        Using ${name}... ${chalk.cyan(spinnerFrames[spinnerIdx])} ${chalk.gray(`(${elapsed}s)`)}`));
+          spinnerIdx = (spinnerIdx + 1) % spinnerFrames.length;
+        }, 100);
+      } else {
+        console.log(`        Using ${name}...`);
+      }
     }
 
     const result = await callAgent(agent, prompt, { timeoutMs, cwd });
@@ -330,21 +340,25 @@ export async function callAnyAvailableAgent(
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
     if (result.success) {
+      if (showProgress) {
+        if (isTTY()) {
+          process.stdout.clearLine(0);
+          process.stdout.cursorTo(0);
+        }
+        console.log(`        Using ${name}... ${chalk.green("✓")} ${chalk.gray(`(${elapsed}s)`)}`);
+      }
+      return { ...result, agentUsed: name };
+    }
+
+    if (showProgress) {
       if (isTTY()) {
         process.stdout.clearLine(0);
         process.stdout.cursorTo(0);
       }
-      console.log(`        Using ${name}... ${chalk.green("✓")} ${chalk.gray(`(${elapsed}s)`)}`);
-      return { ...result, agentUsed: name };
-    }
-
-    if (isTTY()) {
-      process.stdout.clearLine(0);
-      process.stdout.cursorTo(0);
-    }
-    console.log(`        Using ${name}... ${chalk.red("✗")} ${chalk.gray(`(${elapsed}s)`)}`);
-    if (verbose) {
-      console.log(chalk.yellow(`        Error: ${result.error}`));
+      console.log(`        Using ${name}... ${chalk.red("✗")} ${chalk.gray(`(${elapsed}s)`)}`);
+      if (verbose) {
+        console.log(chalk.yellow(`        Error: ${result.error}`));
+      }
     }
   }
 

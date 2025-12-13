@@ -43,13 +43,21 @@ export function formatVerificationResult(
   if (result.automatedChecks.length > 0) {
     lines.push(chalk.bold("\n   Automated Checks:"));
     for (const check of result.automatedChecks) {
-      const status = check.success
-        ? chalk.green("PASSED")
-        : chalk.red("FAILED");
+      let status: string;
+      if (check.success) {
+        status = chalk.green("PASSED");
+      } else if (check.skipped) {
+        status = chalk.yellow("SKIPPED");
+      } else {
+        status = chalk.red("FAILED");
+      }
       const duration = check.duration
         ? chalk.gray(` (${(check.duration / 1000).toFixed(1)}s)`)
         : "";
-      lines.push(`   ${check.type.padEnd(12)} ${status}${duration}`);
+      const skipReason = check.skipped && check.skipReason
+        ? chalk.gray(` (${check.skipReason})`)
+        : "";
+      lines.push(`   ${check.type.padEnd(12)} ${status}${duration}${skipReason}`);
     }
   }
 

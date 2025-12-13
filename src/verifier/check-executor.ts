@@ -158,6 +158,8 @@ export async function runChecksInParallel(
           success: false,
           output: "Skipped: unit tests failed",
           duration: 0,
+          skipped: true,
+          skipReason: "unit tests failed",
         });
         completedCount++;
       }

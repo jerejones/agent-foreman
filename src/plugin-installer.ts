@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync, cpSync, rmSync } fr
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import chalk from "chalk";
+import { compareVersions } from "./upgrade.js";
 
 // These imports will be available after running embed-assets.ts
 // For development, we provide fallback behavior
@@ -469,21 +470,51 @@ export function fullUninstall(): void {
 }
 
 /**
- * Check and auto-install on CLI startup (for compiled binary)
+ * Check and auto-install/update on CLI startup
  * This is silent and non-intrusive
+ *
+ * Behavior:
+ * - First run (compiled binary only): auto-install marketplace and plugin
+ * - First run (npm install): skip, users should opt-in via `agent-foreman plugin install`
+ * - Upgrade (ALL installation methods): if bundled version > installed version, update plugin files
  */
 export async function checkAndInstallPlugins(): Promise<void> {
-  // Skip if not in compiled mode
+  // Skip if no embedded plugins available
+  if (!hasEmbeddedPlugins()) {
+    return;
+  }
+
+  // Check if marketplace is already registered (upgrade path)
+  if (isMarketplaceRegistered()) {
+    // Already installed - check if update is needed
+    const info = getPluginInstallInfo();
+    const installedVersion = info.installedVersion || "0.0.0";
+    const bundledVersion = info.bundledVersion;
+
+    // Compare versions: if bundled > installed, update
+    // This works for ALL installation methods (compiled binary, npm, etc.)
+    if (compareVersions(bundledVersion, installedVersion) > 0) {
+      console.log(chalk.cyan(`Updating agent-foreman plugin (${installedVersion} → ${bundledVersion})...`));
+      try {
+        fullInstall();
+        console.log(chalk.green("✓ Plugin updated"));
+        console.log(chalk.gray("  Restart Claude Code to use the updated plugin\n"));
+      } catch (error) {
+        console.warn(
+          chalk.yellow(`⚠ Failed to update plugin: ${error instanceof Error ? error.message : error}`)
+        );
+      }
+    }
+    return;
+  }
+
+  // First run: only auto-install for compiled binary
+  // npm users should opt-in via `agent-foreman plugin install`
   if (!isCompiledBinary()) {
     return;
   }
 
-  // Skip if marketplace is already registered (user can manage via /plugin)
-  if (isMarketplaceRegistered()) {
-    return;
-  }
-
-  // First run: silently install marketplace
+  // First run (compiled binary only): silently install marketplace
   console.log(chalk.cyan("Registering agent-foreman plugin marketplace..."));
   try {
     fullInstall();

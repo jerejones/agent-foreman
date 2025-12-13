@@ -19,14 +19,23 @@ agent-foreman check --ai
 # Full check (all tests + build + E2E): Auto-selects next task
 agent-foreman check --full
 
-# Full check for specific task
-agent-foreman check <feature_id>
+# Task-specific verification (no AI by default)
+agent-foreman check <task_id>
+# → Runs: typecheck + lint + tests + build
+# → Skips: AI analysis (use --ai to enable)
+
+# Task-specific verification with AI exploration
+agent-foreman check <task_id> --ai
+# → Full checks + AI autonomous exploration
 
 # Mark feature as done (skips verification by default, use after check)
 agent-foreman done <feature_id>
 
 # Mark feature as done (with verification, for manual use)
 agent-foreman done <feature_id> --no-skip-check
+
+# Mark feature as done with AI verification
+agent-foreman done <feature_id> --no-skip-check --ai
 
 # Full mode - run all tests (slower, for final verification)
 agent-foreman done <feature_id> --full --no-skip-check

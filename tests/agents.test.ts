@@ -502,6 +502,64 @@ describe("Agents", () => {
 
       consoleSpy.mockRestore();
     });
+
+    it("should suppress progress output when showProgress is false", async () => {
+      vi.mocked(spawnSync).mockReturnValue({ status: 0 } as any);
+      const consoleSpy = vi.spyOn(console, "log");
+
+      const mockProcess = new EventEmitter() as any;
+      mockProcess.stdin = { write: vi.fn(), end: vi.fn() };
+      mockProcess.stdout = new EventEmitter();
+      mockProcess.stderr = new EventEmitter();
+
+      setTimeout(() => {
+        mockProcess.stdout.emit("data", Buffer.from('{"result": "ok"}'));
+        mockProcess.emit("close", 0);
+      }, 10);
+
+      vi.mocked(spawn).mockReturnValue(mockProcess);
+
+      await callAnyAvailableAgent("test", {
+        preferredOrder: ["claude"],
+        showProgress: false,
+      });
+
+      // Should not have logged "Using claude..." message
+      expect(consoleSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining("Using claude")
+      );
+
+      consoleSpy.mockRestore();
+    });
+
+    it("should show progress output when showProgress is true (default)", async () => {
+      vi.mocked(spawnSync).mockReturnValue({ status: 0 } as any);
+      const consoleSpy = vi.spyOn(console, "log");
+
+      const mockProcess = new EventEmitter() as any;
+      mockProcess.stdin = { write: vi.fn(), end: vi.fn() };
+      mockProcess.stdout = new EventEmitter();
+      mockProcess.stderr = new EventEmitter();
+
+      setTimeout(() => {
+        mockProcess.stdout.emit("data", Buffer.from('{"result": "ok"}'));
+        mockProcess.emit("close", 0);
+      }, 10);
+
+      vi.mocked(spawn).mockReturnValue(mockProcess);
+
+      await callAnyAvailableAgent("test", {
+        preferredOrder: ["claude"],
+        showProgress: true,
+      });
+
+      // In non-TTY mode (test environment), it should print plain text
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Using claude")
+      );
+
+      consoleSpy.mockRestore();
+    });
   });
 
   describe("callAgentWithRetry", () => {
