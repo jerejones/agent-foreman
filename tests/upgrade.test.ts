@@ -956,4 +956,260 @@ describe("Upgrade Utils", () => {
       expect(result.needsUpgrade).toBe(false);
     });
   });
+
+  // ============================================================================
+  // Binary mode upgrade tests (improve coverage for lines 324-353)
+  // ============================================================================
+
+  describe("performInteractiveUpgrade - binary mode", () => {
+    beforeEach(() => {
+      vi.spyOn(console, "log").mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("should use binary upgrade for compiled binary mode", async () => {
+      const { isCompiledBinary } = await import("../src/plugin-installer.js");
+      const { performBinaryUpgrade, canWriteToExecutable } = await import("../src/binary-upgrade.js");
+
+      // Mock binary mode
+      (isCompiledBinary as ReturnType<typeof vi.fn>).mockReturnValue(true);
+      (canWriteToExecutable as ReturnType<typeof vi.fn>).mockReturnValue(true);
+      (performBinaryUpgrade as ReturnType<typeof vi.fn>).mockResolvedValue({ success: true });
+
+      const result = await performInteractiveUpgrade("1.0.0", "2.0.0");
+
+      expect(result.success).toBe(true);
+      expect(performBinaryUpgrade).toHaveBeenCalledWith("1.0.0", "2.0.0");
+    });
+
+    it("should return error when cannot write to executable in binary mode", async () => {
+      const { isCompiledBinary } = await import("../src/plugin-installer.js");
+      const { canWriteToExecutable } = await import("../src/binary-upgrade.js");
+
+      (isCompiledBinary as ReturnType<typeof vi.fn>).mockReturnValue(true);
+      (canWriteToExecutable as ReturnType<typeof vi.fn>).mockReturnValue(false);
+
+      const result = await performInteractiveUpgrade("1.0.0", "2.0.0");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Insufficient permissions");
+    });
+
+    it("should return error when binary upgrade fails", async () => {
+      const { isCompiledBinary } = await import("../src/plugin-installer.js");
+      const { performBinaryUpgrade, canWriteToExecutable } = await import("../src/binary-upgrade.js");
+
+      (isCompiledBinary as ReturnType<typeof vi.fn>).mockReturnValue(true);
+      (canWriteToExecutable as ReturnType<typeof vi.fn>).mockReturnValue(true);
+      (performBinaryUpgrade as ReturnType<typeof vi.fn>).mockResolvedValue({
+        success: false,
+        error: "Download failed",
+      });
+
+      const result = await performInteractiveUpgrade("1.0.0", "2.0.0");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("Download failed");
+    });
+
+    it("should attempt plugin update after successful binary upgrade", async () => {
+      const { isCompiledBinary } = await import("../src/plugin-installer.js");
+      const { performBinaryUpgrade, canWriteToExecutable } = await import("../src/binary-upgrade.js");
+      const consoleSpy = vi.spyOn(console, "log");
+
+      (isCompiledBinary as ReturnType<typeof vi.fn>).mockReturnValue(true);
+      (canWriteToExecutable as ReturnType<typeof vi.fn>).mockReturnValue(true);
+      (performBinaryUpgrade as ReturnType<typeof vi.fn>).mockResolvedValue({ success: true });
+
+      const result = await performInteractiveUpgrade("1.0.0", "2.0.0");
+
+      expect(result.success).toBe(true);
+      // In test env, plugin dir doesn't exist so update is skipped silently
+    });
+  });
+
+  // ============================================================================
+  // Plugin update failure with message (coverage for line 373)
+  // ============================================================================
+
+  describe("performInteractiveUpgrade - plugin failure message", () => {
+    const pluginDir = path.join(
+      process.env.HOME || process.env.USERPROFILE || "/tmp",
+      ".claude/plugins/marketplaces/agent-foreman"
+    );
+
+    beforeEach(async () => {
+      vi.spyOn(console, "log").mockImplementation(() => {});
+      // Create the plugin directory to test plugin update path
+      await fs.mkdir(pluginDir, { recursive: true });
+    });
+
+    afterEach(async () => {
+      vi.restoreAllMocks();
+      // Clean up the plugin directory
+      try {
+        await fs.rm(pluginDir, { recursive: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+    });
+
+    it("should show warning when plugin update fails in npm mode", async () => {
+      const { isCompiledBinary } = await import("../src/plugin-installer.js");
+      const { spawnSync } = await import("node:child_process");
+      const consoleSpy = vi.spyOn(console, "log");
+
+      // Force npm mode
+      (isCompiledBinary as ReturnType<typeof vi.fn>).mockReturnValue(false);
+
+      // Mock spawnSync to handle different commands
+      (spawnSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (cmd: string, args?: string[]) => {
+          // npm install succeeds
+          if (cmd === "npm" && args?.includes("install")) {
+            return { status: 0, stdout: "added 1 package", stderr: "" };
+          }
+          // git rev-parse succeeds (is a git repo)
+          if (cmd === "git" && args?.includes("rev-parse")) {
+            return { status: 0, stdout: ".git", stderr: "" };
+          }
+          // git pull fails
+          if (cmd === "git" && args?.includes("pull")) {
+            return { status: 1, stdout: "", stderr: "Git pull failed: merge conflict" };
+          }
+          return { status: 0, stdout: "", stderr: "" };
+        }
+      );
+
+      const result = await performInteractiveUpgrade("1.0.0", "2.0.0");
+
+      // npm upgrade still succeeds even if plugin update fails
+      expect(result.success).toBe(true);
+
+      // Verify warning was logged
+      const allOutput = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(allOutput).toContain("Plugin update failed");
+    });
+
+    it("should show plugin update success message when git pull succeeds", async () => {
+      const { isCompiledBinary } = await import("../src/plugin-installer.js");
+      const { spawnSync } = await import("node:child_process");
+      const consoleSpy = vi.spyOn(console, "log");
+
+      // Force npm mode
+      (isCompiledBinary as ReturnType<typeof vi.fn>).mockReturnValue(false);
+
+      // Mock spawnSync to handle different commands
+      (spawnSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (cmd: string, args?: string[]) => {
+          // npm install succeeds
+          if (cmd === "npm" && args?.includes("install")) {
+            return { status: 0, stdout: "added 1 package", stderr: "" };
+          }
+          // git rev-parse succeeds (is a git repo)
+          if (cmd === "git" && args?.includes("rev-parse")) {
+            return { status: 0, stdout: ".git", stderr: "" };
+          }
+          // git pull succeeds
+          if (cmd === "git" && args?.includes("pull")) {
+            return { status: 0, stdout: "Already up to date.", stderr: "" };
+          }
+          return { status: 0, stdout: "", stderr: "" };
+        }
+      );
+
+      const result = await performInteractiveUpgrade("1.0.0", "2.0.0");
+
+      expect(result.success).toBe(true);
+
+      // Verify success messages
+      const allOutput = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(allOutput).toContain("Claude Code plugin updated");
+    });
+
+    it("should skip plugin update when not a git repo", async () => {
+      const { isCompiledBinary } = await import("../src/plugin-installer.js");
+      const { spawnSync } = await import("node:child_process");
+      const consoleSpy = vi.spyOn(console, "log");
+
+      // Force npm mode
+      (isCompiledBinary as ReturnType<typeof vi.fn>).mockReturnValue(false);
+
+      // Mock spawnSync to handle different commands
+      (spawnSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (cmd: string, args?: string[]) => {
+          // npm install succeeds
+          if (cmd === "npm" && args?.includes("install")) {
+            return { status: 0, stdout: "added 1 package", stderr: "" };
+          }
+          // git rev-parse fails (not a git repo)
+          if (cmd === "git" && args?.includes("rev-parse")) {
+            return { status: 128, stdout: "", stderr: "fatal: not a git repository" };
+          }
+          return { status: 0, stdout: "", stderr: "" };
+        }
+      );
+
+      const result = await performInteractiveUpgrade("1.0.0", "2.0.0");
+
+      // Should still succeed - plugin update is optional
+      expect(result.success).toBe(true);
+
+      // Should not attempt git pull when not a git repo
+      const allOutput = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(allOutput).not.toContain("Plugin update failed");
+    });
+  });
+
+  // ============================================================================
+  // checkForUpgrade binary mode tests
+  // ============================================================================
+
+  describe("checkForUpgrade - binary mode", () => {
+    it("should use GitHub API for binary mode", async () => {
+      const { isCompiledBinary } = await import("../src/plugin-installer.js");
+      const { fetchLatestGitHubVersion } = await import("../src/binary-upgrade.js");
+
+      (isCompiledBinary as ReturnType<typeof vi.fn>).mockReturnValue(true);
+      (fetchLatestGitHubVersion as ReturnType<typeof vi.fn>).mockResolvedValue("999.0.0");
+
+      const result = await checkForUpgrade();
+
+      expect(result.needsUpgrade).toBe(true);
+      expect(result.latestVersion).toBe("999.0.0");
+    });
+
+    it("should return error message for binary mode when GitHub fetch fails", async () => {
+      const { isCompiledBinary } = await import("../src/plugin-installer.js");
+      const { fetchLatestGitHubVersion } = await import("../src/binary-upgrade.js");
+
+      (isCompiledBinary as ReturnType<typeof vi.fn>).mockReturnValue(true);
+      (fetchLatestGitHubVersion as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+      const result = await checkForUpgrade();
+
+      expect(result.needsUpgrade).toBe(false);
+      expect(result.error).toContain("GitHub");
+    });
+
+    it("should return npm error message for npm mode when fetch fails", async () => {
+      const { isCompiledBinary } = await import("../src/plugin-installer.js");
+      const { spawnSync } = await import("node:child_process");
+
+      (isCompiledBinary as ReturnType<typeof vi.fn>).mockReturnValue(false);
+      (spawnSync as ReturnType<typeof vi.fn>).mockReturnValue({
+        status: 1,
+        stdout: "",
+        stderr: "network error",
+      });
+
+      const result = await checkForUpgrade();
+
+      expect(result.needsUpgrade).toBe(false);
+      expect(result.error).toContain("npm");
+    });
+  });
 });

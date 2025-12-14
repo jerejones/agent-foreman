@@ -455,3 +455,65 @@ export interface ImpactRecommendation {
   /** Reason for recommendation */
   reason: string;
 }
+
+// ============================================================================
+// Optimistic Locking Types
+// ============================================================================
+
+/**
+ * Base error class for optimistic lock conflicts
+ */
+export class OptimisticLockError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OptimisticLockError";
+  }
+}
+
+/**
+ * Error when the feature list was modified by another process
+ */
+export class FeatureListConflictError extends OptimisticLockError {
+  constructor(
+    public readonly expectedUpdatedAt: string,
+    public readonly actualUpdatedAt: string
+  ) {
+    super(
+      `Feature list was modified by another process. ` +
+      `Expected: ${expectedUpdatedAt}, Actual: ${actualUpdatedAt}`
+    );
+    this.name = "FeatureListConflictError";
+  }
+}
+
+/**
+ * Options for saving feature list with optimistic locking
+ */
+export interface SaveFeatureListOptions {
+  /** Timestamp when the list was loaded (for conflict detection) */
+  _loadedAt?: string;
+  /** Skip version check (for migrations) */
+  skipVersionCheck?: boolean;
+}
+
+/**
+ * Result of loading a feature list with metadata for optimistic locking
+ */
+export interface LoadedFeatureList {
+  /** The feature list */
+  list: FeatureList;
+  /** Timestamp when loaded (for conflict detection) */
+  _loadedAt: string;
+}
+
+/**
+ * Options for optimistic retry
+ */
+export interface OptimisticRetryOptions {
+  /** Maximum number of retries (default: 3) */
+  maxRetries?: number;
+  /** Base delay in ms (default: 50) */
+  baseDelay?: number;
+  /** Maximum delay in ms (default: 500) */
+  maxDelay?: number;
+}

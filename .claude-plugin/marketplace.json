@@ -31,9 +31,7 @@
         "ai-agent",
         "claude-code"
       ],
-      "agents": [
-        "./agents/foreman.md"
-      ],
+      "agents": ["./agents/foreman.md"],
       "skills": [
         "./skills/project-analyze",
         "./skills/init-harness",

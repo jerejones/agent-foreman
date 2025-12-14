@@ -3,7 +3,17 @@
  */
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import type { Feature, FeatureList, FeatureStatus, FeatureVerificationSummary, DiscoveredFeature } from "./types.js";
+import type {
+  Feature,
+  FeatureList,
+  FeatureStatus,
+  FeatureVerificationSummary,
+  DiscoveredFeature,
+  SaveFeatureListOptions,
+  LoadedFeatureList,
+  OptimisticRetryOptions,
+} from "./types.js";
+import { FeatureListConflictError, OptimisticLockError } from "./types.js";
 import { validateFeatureList } from "./schema.js";
 
 /** Default path for feature list file */
@@ -102,12 +112,56 @@ export async function loadFeatureList(basePath: string): Promise<FeatureList | n
 
 /**
  * Save feature list to file
+ * Supports optimistic locking via options._loadedAt
  */
-export async function saveFeatureList(basePath: string, list: FeatureList): Promise<void> {
+export async function saveFeatureList(
+  basePath: string,
+  list: FeatureList,
+  options: SaveFeatureListOptions = {}
+): Promise<void> {
   const filePath = path.join(basePath, FEATURE_LIST_PATH);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
+
+  // Optimistic locking: check for concurrent modifications
+  if (options._loadedAt && !options.skipVersionCheck) {
+    try {
+      const currentContent = await fs.readFile(filePath, "utf-8");
+      const currentList = JSON.parse(currentContent) as FeatureList;
+      const currentUpdatedAt = currentList.metadata.updatedAt;
+
+      // If the file was modified after we loaded it, throw conflict error
+      if (currentUpdatedAt !== options._loadedAt) {
+        throw new FeatureListConflictError(options._loadedAt, currentUpdatedAt);
+      }
+    } catch (err) {
+      // If file doesn't exist, that's fine - we're creating it
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT" && !(err instanceof FeatureListConflictError)) {
+        throw err;
+      }
+      if (err instanceof FeatureListConflictError) {
+        throw err;
+      }
+    }
+  }
+
   list.metadata.updatedAt = new Date().toISOString();
   await fs.writeFile(filePath, JSON.stringify(list, null, 2) + "\n");
+}
+
+/**
+ * Load feature list with metadata for optimistic locking
+ * Returns the list along with _loadedAt timestamp for conflict detection
+ */
+export async function loadFeatureListWithMetadata(basePath: string): Promise<LoadedFeatureList | null> {
+  const list = await loadFeatureList(basePath);
+  if (!list) {
+    return null;
+  }
+
+  return {
+    list,
+    _loadedAt: list.metadata.updatedAt,
+  };
 }
 
 /**
@@ -413,3 +467,50 @@ export function createFeature(
     testRequirements: options.testRequirements ?? generateTestRequirements(module),
   };
 }
+
+/**
+ * Execute an operation with optimistic retry on conflict
+ * Uses exponential backoff for retries
+ *
+ * @param operation - Async operation that may throw FeatureListConflictError
+ * @param options - Retry configuration
+ * @returns Result of the operation
+ * @throws OptimisticLockError if all retries exhausted
+ */
+export async function withOptimisticRetry<T>(
+  operation: () => Promise<T>,
+  options: OptimisticRetryOptions = {}
+): Promise<T> {
+  const {
+    maxRetries = 3,
+    baseDelay = 50,
+    maxDelay = 500,
+  } = options;
+
+  let lastError: Error | undefined;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (err) {
+      if (err instanceof FeatureListConflictError) {
+        lastError = err;
+
+        if (attempt < maxRetries) {
+          // Exponential backoff with jitter
+          const delay = Math.min(baseDelay * Math.pow(2, attempt) + Math.random() * 50, maxDelay);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+      }
+      throw err;
+    }
+  }
+
+  throw new OptimisticLockError(
+    `Failed after ${maxRetries} retries: ${lastError?.message || "Unknown error"}`
+  );
+}
+
+// Re-export error classes for convenience
+export { OptimisticLockError, FeatureListConflictError } from "./types.js";

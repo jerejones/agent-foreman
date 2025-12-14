@@ -283,6 +283,7 @@ export async function callAgentWithRetry(
  * @param options.verbose - Show detailed output
  * @param options.cwd - Working directory for the agent
  * @param options.showProgress - Show progress indicator (default: true)
+ * @param options.onAgentSelected - Callback invoked when an agent is selected, before execution
  */
 export async function callAnyAvailableAgent(
   prompt: string,
@@ -292,9 +293,10 @@ export async function callAnyAvailableAgent(
     verbose?: boolean;
     cwd?: string;
     showProgress?: boolean;
+    onAgentSelected?: (agentName: string) => void;
   } = {}
 ): Promise<{ success: boolean; output: string; agentUsed?: string; error?: string }> {
-  const { preferredOrder, timeoutMs, verbose = false, cwd, showProgress = true } = options;
+  const { preferredOrder, timeoutMs, verbose = false, cwd, showProgress = true, onAgentSelected } = options;
   const agentOrder = preferredOrder ?? getAgentPriority();
 
   for (const name of agentOrder) {
@@ -306,6 +308,11 @@ export async function callAnyAvailableAgent(
         console.log(chalk.gray(`        ${name} not installed, skipping...`));
       }
       continue;
+    }
+
+    // Invoke callback immediately when agent is selected (before execution)
+    if (onAgentSelected) {
+      onAgentSelected(agent.name);
     }
 
     // Show which agent we're using with animated spinner (only if showProgress is enabled)

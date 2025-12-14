@@ -13,6 +13,7 @@ import {
   hasEmbeddedPlugins,
   getPluginInstallInfo,
 } from "../plugin-installer.js";
+import { updateProjectRulesIfExists } from "../rules/index.js";
 
 export async function runInstall(force: boolean = false): Promise<void> {
   const info = getPluginInstallInfo();
@@ -70,6 +71,14 @@ export async function runInstall(force: boolean = false): Promise<void> {
     console.log(chalk.gray("  2. Registered in known_marketplaces.json"));
     console.log(chalk.gray("  3. Installed plugin to cache"));
     console.log(chalk.gray("  4. Enabled in settings.json"));
+
+    // Step 5: Auto-update project rules if they exist
+    const cwd = process.cwd();
+    const rulesResult = await updateProjectRulesIfExists(cwd);
+    if (rulesResult) {
+      console.log(chalk.gray(`  5. Updated ${rulesResult.created} rule file(s) in .claude/rules/`));
+    }
+
     console.log();
     console.log(chalk.yellow("⚡ Restart Claude Code to use the plugin"));
   } catch (error) {

@@ -11,7 +11,7 @@ import {
   mergeOrCreateFeatures,
   generateHarnessFiles,
 } from "../init-helpers.js";
-import { promptConfirmation } from "./helpers.js";
+import { featureListExists, loadFeatureList } from "../feature-list.js";
 
 /** Default timeout for TDD mode prompt (in milliseconds) */
 const TDD_PROMPT_TIMEOUT_MS = 10000; // 10 seconds
@@ -102,21 +102,44 @@ export async function runInit(goal: string, mode: InitMode, verbose: boolean): P
     console.log(chalk.gray(`  Found ${analysisResult.survey.features.length} features`));
   }
 
-  // Step 1.5: Prompt for TDD mode (only for new or merge mode)
+  // Step 1.5: Check for existing feature list (protection against accidental overwrite)
+  const listExists = await featureListExists(cwd);
+  if (listExists && mode !== "new") {
+    console.log(chalk.yellow("\n⚠ Feature list already exists. Preserving existing tasks."));
+    console.log(chalk.gray("  Use --mode new to force regeneration"));
+    console.log(chalk.gray("  Skipping feature generation...\n"));
+    // Continue to generate harness files (init.sh, etc.) but skip feature list generation
+  }
+
+  // Step 1.6: Prompt for TDD mode (only for new or merge mode, and if not skipping)
   let tddMode: TDDMode | undefined;
-  if (mode !== "scan") {
+  if (mode !== "scan" && (!listExists || mode === "new")) {
     tddMode = await promptTDDMode();
   }
 
-  // Step 2-4: Merge or create features based on mode
-  const featureList = await mergeOrCreateFeatures(
-    cwd,
-    analysisResult.survey,
-    goal,
-    mode,
-    verbose,
-    tddMode
-  );
+  // Step 2-4: Merge or create features based on mode (skip if list exists and not forcing)
+  let featureList;
+  const shouldSkipFeatureGeneration = listExists && mode !== "new";
+
+  if (shouldSkipFeatureGeneration) {
+    // Load existing feature list instead of generating new
+    featureList = await loadFeatureList(cwd);
+    if (!featureList) {
+      // This shouldn't happen since we checked listExists, but handle gracefully
+      console.log(chalk.red("  Error: Could not load existing feature list"));
+      process.exit(1);
+    }
+  } else {
+    // Generate or merge features as normal
+    featureList = await mergeOrCreateFeatures(
+      cwd,
+      analysisResult.survey,
+      goal,
+      mode,
+      verbose,
+      tddMode
+    );
+  }
 
   // Step 5-8: Generate harness files (init.sh, CLAUDE.md, progress.log)
   await generateHarnessFiles(cwd, analysisResult.survey, featureList, goal, mode);

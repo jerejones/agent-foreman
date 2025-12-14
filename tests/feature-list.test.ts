@@ -27,8 +27,11 @@ import {
   generateTestPattern,
   generateTestRequirements,
   migrateToStrictTDD,
+  withOptimisticRetry,
+  loadFeatureListWithMetadata,
 } from "../src/feature-list.js";
 import type { Feature, FeatureList, DiscoveredFeature } from "../src/types.js";
+import { FeatureListConflictError, OptimisticLockError } from "../src/types.js";
 
 describe("Feature List Operations", () => {
   let tempDir: string;
@@ -771,6 +774,188 @@ describe("Feature List Operations", () => {
       const updated = deprecateFeature(features, "f1", "f2");
 
       expect(updated[0].notes).toBe("Replaced by f2");
+    });
+  });
+
+  describe("withOptimisticRetry", () => {
+    it("should succeed on first try when no conflict", async () => {
+      let attempts = 0;
+      const result = await withOptimisticRetry(async () => {
+        attempts++;
+        return "success";
+      });
+
+      expect(result).toBe("success");
+      expect(attempts).toBe(1);
+    });
+
+    it("should retry on FeatureListConflictError", async () => {
+      let attempts = 0;
+      const result = await withOptimisticRetry(async () => {
+        attempts++;
+        if (attempts < 3) {
+          throw new FeatureListConflictError("old", "new");
+        }
+        return "success after retry";
+      }, { maxRetries: 3, baseDelay: 1 });
+
+      expect(result).toBe("success after retry");
+      expect(attempts).toBe(3);
+    });
+
+    it("should throw OptimisticLockError after max retries exhausted", async () => {
+      let attempts = 0;
+      await expect(
+        withOptimisticRetry(async () => {
+          attempts++;
+          throw new FeatureListConflictError("old", "new");
+        }, { maxRetries: 2, baseDelay: 1 })
+      ).rejects.toThrow(OptimisticLockError);
+
+      expect(attempts).toBe(3); // initial + 2 retries
+    });
+
+    it("should throw non-conflict errors immediately", async () => {
+      let attempts = 0;
+      await expect(
+        withOptimisticRetry(async () => {
+          attempts++;
+          throw new Error("some other error");
+        }, { maxRetries: 3 })
+      ).rejects.toThrow("some other error");
+
+      expect(attempts).toBe(1);
+    });
+
+    it("should use default options when not provided", async () => {
+      const result = await withOptimisticRetry(async () => "default options");
+      expect(result).toBe("default options");
+    });
+
+    it("should respect maxDelay option", async () => {
+      let attempts = 0;
+      const startTime = Date.now();
+
+      await expect(
+        withOptimisticRetry(async () => {
+          attempts++;
+          throw new FeatureListConflictError("old", "new");
+        }, { maxRetries: 2, baseDelay: 10, maxDelay: 20 })
+      ).rejects.toThrow(OptimisticLockError);
+
+      const elapsed = Date.now() - startTime;
+      // With maxDelay of 20ms and 2 retries, total delay should be capped
+      expect(elapsed).toBeLessThan(200);
+    });
+
+    it("should throw the conflict error after retries exhausted", async () => {
+      try {
+        await withOptimisticRetry(async () => {
+          throw new FeatureListConflictError("2024-01-01", "2024-01-02");
+        }, { maxRetries: 1, baseDelay: 1 });
+        expect.fail("Should have thrown");
+      } catch (err) {
+        // FeatureListConflictError extends OptimisticLockError
+        expect(err).toBeInstanceOf(OptimisticLockError);
+        expect(err).toBeInstanceOf(FeatureListConflictError);
+        expect((err as FeatureListConflictError).expectedUpdatedAt).toBe("2024-01-01");
+        expect((err as FeatureListConflictError).actualUpdatedAt).toBe("2024-01-02");
+      }
+    });
+  });
+
+  describe("loadFeatureListWithMetadata", () => {
+    it("should return null when feature list does not exist", async () => {
+      const result = await loadFeatureListWithMetadata(tempDir);
+      expect(result).toBeNull();
+    });
+
+    it("should return list with _loadedAt timestamp", async () => {
+      const list = createTestFeatureList([createTestFeature()]);
+      await saveFeatureList(tempDir, list);
+
+      const result = await loadFeatureListWithMetadata(tempDir);
+
+      expect(result).not.toBeNull();
+      expect(result?.list).toBeDefined();
+      expect(result?.list.features).toHaveLength(1);
+      expect(result?._loadedAt).toBe(result?.list.metadata.updatedAt);
+    });
+
+    it("should use updatedAt as _loadedAt for optimistic locking", async () => {
+      const list = createTestFeatureList([]);
+      await saveFeatureList(tempDir, list);
+
+      const result = await loadFeatureListWithMetadata(tempDir);
+
+      expect(result?._loadedAt).toBeDefined();
+      expect(typeof result?._loadedAt).toBe("string");
+    });
+  });
+
+  describe("saveFeatureList with optimistic locking", () => {
+    it("should save successfully when _loadedAt matches current updatedAt", async () => {
+      const list = createTestFeatureList([createTestFeature()]);
+      await saveFeatureList(tempDir, list);
+
+      const loaded = await loadFeatureListWithMetadata(tempDir);
+      expect(loaded).not.toBeNull();
+
+      // Save with the loaded timestamp - should succeed
+      await saveFeatureList(tempDir, loaded!.list, { _loadedAt: loaded!._loadedAt });
+
+      // Verify save succeeded
+      const reloaded = await loadFeatureList(tempDir);
+      expect(reloaded).not.toBeNull();
+    });
+
+    it("should throw FeatureListConflictError when file was modified", async () => {
+      const list = createTestFeatureList([createTestFeature()]);
+      await saveFeatureList(tempDir, list);
+
+      const loaded = await loadFeatureListWithMetadata(tempDir);
+      expect(loaded).not.toBeNull();
+
+      // Simulate another process modifying the file
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await saveFeatureList(tempDir, loaded!.list); // This updates updatedAt
+
+      // Now try to save with the old timestamp - should fail
+      await expect(
+        saveFeatureList(tempDir, loaded!.list, { _loadedAt: loaded!._loadedAt })
+      ).rejects.toThrow(FeatureListConflictError);
+    });
+
+    it("should skip version check when skipVersionCheck is true", async () => {
+      const list = createTestFeatureList([createTestFeature()]);
+      await saveFeatureList(tempDir, list);
+
+      const loaded = await loadFeatureListWithMetadata(tempDir);
+      expect(loaded).not.toBeNull();
+
+      // Simulate modification
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await saveFeatureList(tempDir, loaded!.list);
+
+      // Save with old timestamp but skipVersionCheck - should succeed
+      await saveFeatureList(tempDir, loaded!.list, {
+        _loadedAt: loaded!._loadedAt,
+        skipVersionCheck: true
+      });
+
+      // Verify save succeeded
+      const reloaded = await loadFeatureList(tempDir);
+      expect(reloaded).not.toBeNull();
+    });
+
+    it("should succeed when file does not exist yet", async () => {
+      const list = createTestFeatureList([createTestFeature()]);
+
+      // Save with _loadedAt on non-existent file - should succeed
+      await saveFeatureList(tempDir, list, { _loadedAt: "2024-01-01T00:00:00Z" });
+
+      const loaded = await loadFeatureList(tempDir);
+      expect(loaded).not.toBeNull();
     });
   });
 });

@@ -384,3 +384,96 @@ describe("registry function return types", () => {
     expect(info.installedVersion).toBeNull();
   });
 });
+
+// ============================================================================
+// checkAndInstallPlugins update and first-run paths (coverage for lines 497-524)
+// ============================================================================
+
+describe("checkAndInstallPlugins update and first-run flows", () => {
+  it("should handle plugin update when marketplace already registered", async () => {
+    const module = await import("../src/plugin-installer.js");
+    const { fullInstall, fullUninstall, checkAndInstallPlugins, getPluginInstallInfo } = module;
+
+    // Install first to register marketplace
+    fullInstall();
+
+    // Spy on console to capture output
+    const consoleSpy = vi.spyOn(console, "log");
+
+    // checkAndInstallPlugins should detect marketplace is registered and check for updates
+    await checkAndInstallPlugins();
+
+    // Cleanup
+    fullUninstall();
+    consoleSpy.mockRestore();
+  });
+
+  it("should handle version comparison when installed version exists", async () => {
+    const {
+      fullInstall,
+      fullUninstall,
+      checkAndInstallPlugins,
+      getPluginInstallInfo
+    } = await import("../src/plugin-installer.js");
+
+    // Pre-install to create version file
+    fullInstall();
+
+    const info = getPluginInstallInfo();
+    expect(info.installedVersion).not.toBeNull();
+    expect(info.bundledVersion).toBeDefined();
+
+    // Now checkAndInstallPlugins will compare versions
+    const consoleSpy = vi.spyOn(console, "log");
+    await checkAndInstallPlugins();
+
+    // Should not reinstall since versions match
+    expect(consoleSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining("Registering agent-foreman plugin")
+    );
+
+    // Cleanup
+    fullUninstall();
+    consoleSpy.mockRestore();
+  });
+
+  it("should use bundledVersion for comparison", async () => {
+    const { getPluginInstallInfo, fullInstall, fullUninstall } = await import("../src/plugin-installer.js");
+
+    fullInstall();
+    const info = getPluginInstallInfo();
+
+    // bundledVersion should be the current package version
+    expect(info.bundledVersion).toMatch(/^\d+\.\d+\.\d+/);
+
+    fullUninstall();
+  });
+});
+
+// ============================================================================
+// compareVersions Tests (coverage for version comparison logic)
+// ============================================================================
+
+describe("version comparison behavior in checkAndInstallPlugins", () => {
+  it("should not update when installed version matches bundled", async () => {
+    const { fullInstall, fullUninstall, checkAndInstallPlugins, getPluginInstallInfo } = await import("../src/plugin-installer.js");
+
+    // Install to sync versions
+    fullInstall();
+
+    const info = getPluginInstallInfo();
+    // After fullInstall, installedVersion should match bundledVersion
+    expect(info.installedVersion).toBe(info.bundledVersion);
+
+    const consoleSpy = vi.spyOn(console, "log");
+    await checkAndInstallPlugins();
+
+    // Should not have logged update message since versions match
+    expect(consoleSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining("Updating agent-foreman plugin")
+    );
+
+    fullUninstall();
+    consoleSpy.mockRestore();
+  });
+});

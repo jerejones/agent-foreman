@@ -9,10 +9,12 @@ import {
   RULE_TEMPLATES,
   isRuleTemplate,
   getRuleTemplate,
+  getRuleTemplatePath,
   getAllRuleTemplates,
   copyRulesToProject,
   verifyRuleTemplates,
   hasRulesInstalled,
+  updateProjectRulesIfExists,
 } from "../src/rules/index.js";
 
 describe("Rules", () => {
@@ -273,6 +275,90 @@ describe("Rules", () => {
       // All templates should have content, so created should be 7
       const result = await copyRulesToProject(tempDir);
       expect(result.created).toBe(7);
+    });
+  });
+
+  // ============================================================================
+  // updateProjectRulesIfExists Tests (coverage for lines 230-235)
+  // ============================================================================
+
+  describe("updateProjectRulesIfExists", () => {
+    let tempDir: string;
+
+    beforeEach(async () => {
+      tempDir = await fs.mkdtemp(path.join(tmpdir(), "rules-update-"));
+    });
+
+    afterEach(async () => {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    });
+
+    it("should return null when no rules are installed", async () => {
+      const result = await updateProjectRulesIfExists(tempDir);
+      expect(result).toBeNull();
+    });
+
+    it("should update existing rules when rules are installed", async () => {
+      // First install rules
+      await copyRulesToProject(tempDir);
+
+      // Modify a file to verify it gets updated
+      const filePath = path.join(tempDir, ".claude", "rules", "00-overview.md");
+      await fs.writeFile(filePath, "modified content");
+
+      // Update rules
+      const result = await updateProjectRulesIfExists(tempDir);
+
+      expect(result).not.toBeNull();
+      expect(result!.created).toBe(7);
+      expect(result!.skipped).toBe(0);
+
+      // Verify content was restored
+      const content = await fs.readFile(filePath, "utf-8");
+      expect(content).toContain("Long-Task Harness");
+    });
+
+    it("should force overwrite all files when updating", async () => {
+      // First install rules
+      await copyRulesToProject(tempDir);
+
+      // Update rules
+      const result = await updateProjectRulesIfExists(tempDir);
+
+      // All files should be created (overwritten), none skipped
+      expect(result!.created).toBe(7);
+      expect(result!.skipped).toBe(0);
+    });
+  });
+
+  // ============================================================================
+  // getRuleTemplatePath Tests
+  // ============================================================================
+
+  describe("getRuleTemplatePath", () => {
+    it("should return a valid path for overview template", () => {
+      const templatePath = getRuleTemplatePath("00-overview");
+      expect(templatePath).toContain("templates");
+      expect(templatePath).toContain("00-overview.md");
+    });
+
+    it("should return a valid path for all templates", () => {
+      for (const name of RULE_TEMPLATES) {
+        const templatePath = getRuleTemplatePath(name);
+        expect(templatePath).toContain("templates");
+        expect(templatePath).toContain(`${name}.md`);
+      }
+    });
+
+    it("should return consistent paths", () => {
+      const path1 = getRuleTemplatePath("01-workflow");
+      const path2 = getRuleTemplatePath("01-workflow");
+      expect(path1).toBe(path2);
+    });
+
+    it("should return absolute paths", () => {
+      const templatePath = getRuleTemplatePath("02-rules");
+      expect(path.isAbsolute(templatePath)).toBe(true);
     });
   });
 });

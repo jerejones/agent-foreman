@@ -14,6 +14,7 @@ import {
   getBundledTemplateAsync,
   getAllBundledTemplates,
   verifyBundledTemplates,
+  getBundledTemplatePath,
   type BundledTemplateName,
 } from "../../src/gitignore/bundled-templates.js";
 
@@ -350,5 +351,52 @@ describe("edge cases", () => {
     const syncResult = getBundledTemplate("Go");
     const asyncResult = await getBundledTemplateAsync("Go");
     expect(syncResult).toBe(asyncResult);
+  });
+});
+
+// ============================================================================
+// getBundledTemplatePath Tests
+// ============================================================================
+
+describe("getBundledTemplatePath", () => {
+  it("should return a valid path for Node template", () => {
+    const templatePath = getBundledTemplatePath("Node");
+    expect(templatePath).toContain("templates");
+    expect(templatePath).toContain("Node.gitignore");
+    expect(fs.existsSync(templatePath)).toBe(true);
+  });
+
+  it("should return a valid path for Python template", () => {
+    const templatePath = getBundledTemplatePath("Python");
+    expect(templatePath).toContain("templates");
+    expect(templatePath).toContain("Python.gitignore");
+    expect(fs.existsSync(templatePath)).toBe(true);
+  });
+
+  it("should return a valid path for all bundled templates", () => {
+    for (const name of BUNDLED_TEMPLATES) {
+      const templatePath = getBundledTemplatePath(name);
+      expect(templatePath).toContain("templates");
+      expect(templatePath).toContain(`${name}.gitignore`);
+      // The file should exist on disk
+      expect(fs.existsSync(templatePath)).toBe(true);
+    }
+  });
+
+  it("should return consistent paths across multiple calls", () => {
+    const path1 = getBundledTemplatePath("Go");
+    const path2 = getBundledTemplatePath("Go");
+    expect(path1).toBe(path2);
+  });
+
+  it("should return absolute paths", () => {
+    const templatePath = getBundledTemplatePath("Rust");
+    expect(path.isAbsolute(templatePath)).toBe(true);
+  });
+
+  it("should allow reading the file content directly", () => {
+    const templatePath = getBundledTemplatePath("Java");
+    const content = fs.readFileSync(templatePath, "utf-8");
+    expect(content).toContain("*.class");
   });
 });

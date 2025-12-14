@@ -26,6 +26,7 @@ import {
   verifyFeatureAutonomous,
   createVerificationSummary,
   formatVerificationResult,
+  type VerificationResult,
 } from "../verifier/index.js";
 import { isGitRepo, gitAdd, gitCommit } from "../git-utils.js";
 import { verifyTestFilesExist, discoverFeatureTestFiles, verifyTDDGate } from "../test-gate.js";
@@ -33,6 +34,26 @@ import { runFail } from "./fail.js";
 import { aiScanProject, aiResultToSurvey, generateAISurveyMarkdown } from "../ai-scanner.js";
 import { scanDirectoryStructure } from "../project-scanner.js";
 import { promptConfirmation } from "./helpers.js";
+import type { FeatureStatus } from "../types.js";
+
+/**
+ * Map verification verdict to feature status
+ * - "pass" → "passing" (feature works as expected)
+ * - "needs_review" → "needs_review" (requires human review)
+ * - "fail" → "failed" (verification failed)
+ */
+function mapVerdictToStatus(verdict: string): FeatureStatus {
+  switch (verdict) {
+    case "pass":
+      return "passing";
+    case "needs_review":
+      return "needs_review";
+    case "fail":
+      return "failed";
+    default:
+      return "passing";
+  }
+}
 
 /**
  * Run the done command
@@ -209,6 +230,8 @@ export async function runDone(
   }
 
   // Step 1: Run verification (unless skipped)
+  let result: VerificationResult | undefined;
+
   if (skipCheck) {
     // Silent skip - no output needed for AI agents
   } else {
@@ -244,7 +267,7 @@ export async function runDone(
       e2eTags: feature.e2eTags,
       e2eMode,
     };
-    const result = ai
+    result = ai
       ? await verifyFeatureAutonomous(cwd, feature, verifyOptions)
       : await verifyFeature(cwd, feature, verifyOptions);
 
@@ -317,11 +340,14 @@ export async function runDone(
     }
   }
 
-  // Step 2: Update status to passing
+  // Step 2: Update status based on verification verdict
+  // If skipCheck, default to "passing". Otherwise, map verdict to status.
+  // Note: Even if user confirmed "needs_review", keep status as "needs_review" for tracking.
+  const newStatus: FeatureStatus = skipCheck ? "passing" : mapVerdictToStatus(result!.verdict);
   featureList.features = updateFeatureStatus(
     featureList.features,
     featureId,
-    "passing",
+    newStatus,
     notes || feature.notes
   );
   // Save
@@ -330,10 +356,17 @@ export async function runDone(
   // Log progress
   await appendProgressLog(
     cwd,
-    createStepEntry(featureId, "passing", "./ai/init.sh check", `Completed ${featureId}`)
+    createStepEntry(featureId, newStatus, "./ai/init.sh check", `Completed ${featureId}`)
   );
 
-  console.log(chalk.green(`\n✓ Marked '${featureId}' as passing`));
+  // Display status message with appropriate color
+  if (newStatus === "passing") {
+    console.log(chalk.green(`\n✓ Marked '${featureId}' as passing`));
+  } else if (newStatus === "needs_review") {
+    console.log(chalk.yellow(`\n⚠ Marked '${featureId}' as needs_review`));
+  } else {
+    console.log(chalk.gray(`\n✓ Marked '${featureId}' as ${newStatus}`));
+  }
 
   // Auto-commit or suggest (PRD: write clear commit message)
   const shortDesc = feature.description.length > 50

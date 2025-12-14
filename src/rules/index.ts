@@ -215,3 +215,22 @@ export function hasRulesInstalled(cwd: string): boolean {
 
   return false;
 }
+
+/**
+ * Update project rules if they already exist
+ * Used during CLI upgrade to keep rules in sync
+ *
+ * @param cwd - Project root directory
+ * @returns Result with counts and file lists, or null if no rules were installed
+ */
+export async function updateProjectRulesIfExists(
+  cwd: string
+): Promise<CopyRulesResult | null> {
+  // Only update if rules are already installed
+  if (!hasRulesInstalled(cwd)) {
+    return null;
+  }
+
+  // Force update all rule files
+  return copyRulesToProject(cwd, { force: true });
+}
