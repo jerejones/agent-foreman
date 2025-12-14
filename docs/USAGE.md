@@ -197,7 +197,7 @@ agent-foreman done <feature_id>
 | `--no-skip-check` | Run verification (default skips) |
 | `--no-commit` | Skip auto-commit |
 | `--verbose` / `-v` | Show detailed verification output |
-| `--no-autonomous` | Use diff-based verification instead of AI exploration |
+| `--ai` | Enable AI autonomous exploration for verification |
 | `--loop` / `--no-loop` | Enable/disable loop mode (continuation reminder) |
 | `--notes` / `-n` | Add completion notes |
 
@@ -231,7 +231,7 @@ agent-foreman check <feature_id>
 |------|-------------|
 | `--verbose` / `-v` | Show detailed AI reasoning |
 | `--skip-checks` / `-s` | Skip automated checks, AI only |
-| `--no-autonomous` | Use diff-based verification instead of AI exploration |
+| `--ai` | Enable AI autonomous exploration for verification |
 | `--quick` / `-q` | Run only related tests (default) |
 | `--full` | Run complete test suite |
 | `--test-pattern <pattern>` | Explicit test pattern |

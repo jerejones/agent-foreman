@@ -46,7 +46,7 @@ The flag name `--skip-check` with `--no-skip-check` to enable verification can b
 | `--no-commit` | - | `false` | Skip automatic git commit |
 | `--skip-check` | - | `true` | Skip verification (use `--no-skip-check` to verify) |
 | `--verbose` | `-v` | `false` | Show detailed output |
-| `--no-autonomous` | - | - | Use diff-based instead of autonomous exploration |
+| `--ai` | - | `false` | Enable AI autonomous exploration for verification |
 | `--quick` | `-q` | `true` | Run selective tests only |
 | `--full` | - | `false` | Force full test suite |
 | `--test-pattern` | - | - | Explicit test pattern |

@@ -80,6 +80,12 @@ flowchart TB
 | [scan](./scan.md) | Detect project verification capabilities |
 | [agents](./agents.md) | Show available AI agents status |
 
+### Configuration Commands
+
+| Command | Description |
+|---------|-------------|
+| tdd | View or change TDD mode (strict, recommended, disabled) |
+
 ## Standard Workflow
 
 ```mermaid

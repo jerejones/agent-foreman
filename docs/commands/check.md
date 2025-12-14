@@ -46,9 +46,8 @@ The `check` command has three modes:
 |--------|-------|---------|-------------|
 | `--verbose` | `-v` | `false` | Show detailed output |
 | `--full` | - | `false` | Run full verification (all tests + build + E2E). Auto-selects next task if no feature_id |
-| `--ai` | - | `false` | Run AI verification for affected tasks (fast check mode only) |
+| `--ai` | - | `false` | Enable AI verification (fast check: for affected tasks; task mode: autonomous exploration) |
 | `--skip-checks` | `-s` | `false` | Skip automated checks (AI only) |
-| `--no-autonomous` | - | `false` | Disable autonomous AI exploration |
 | `--quick` | - | `true` | Run only related tests (for task mode) |
 | `--test-pattern` | - | - | Explicit test pattern |
 | `--skip-e2e` | - | `false` | Skip E2E tests entirely |

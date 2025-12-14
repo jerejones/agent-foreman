@@ -19,10 +19,17 @@ CI=true pnpm test -- tests/file.test.ts  # Run single test file
 # CLI Usage (after build or via pnpm dev)
 agent-foreman status              # View project status
 agent-foreman next [feature_id]   # Get next/specific feature to work on
-agent-foreman check <feature_id>  # Verify feature implementation
+agent-foreman check [feature_id]  # Verify code changes or feature implementation
 agent-foreman done <feature_id>   # Mark complete + auto-commit
+agent-foreman fail <feature_id>   # Mark as failed and continue to next
+agent-foreman impact <feature_id> # Analyze impact of changes
 agent-foreman scan                # Scan project verification capabilities
 agent-foreman init [goal]         # Initialize harness
+agent-foreman analyze [output]    # Generate AI-powered project analysis
+agent-foreman tdd [mode]          # View or change TDD mode
+agent-foreman agents              # Show available AI agents status
+agent-foreman install             # Install Claude Code plugin
+agent-foreman uninstall           # Uninstall Claude Code plugin
 
 # Binary builds
 pnpm build:bin                    # Build standalone binary (current platform)
