@@ -1,11 +1,11 @@
 # agent-foreman
 
-> AI Agent 长任务执行框架 — 让 AI 像人类团队一样高效协作
+> 让 AI 不再半途而废，一次交付完整功能
 
 [![npm version](https://img.shields.io/npm/v/agent-foreman.svg)](https://www.npmjs.com/package/agent-foreman)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-[English](./README.md) | [详细使用指南](./docs/USAGE.md)
+[English](./README.md) | [详细指南](./docs/USAGE.md)
 
 ## 痛点
 
@@ -26,6 +26,16 @@ AI 编程助手在处理复杂项目时，常常会掉进这三个坑：
 
 ---
 
+## 快速开始
+
+```bash
+/plugin install agent-foreman        # 1. 安装
+/agent-foreman:init 搭建用户认证API   # 2. 初始化
+/agent-foreman:run                   # 3. 让 AI 干活
+```
+
+---
+
 ## 安装
 
 ```bash
@@ -43,226 +53,68 @@ npx agent-foreman --help
 
 ---
 
-## Claude Code 插件（推荐）
+## 使用方法
 
-agent-foreman 设计为 **Claude Code 插件**，这是推荐的使用方式。
-
-### 1. 安装插件
+### 插件命令（推荐）
 
 ```
 /plugin marketplace add mylukin/agent-foreman
 /plugin install agent-foreman
 ```
 
-### 2. 斜杠命令
-
 | 命令 | 说明 |
 |------|------|
 | `/agent-foreman:status` | 查看项目状态和进度 |
 | `/agent-foreman:init` | 用项目目标初始化框架 |
 | `/agent-foreman:analyze` | 分析现有项目结构 |
-| `/agent-foreman:spec` | 通过多专家委员会将需求转化为任务文件 |
+| `/agent-foreman:spec` | 将需求转化为任务 |
 | `/agent-foreman:next` | 获取下一个优先任务 |
 | `/agent-foreman:run` | 自动完成所有待办任务 |
 
-### 3. 使用示例
-
-**初始化新项目：**
+**将需求转化为任务：**
 ```
-/agent-foreman:init 搭建一个用户管理 REST API
+/agent-foreman:spec 搭建一个用户认证系统
 ```
 
-**查看状态并开始工作：**
 ```
-/agent-foreman:status
-/agent-foreman:next
+需求 → [产品→UX→技术→QA] → 规格文档 → BREAKDOWN 任务 → /run → 实现
 ```
 
-**自动完成所有任务：**
-```
-/agent-foreman:run
-```
+<details>
+<summary><b>CLI 命令（独立使用）</b></summary>
 
-**处理指定任务：**
-```
-/agent-foreman:run auth.login
-```
-
-### 4. 命令参数
-
-命令支持自然语言和标志参数：
-
-```
-/agent-foreman:init --mode new        # 全新开始，替换现有
-/agent-foreman:init --mode scan       # 仅预览，不保存
-/agent-foreman:analyze --verbose      # 详细输出
-```
-
----
-
-## CLI 命令
-
-独立使用 CLI（不通过 Claude Code）：
+不通过 Claude Code 独立使用：
 
 | 命令 | 说明 |
 |------|------|
 | `init [goal]` | 初始化或升级框架 |
-| `init --analyze` | 仅生成 ARCHITECTURE.md |
-| `init --scan` | 仅检测验证能力 |
 | `next [feature_id]` | 显示下一个待处理任务 |
 | `status` | 显示当前项目状态 |
 | `check [feature_id]` | 验证代码变更或任务完成状态 |
 | `done <feature_id>` | 验证、标记完成并自动提交 |
 | `fail <feature_id>` | 标记任务为失败 |
 | `impact <feature_id>` | 分析变更影响 |
-| `tdd [mode]` | 查看或设置 TDD 模式 (strict/recommended/disabled) |
+| `tdd [mode]` | 查看或设置 TDD 模式 |
 | `agents` | 显示可用的 AI 代理 |
 | `install` | 安装 Claude Code 插件 |
 | `uninstall` | 卸载 Claude Code 插件 |
 
-详细参数请参阅 [详细使用指南](./docs/USAGE.md)。
-
----
-
-## 为什么管用
-
-道理很简单：**AI 需要和人类团队一样的协作工具**。
-
-人类工程师也不靠脑子记事。我们用：
-- Git 管理版本
-- Issue 跟踪任务
-- 文档做交接
-- 测试保质量
-
-agent-foreman 把这套打法搬给了 AI：
-
-| 人类的做法 | AI 的等价物 |
-|-----------|------------|
-| Scrum 看板 | `ai/tasks/index.json` |
-| 站会纪要 | `progress.log` |
-| CI/CD 流水线 | `init.sh check` |
-| Code Review | 验收标准 |
-
-### 结构化存储格式
-
-每个任务以 Markdown 文件存储，包含 YAML frontmatter：
-
-```yaml
----
-id: auth.login
-status: failing
-priority: 1
----
-# 用户可以登录
-
-## 验收标准
-1. 有效凭证返回 JWT 令牌
-2. 无效凭证返回 401 错误
-```
-
-该格式的优势：
-- **人类可读** — 便于查看和编辑
-- **结构化元数据** — YAML frontmatter 用于状态追踪
-- **模式验证** — 防止无效状态
-- **Git 友好** — 清晰的 diff 便于代码审查
+</details>
 
 ---
 
 ## 工作流程
 
-agent-foreman 采用 **TDD (测试驱动开发)** 理念：先定义验收标准，再实现功能，最后验证通过。
-
-```text
-┌──────────────────────────────────────────────────────────────────────────┐
-│                          AGENT-FOREMAN 工作流                             │
-│                        (基于 TDD 测试驱动开发)                             │
-├──────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  初始化阶段                                                               │
-│  ┌─────────┐    ┌──────────┐    ┌──────────┐                            │
-│  │ analyze │───▶│   scan   │───▶│   init   │                            │
-│  │ 分析项目 │    │ 扫描能力 │    │ 生成配置 │                            │
-│  └─────────┘    └──────────┘    └──────────┘                            │
-│                                       │                                  │
-│                                       ▼                                  │
-│                             定义验收标准 (RED)                            │
-│                             ai/tasks/index.json                          │
-│                                                                          │
-├──────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  TDD 开发循环                                                             │
-│                                                                          │
-│      ┌──────────────────────────────────────────────────────┐           │
-│      │                          循环                        │           │
-│      ▼                                                      │           │
-│  ┌──────────┐    ┌──────────────────────────────────────┐  │           │
-│  │  next    │───▶│  RED: 查看验收标准 (预期行为)         │  │           │
-│  │ 获取任务 │    │  验收标准 = 失败的测试用例             │  │           │
-│  └──────────┘    └──────────────────────────────────────┘  │           │
-│                                   │                         │           │
-│                                   ▼                         │           │
-│                  ┌──────────────────────────────────────┐  │           │
-│                  │  GREEN: 实现功能                      │  │           │
-│                  │  编写最少代码让验收标准通过            │  │           │
-│                  └──────────────────────────────────────┘  │           │
-│                                   │                         │           │
-│                                   ▼                         │           │
-│                  ┌──────────────────────────────────────┐  │           │
-│                  │  check <id> (可选)                    │  │           │
-│                  │  - 运行测试验证实现                   │  │           │
-│                  │  - AI 验证验收标准                    │  │           │
-│                  └──────────────────────────────────────┘  │           │
-│                                   │                         │           │
-│                                   ▼                         │           │
-│                  ┌──────────────────────────────────────┐  │           │
-│                  │  done <id>                            │  │           │
-│                  │  - 标记功能完成                       │  │           │
-│                  │  - 自动提交 (REFACTOR 可选)           │  │           │
-│                  └──────────────────────────────────────┘  │           │
-│                                   │                         │           │
-│                                   ▼                         │           │
-│                          ┌───────────────┐                 │           │
-│                          │ 还有任务？    │─────有──────────┘           │
-│                          └───────────────┘                              │
-│                                   │ 没有                                │
-│                                   ▼                                     │
-│                  ┌───────────────────────────────────────┐             │
-│                  │  全部通过！(100%)                     │             │
-│                  │  ARCHITECTURE.md 已更新               │             │
-│                  └───────────────────────────────────────┘             │
-│                                                                          │
-└──────────────────────────────────────────────────────────────────────────┘
+```
+next → 实现 → check → done → 循环
 ```
 
-**TDD 核心理念：**
-- **RED** — 先定义验收标准（等同于失败的测试）
-- **GREEN** — 编写最少代码让标准通过
-- **REFACTOR** — 在测试保护下重构优化
-
----
-
-## 核心文件
-
-| 文件 | 用途 |
-|------|------|
-| `ai/tasks/index.json` | 任务索引，带状态摘要 |
-| `ai/tasks/{module}/{id}.md` | 单个任务定义 (Markdown + YAML frontmatter) |
-| `ai/progress.log` | 进度日志，用于会话交接 |
-| `ai/init.sh` | 环境启动脚本 |
-| `ai/capabilities.json` | 项目能力缓存 |
-| `CLAUDE.md` | AI 代理指令文件 |
-| `docs/ARCHITECTURE.md` | AI 生成的项目架构文档 |
-
-## 功能状态
-
-| 状态 | 含义 |
-|------|------|
-| `failing` | 待实现 |
-| `passing` | 已完成验收 |
-| `blocked` | 被外部依赖卡住 |
-| `needs_review` | 可能受其他改动影响，需复查 |
-| `failed` | 已尝试实现但验证失败 |
-| `deprecated` | 已废弃 |
+| 步骤 | 命令 | 执行内容 |
+|------|------|----------|
+| 1 | `next` | 获取任务和验收标准 |
+| 2 | 实现 | 编写代码满足标准 |
+| 3 | `check` | 验证实现 |
+| 4 | `done` | 标记完成，自动提交 |
 
 ---
 
@@ -273,6 +125,51 @@ agent-foreman 采用 **TDD (测试驱动开发)** 理念：先定义验收标准
 3. **关注影响范围** — 改完跑一下 impact 分析
 4. **原子化提交** — 一个功能对应一个 commit
 5. **先看再动手** — 开工前先读功能列表和进度日志
+
+---
+
+## 参考资料
+
+<details>
+<summary><b>核心文件</b></summary>
+
+| 文件 | 用途 |
+|------|------|
+| `ai/tasks/index.json` | 任务索引，带状态摘要 |
+| `ai/tasks/{module}/{id}.md` | 单个任务定义 |
+| `ai/progress.log` | 进度日志，用于会话交接 |
+| `ai/init.sh` | 环境启动脚本 |
+| `CLAUDE.md` | AI 代理指令文件 |
+
+</details>
+
+<details>
+<summary><b>状态值</b></summary>
+
+| 状态 | 含义 |
+|------|------|
+| `failing` | 待实现 |
+| `passing` | 已完成验收 |
+| `blocked` | 被外部依赖卡住 |
+| `needs_review` | 可能受其他改动影响 |
+| `failed` | 验证失败 |
+| `deprecated` | 已废弃 |
+
+</details>
+
+<details>
+<summary><b>为什么管用</b></summary>
+
+AI 需要和人类团队一样的协作工具：
+
+| 人类的做法 | AI 的等价物 |
+|-----------|------------|
+| Scrum 看板 | `ai/tasks/index.json` |
+| 站会纪要 | `progress.log` |
+| CI/CD 流水线 | `init.sh check` |
+| Code Review | 验收标准 |
+
+</details>
 
 ---
 
