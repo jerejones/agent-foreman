@@ -781,7 +781,7 @@ npm install -g @google/gemini-cli
 npm install -g @openai/codex
 
 # OpenCode
-npm install -g opencode
+npm install -g opencode-ai
 ```
 
 ### "No task list found"
