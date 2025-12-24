@@ -161,8 +161,3 @@ export function createFeature(
   };
 }
 
-/** Alias for createEmptyFeatureList - creates empty task list */
-export const createEmptyTaskList = createEmptyFeatureList;
-
-/** Alias for createFeature - creates task */
-export const createTask = createFeature;

@@ -69,8 +69,6 @@ export {
   discoveredToFeature,
   createEmptyFeatureList,
   createFeature,
-  createEmptyTaskList,
-  createTask,
   migrateToStrictTDD,
 } from "./factory.js";
 
