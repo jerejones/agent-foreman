@@ -12,7 +12,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { execSync, spawnSync } from "node:child_process";
 import * as fs from "node:fs/promises";
-import * as fsSync from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 
@@ -52,13 +51,15 @@ function parseJsonOutput(result: { stdout: string; stderr: string; status: numbe
   }
 }
 
+// Environment for spawned CLI processes (skip AI and upgrade checks to prevent hanging)
+const CLI_ENV = { ...process.env, SKIP_AI_GUIDANCE: "true", SKIP_UPGRADE_CHECK: "true" };
+
 describe("E2E Workflow Tests", () => {
   let tempDir: string;
 
   beforeEach(async () => {
     // Create a unique temp directory for each test
-    const rawTempDir = await fs.mkdtemp(path.join(os.tmpdir(), "foreman-e2e-"));
-    tempDir = fsSync.realpathSync(rawTempDir); // Resolve symlinks (macOS /var -> /private/var)
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "foreman-e2e-"));
     // Initialize git repo for commands that require it
     execSync("git init", { cwd: tempDir, stdio: "pipe" });
     execSync("git config user.email 'test@test.com'", { cwd: tempDir, stdio: "pipe" });
@@ -97,6 +98,13 @@ describe("E2E Workflow Tests", () => {
             dependsOn: [],
             version: 1,
             origin: "manual",
+            // verification field required for `done` with skipCheck=true (default)
+            verification: {
+              verifiedAt: "2024-01-01T00:00:00Z",
+              verdict: "pass",
+              verifiedBy: "test",
+              summary: "Test passed",
+            },
           },
           {
             id: "core.tests",
@@ -108,6 +116,13 @@ describe("E2E Workflow Tests", () => {
             dependsOn: ["core.setup"],
             version: 1,
             origin: "manual",
+            // verification field required for `done` with skipCheck=true (default)
+            verification: {
+              verifiedAt: "2024-01-01T00:00:00Z",
+              verdict: "pass",
+              verifiedBy: "test",
+              summary: "Test passed",
+            },
           },
         ],
         metadata: {
@@ -138,6 +153,7 @@ describe("E2E Workflow Tests", () => {
       const statusResult = spawnSync("node", [CLI_PATH, "status"], {
         cwd: tempDir,
         encoding: "utf-8",
+        env: CLI_ENV,
       });
 
       expect(statusResult.stdout).toContain("Failing: 2");
@@ -147,32 +163,43 @@ describe("E2E Workflow Tests", () => {
       const stepResult = spawnSync("node", [CLI_PATH, "next", "--json", "--allow-dirty"], {
         cwd: tempDir,
         encoding: "utf-8",
-        timeout: 180000, // 3 minutes for AI TDD guidance generation
+        env: CLI_ENV,
+        timeout: 30000, // 30 seconds (AI is mocked via SKIP_AI_GUIDANCE)
       });
 
       const stepOutput = parseJsonOutput(stepResult, "next --json core.setup") as { feature: { id: string } };
       expect(stepOutput.feature.id).toBe("core.setup");
 
       // Step 5: Complete the first feature
-      const completeResult = spawnSync("node", [CLI_PATH, "done", "core.setup", "--no-commit"], {
+      const completeResult = spawnSync("node", [CLI_PATH, "done", "core.setup", "--skip-verify", "--no-commit"], {
         cwd: tempDir,
         encoding: "utf-8",
+        env: CLI_ENV,
         timeout: 10000,
       });
 
       expect(completeResult.stdout).toContain("Marked 'core.setup' as passing");
 
-      // Step 6: Verify feature list was updated
-      const updatedFeatureList = JSON.parse(
-        await fs.readFile(path.join(tempDir, "ai/feature_list.json"), "utf-8")
+      // Step 6: Verify feature was updated in modular storage format
+      // After auto-migration, features are stored in ai/tasks/{module}/{id}.md
+      const coreSetupContent = await fs.readFile(
+        path.join(tempDir, "ai/tasks/core/setup.md"),
+        "utf-8"
       );
-      expect(updatedFeatureList.features[0].status).toBe("passing");
-      expect(updatedFeatureList.features[1].status).toBe("failing");
+      expect(coreSetupContent).toContain("status: passing");
+
+      // Verify second feature is still failing
+      const coreTestsContent = await fs.readFile(
+        path.join(tempDir, "ai/tasks/core/tests.md"),
+        "utf-8"
+      );
+      expect(coreTestsContent).toContain("status: failing");
 
       // Step 7: Verify status shows updated stats
       const statusResult2 = spawnSync("node", [CLI_PATH, "status"], {
         cwd: tempDir,
         encoding: "utf-8",
+        env: CLI_ENV,
       });
 
       expect(statusResult2.stdout).toContain("Passing: 1");
@@ -183,16 +210,18 @@ describe("E2E Workflow Tests", () => {
       const stepResult2 = spawnSync("node", [CLI_PATH, "next", "--json", "--allow-dirty"], {
         cwd: tempDir,
         encoding: "utf-8",
-        timeout: 180000, // 3 minutes for AI TDD guidance generation
+        env: CLI_ENV,
+        timeout: 30000, // 30 seconds (AI is mocked via SKIP_AI_GUIDANCE)
       });
 
       const stepOutput2 = parseJsonOutput(stepResult2, "next --json core.tests") as { feature: { id: string } };
       expect(stepOutput2.feature.id).toBe("core.tests");
 
       // Step 9: Complete the second feature
-      const completeResult2 = spawnSync("node", [CLI_PATH, "done", "core.tests", "--no-commit"], {
+      const completeResult2 = spawnSync("node", [CLI_PATH, "done", "core.tests", "--skip-verify", "--no-commit"], {
         cwd: tempDir,
         encoding: "utf-8",
+        env: CLI_ENV,
         timeout: 10000,
       });
 
@@ -202,19 +231,21 @@ describe("E2E Workflow Tests", () => {
       const stepResult3 = spawnSync("node", [CLI_PATH, "next", "--allow-dirty"], {
         cwd: tempDir,
         encoding: "utf-8",
+        env: CLI_ENV,
       });
 
-      expect(stepResult3.stdout).toContain("All features are passing");
+      expect(stepResult3.stdout).toContain("All tasks are passing");
 
       // Step 11: Verify final status
       const statusResult3 = spawnSync("node", [CLI_PATH, "status"], {
         cwd: tempDir,
         encoding: "utf-8",
+        env: CLI_ENV,
       });
 
       expect(statusResult3.stdout).toContain("Passing: 2");
       expect(statusResult3.stdout).toContain("100%");
-    }, 600000); // 10 minute test timeout for AI calls
+    }, 120000); // 2 minute test timeout (AI is mocked)
   });
 
   describe("File output verification", () => {
@@ -236,6 +267,13 @@ describe("E2E Workflow Tests", () => {
             version: 1,
             origin: "manual",
             notes: "Test notes",
+            // verification field required for `done` with skipCheck=true (default)
+            verification: {
+              verifiedAt: "2024-01-01T00:00:00Z",
+              verdict: "pass",
+              verifiedBy: "test",
+              summary: "Test passed",
+            },
           },
         ],
         metadata: {
@@ -257,21 +295,28 @@ describe("E2E Workflow Tests", () => {
       execSync('git commit -m "init"', { cwd: tempDir, stdio: "pipe" });
 
       // Complete the feature
-      spawnSync("node", [CLI_PATH, "done", "test.verify", "--no-commit"], {
+      spawnSync("node", [CLI_PATH, "done", "test.verify", "--skip-verify", "--no-commit"], {
         cwd: tempDir,
         encoding: "utf-8",
+        env: CLI_ENV,
         timeout: 10000,
       });
 
       // Verify the structure is maintained
-      const content = await fs.readFile(path.join(tempDir, "ai/feature_list.json"), "utf-8");
-      const updated = JSON.parse(content);
+      // After migration, the feature is stored in modular format (ai/tasks/)
+      // Check index.json for status, and markdown file for full data
+      const indexPath = path.join(tempDir, "ai/tasks/index.json");
+      const indexContent = await fs.readFile(indexPath, "utf-8");
+      const index = JSON.parse(indexContent);
 
-      expect(updated.features[0].id).toBe("test.verify");
-      expect(updated.features[0].status).toBe("passing");
-      expect(updated.features[0].acceptance).toEqual(["Feature is valid"]);
-      expect(updated.features[0].tags).toEqual(["test"]);
-      expect(updated.metadata.version).toBe("1.0.0");
+      expect(index.features["test.verify"].status).toBe("passing");
+      expect(index.metadata.version).toBe("1.0.0");
+
+      // Check the markdown file for full feature data
+      const featurePath = path.join(tempDir, "ai/tasks/test/verify.md");
+      const featureContent = await fs.readFile(featurePath, "utf-8");
+      expect(featureContent).toContain("status: passing");
+      expect(featureContent).toContain("# Verify feature structure");
     });
 
     it("should verify progress.log is updated after done", async () => {
@@ -289,6 +334,13 @@ describe("E2E Workflow Tests", () => {
             dependsOn: [],
             version: 1,
             origin: "manual",
+            // verification field required for `done` with skipCheck=true (default)
+            verification: {
+              verifiedAt: "2024-01-01T00:00:00Z",
+              verdict: "pass",
+              verifiedBy: "test",
+              summary: "Test passed",
+            },
           },
         ],
         metadata: {
@@ -315,9 +367,10 @@ describe("E2E Workflow Tests", () => {
       execSync('git commit -m "init"', { cwd: tempDir, stdio: "pipe" });
 
       // Complete the feature
-      spawnSync("node", [CLI_PATH, "done", "test.progress", "--no-commit"], {
+      spawnSync("node", [CLI_PATH, "done", "test.progress", "--skip-verify", "--no-commit"], {
         cwd: tempDir,
         encoding: "utf-8",
+        env: CLI_ENV,
         timeout: 10000,
       });
 
@@ -357,6 +410,7 @@ describe("E2E Workflow Tests", () => {
       const result = spawnSync("node", [CLI_PATH, "status"], {
         cwd: tempDir,
         encoding: "utf-8",
+        env: CLI_ENV,
       });
 
       expect(result.stdout).toContain("Passing: 2");
@@ -389,6 +443,7 @@ describe("E2E Workflow Tests", () => {
       const result = spawnSync("node", [CLI_PATH, "status", "--json"], {
         cwd: tempDir,
         encoding: "utf-8",
+        env: CLI_ENV,
       });
 
       const output = parseJsonOutput(result, "status --json") as {
@@ -406,7 +461,7 @@ describe("E2E Workflow Tests", () => {
   });
 
   describe("Next command with dependencies", () => {
-    it("should select features based on priority and dependency status", async () => {
+    it("should select features based on priority and dependency status", { timeout: 60000 }, async () => {
       await fs.mkdir(path.join(tempDir, "ai"), { recursive: true });
 
       const featureList = {
@@ -451,15 +506,16 @@ describe("E2E Workflow Tests", () => {
       const result = spawnSync("node", [CLI_PATH, "next", "--json", "--allow-dirty"], {
         cwd: tempDir,
         encoding: "utf-8",
-        timeout: 180000, // 3 minutes for AI TDD guidance generation
+        env: CLI_ENV,
+        timeout: 30000, // 30 seconds (AI is mocked via SKIP_AI_GUIDANCE)
       });
 
       const output = parseJsonOutput(result, "next --json dependency test") as { feature: { id: string } };
       // Should return a valid feature (either one based on the selection algorithm)
       expect(["base.setup", "advanced.feature"]).toContain(output.feature.id);
-    }, 200000); // 3.5 minute test timeout
+    }, 60000); // 1 minute test timeout (AI is mocked)
 
-    it("should handle circular dependency gracefully", async () => {
+    it("should handle circular dependency gracefully", { timeout: 60000 }, async () => {
       await fs.mkdir(path.join(tempDir, "ai"), { recursive: true });
 
       // Note: This shouldn't happen in practice, but test defensive behavior
@@ -505,14 +561,15 @@ describe("E2E Workflow Tests", () => {
       const result = spawnSync("node", [CLI_PATH, "next", "--json", "--allow-dirty"], {
         cwd: tempDir,
         encoding: "utf-8",
-        timeout: 180000, // 3 minutes for AI TDD guidance generation
+        env: CLI_ENV,
+        timeout: 30000, // 30 seconds (AI is mocked via SKIP_AI_GUIDANCE)
       });
 
       // Should not crash
       expect(result.status).toBe(0);
       const output = parseJsonOutput(result, "next --json circular dependency") as { feature: unknown };
       expect(output.feature).toBeDefined();
-    }, 200000); // 3.5 minute test timeout
+    }, 60000); // 1 minute test timeout (AI is mocked)
   });
 
   describe("Error handling", () => {
@@ -526,6 +583,7 @@ describe("E2E Workflow Tests", () => {
       const result = spawnSync("node", [CLI_PATH, "status"], {
         cwd: tempDir,
         encoding: "utf-8",
+        env: CLI_ENV,
       });
 
       // Should handle error gracefully
@@ -537,9 +595,10 @@ describe("E2E Workflow Tests", () => {
       const result = spawnSync("node", [CLI_PATH, "status"], {
         cwd: tempDir,
         encoding: "utf-8",
+        env: CLI_ENV,
       });
 
-      expect(result.stdout).toContain("No feature list found");
+      expect(result.stdout).toContain("No task list found");
     });
   });
 });

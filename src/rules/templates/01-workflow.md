@@ -1,22 +1,47 @@
 # Workflow for Each Session
 
+## ⚠️ STRICT WORKFLOW COMPLIANCE (MANDATORY)
+
+**AI agents MUST strictly follow the defined workflow. NO improvisation allowed.**
+
+### Required Workflow Sequence
+
+```
+next → implement → check → done
+```
+
+**This sequence is MANDATORY. Every step must be executed in this exact order.**
+
+### Forbidden Behaviors
+
+| ❌ DO NOT | ✅ INSTEAD |
+|-----------|------------|
+| Skip `next` and go straight to implementation | Always run `agent-foreman next` first |
+| Skip `check` and go straight to `done` | Always run `agent-foreman check` before `done` |
+| Invent your own workflow steps | Follow exactly: `next → implement → check → done` |
+| Add extra verification steps | Use only the commands in the workflow |
+| Reorder workflow steps | Execute in exact sequence |
+| Ask user "should I run check?" | Just run the command as defined |
+
+---
+
 ## Mode Detection
 
-**If a feature_id is provided** (e.g., `agent-foreman next auth.login`):
-- Work on that specific feature only
+**If a task_id is provided** (e.g., `agent-foreman next auth.login`):
+- Work on that specific task only
 - Complete it and stop
 
-**If no feature_id** (e.g., `agent-foreman next`):
-- Auto-select highest priority pending feature
-- Process features in priority order
+**If no task_id** (e.g., `agent-foreman next`):
+- Auto-select highest priority pending task
+- Process tasks in priority order
 
 ---
 
 ## IMPORTANT: TDD Mode Check
 
-Before implementing ANY feature, check if strict TDD mode is active:
+Before implementing ANY task, check if strict TDD mode is active:
 - Look for `!!! TDD ENFORCEMENT ACTIVE !!!` in `agent-foreman next` output
-- Or check `ai/feature_list.json` for `"tddMode": "strict"`
+- **DO NOT read index.json directly** - always use CLI output for workflow decisions
 
 **If TDD mode is strict → MUST follow TDD Workflow below**
 **If TDD mode is recommended/disabled → May follow Standard Workflow**
@@ -28,8 +53,8 @@ Before implementing ANY feature, check if strict TDD mode is active:
 **AI agents MUST follow these steps EXACTLY in order. DO NOT skip any step.**
 
 ```bash
-# STEP 1: Get feature and TDD guidance
-agent-foreman next <feature_id>
+# STEP 1: Get task and TDD guidance
+agent-foreman next <task_id>
 # Read the TDD GUIDANCE section carefully
 # Note the suggested test files and test cases
 ```
@@ -86,58 +111,62 @@ describe('feature-name', () => {
 
 ```bash
 # Verify implementation meets all criteria
-agent-foreman check <feature_id>
+agent-foreman check <task_id>
 
-# If check passes, complete the feature
-agent-foreman done <feature_id>
+# If check passes, complete the task
+agent-foreman done <task_id>
 ```
 
 ---
 
 ## Standard Workflow (when tddMode: recommended or disabled)
 
-### Single Feature Mode
+### Single Task Mode
 
-When feature_id is provided:
+When task_id is provided:
 
 ```bash
-# STEP 1: Get the specified feature
-agent-foreman next <feature_id>
+# STEP 1: Get the specified task
+agent-foreman next <task_id>
 
-# STEP 2: Implement feature
+# STEP 2: Implement task
 # (satisfy ALL acceptance criteria shown)
 
 # STEP 3: Verify implementation (required)
-agent-foreman check <feature_id>
+agent-foreman check <task_id>
 
-# STEP 4: Complete feature (skips re-verification since we just checked)
-agent-foreman done <feature_id>
+# STEP 4: Complete task (skips re-verification since we just checked)
+agent-foreman done <task_id>
+
+# STEP 5 (Optional): Check impact on dependent tasks
+agent-foreman impact <task_id>
+# If dependents need review, they'll be prioritized in next selection
 ```
 
-### All Features Mode
+### All Tasks Mode
 
-When no feature_id:
+When no task_id:
 
 ```bash
 # STEP 1: Check status
 agent-foreman status
 
-# STEP 2: Get next feature
+# STEP 2: Get next task
 agent-foreman next
 
-# STEP 3: Implement feature
+# STEP 3: Implement task
 # (satisfy ALL acceptance criteria shown)
 
 # STEP 4: Verify implementation (required)
-agent-foreman check <feature_id>
+agent-foreman check <task_id>
 
-# STEP 5: Complete feature (skips re-verification since we just checked)
-agent-foreman done <feature_id>
+# STEP 5: Complete task (skips re-verification since we just checked)
+agent-foreman done <task_id>
 
 # STEP 6: Handle result
 # - Verification passed? → Continue to STEP 1
-# - Verification failed? → Mark as failed, continue to STEP 1
-# - All features processed? → STOP, show summary
+# - Verification failed? → Run 'agent-foreman fail <task_id> -r "reason"', continue to STEP 1
+# - All tasks processed? → STOP, show summary
 ```
 
 ---
@@ -156,19 +185,16 @@ agent-foreman done <feature_id>
 
 ## On Verification Failure
 
-When `agent-foreman check` or `agent-foreman done` reports verification failure:
+When `agent-foreman done` or `agent-foreman check` reports verification failure:
 
-1. **DO NOT STOP** - Continue to the next feature
-2. Mark the feature as failed using the `fail` command:
+1. **DO NOT STOP** - Continue to the next task
+2. Mark the failed task using the fail command:
    ```bash
-   agent-foreman fail <feature_id> --reason "Verification failed: [brief reason]"
+   agent-foreman fail <task_id> --reason "Brief description of failure"
    ```
-3. Continue to the next feature immediately:
-   ```bash
-   agent-foreman next
-   ```
+3. Continue to the next task immediately
 
-**CRITICAL: NEVER stop due to verification failure - always use `fail` and continue!**
+**CRITICAL: NEVER stop due to verification failure - always use `agent-foreman fail` and continue!**
 
 ---
 
@@ -176,23 +202,23 @@ When `agent-foreman check` or `agent-foreman done` reports verification failure:
 
 | Condition | Action |
 |-----------|--------|
-| All features processed | ✅ STOP - Show summary |
-| Single feature completed | ✅ STOP - Feature done |
-| User interrupts | ⏹️ STOP - Clean state |
+| All tasks processed | STOP - Show summary |
+| Single task completed | STOP - Task done |
+| User interrupts | STOP - Clean state |
 
 ---
 
 ## Loop Completion
 
-When all features have been processed:
+When all tasks have been processed:
 
 1. Run `agent-foreman status` to show final summary
 2. Report counts:
-   - ✓ X features passing
-   - ⚡ Y features failed (need investigation)
-   - ⚠ Z features needs_review (dependency changes)
-   - ✗ W features still failing (not attempted)
-3. List features that failed verification with their failure reasons
+   - X tasks passing
+   - Y tasks failed (need investigation)
+   - Z tasks needs_review (dependency changes)
+   - W tasks still failing (not attempted)
+3. List tasks that failed verification with their failure reasons
 
 ---
 

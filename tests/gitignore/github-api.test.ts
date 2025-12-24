@@ -1,516 +1,251 @@
 /**
- * Tests for GitHub gitignore API client
+ * Tests for GitHub API client for gitignore templates
  */
+
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
-
+import { tmpdir, homedir } from "node:os";
 import {
   getCacheDir,
   getCacheTTL,
   fetchGitignoreTemplate,
   listGitignoreTemplates,
   clearCache,
+  getCacheStats,
 } from "../../src/gitignore/github-api.js";
 
-import { getBundledTemplate } from "../../src/gitignore/bundled-templates.js";
-
-// ============================================================================
-// Test Setup
-// ============================================================================
-
-// Cache directory for tests
-const originalCacheDir = getCacheDir();
-
-// Mock fetch for API tests
-const originalFetch = global.fetch;
-
-function mockFetch(response: {
-  ok: boolean;
-  status: number;
-  json?: () => Promise<unknown>;
-  headers?: { get: (name: string) => string | null };
-}) {
-  global.fetch = vi.fn().mockResolvedValue({
-    ok: response.ok,
-    status: response.status,
-    json: response.json || (() => Promise.resolve({})),
-    headers: response.headers || { get: () => null },
-  });
-}
-
-function restoreFetch() {
-  global.fetch = originalFetch;
-}
-
-// ============================================================================
-// Cache Directory Tests
-// ============================================================================
-
-describe("cache directory", () => {
-  it("should return cache directory path in user home", () => {
-    const cacheDir = getCacheDir();
-    expect(cacheDir).toContain(".agent-foreman");
-    expect(cacheDir).toContain("gitignore-cache");
+describe("github-api", () => {
+  describe("getCacheDir", () => {
+    it("should return path in home directory", () => {
+      const cacheDir = getCacheDir();
+      expect(cacheDir).toContain(".agent-foreman");
+      expect(cacheDir).toContain("gitignore-cache");
+      expect(cacheDir).toContain(homedir());
+    });
   });
 
-  it("should have 7-day TTL", () => {
-    const ttl = getCacheTTL();
-    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-    expect(ttl).toBe(sevenDaysMs);
-  });
-});
-
-// ============================================================================
-// Fetch Template Tests (with mocking)
-// ============================================================================
-
-describe("fetchGitignoreTemplate", () => {
-  afterEach(() => {
-    restoreFetch();
+  describe("getCacheTTL", () => {
+    it("should return 7 days in milliseconds", () => {
+      const ttl = getCacheTTL();
+      const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+      expect(ttl).toBe(sevenDaysMs);
+    });
   });
 
-  it("should return bundled template for bundled template names without API call", async () => {
-    // Mock fetch to throw error (shouldn't be called for bundled templates)
-    mockFetch({ ok: false, status: 500 });
+  describe("fetchGitignoreTemplate", () => {
+    const originalFetch = global.fetch;
+    let tempCacheDir: string;
 
-    const result = await fetchGitignoreTemplate("Node");
-
-    // Should return successfully (either cached or bundled)
-    expect(result.source).toContain("node_modules");
-  });
-
-  it("should return FetchResult with source, fromCache, and fallback properties", async () => {
-    const result = await fetchGitignoreTemplate("Node");
-
-    expect(result).toHaveProperty("source");
-    expect(result).toHaveProperty("fromCache");
-    expect(result).toHaveProperty("fallback");
-    expect(typeof result.source).toBe("string");
-    expect(typeof result.fromCache).toBe("boolean");
-    expect(typeof result.fallback).toBe("boolean");
-  });
-
-  it("should fallback to bundled template on network error", async () => {
-    // Mock fetch to simulate network error
-    global.fetch = vi.fn().mockRejectedValue(new Error("Network error"));
-
-    const result = await fetchGitignoreTemplate("Node");
-
-    // Should fallback to bundled
-    expect(result.source).toContain("node_modules");
-    expect(result.fallback || result.fromCache).toBe(true);
-  });
-
-  it("should fallback to bundled template on 404 for bundled templates", async () => {
-    mockFetch({ ok: false, status: 404 });
-
-    const result = await fetchGitignoreTemplate("Node");
-
-    // Should fallback to bundled or return from cache
-    expect(result.source).toContain("node_modules");
-    // Either fallback to bundled or returned from cache (both are acceptable)
-    expect(result.fallback || result.fromCache).toBe(true);
-  });
-
-  it("should throw error for unknown template with no fallback", async () => {
-    mockFetch({ ok: false, status: 404 });
-
-    await expect(fetchGitignoreTemplate("NonExistentTemplate123")).rejects.toThrow();
-  });
-});
-
-// ============================================================================
-// List Templates Tests
-// ============================================================================
-
-describe("listGitignoreTemplates", () => {
-  afterEach(() => {
-    restoreFetch();
-  });
-
-  it("should return array of template names", async () => {
-    // Mock successful API response
-    mockFetch({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve(["Node", "Python", "Go", "Rust", "Java"]),
-      headers: { get: () => null },
+    beforeEach(() => {
+      tempCacheDir = fs.mkdtempSync(path.join(tmpdir(), "gitignore-cache-test-"));
     });
 
-    const templates = await listGitignoreTemplates();
-
-    expect(Array.isArray(templates)).toBe(true);
-  });
-
-  it("should return empty array on network error", async () => {
-    global.fetch = vi.fn().mockRejectedValue(new Error("Network error"));
-
-    const templates = await listGitignoreTemplates();
-
-    expect(Array.isArray(templates)).toBe(true);
-  });
-});
-
-// ============================================================================
-// Cache Behavior Tests
-// ============================================================================
-
-describe("cache behavior", () => {
-  let testCacheDir: string;
-
-  beforeEach(() => {
-    testCacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "gitignore-cache-test-"));
-  });
-
-  afterEach(() => {
-    try {
-      fs.rmSync(testCacheDir, { recursive: true, force: true });
-    } catch {
-      // Ignore cleanup errors
-    }
-    restoreFetch();
-  });
-
-  it("should cache templates after fetching", async () => {
-    // First fetch with mocked API
-    mockFetch({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({ name: "TestTemplate", source: "test content" }),
-      headers: { get: () => '"etag123"' },
+    afterEach(() => {
+      global.fetch = originalFetch;
+      fs.rmSync(tempCacheDir, { recursive: true, force: true });
+      vi.unstubAllGlobals();
     });
 
-    // Fetch to populate cache
-    await fetchGitignoreTemplate("Node");
+    it("should use bundled template as fallback when API fails", async () => {
+      // Clear cache to ensure no stale entry exists for "Node"
+      clearCache();
 
-    // Subsequent fetches should work (either from cache or bundled)
-    const result = await fetchGitignoreTemplate("Node");
-    expect(result.source).toBeDefined();
-  });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockRejectedValue(new Error("Network error"))
+      );
 
-  it("should return cached template on cache hit", async () => {
-    // First fetch (bundled or API)
-    const result1 = await fetchGitignoreTemplate("Node");
-
-    // Second fetch should be from cache or bundled
-    const result2 = await fetchGitignoreTemplate("Node");
-
-    expect(result2.source).toBe(result1.source);
-  });
-});
-
-// ============================================================================
-// Clear Cache Tests
-// ============================================================================
-
-describe("clearCache", () => {
-  it("should not throw when cache directory does not exist", () => {
-    expect(() => clearCache()).not.toThrow();
-  });
-
-  it("should clear cache files when directory exists", () => {
-    const cacheDir = getCacheDir();
-
-    // Create cache directory and a test file
-    fs.mkdirSync(cacheDir, { recursive: true });
-    fs.writeFileSync(path.join(cacheDir, "test.json"), "{}");
-
-    // Clear cache
-    clearCache();
-
-    // Test file should be removed
-    expect(fs.existsSync(path.join(cacheDir, "test.json"))).toBe(false);
-  });
-});
-
-// ============================================================================
-// Integration Tests
-// ============================================================================
-
-describe("integration", () => {
-  it("should prioritize bundled templates over API", async () => {
-    // This test verifies that bundled templates are used when available
-    const bundled = getBundledTemplate("Node");
-    const fetched = await fetchGitignoreTemplate("Node");
-
-    // Both should have node_modules pattern
-    expect(bundled).toContain("node_modules");
-    expect(fetched.source).toContain("node_modules");
-  });
-
-  it("should handle all bundled template names", async () => {
-    const bundledNames = ["Node", "Python", "Go", "Rust", "Java", "Nextjs"];
-
-    for (const name of bundledNames) {
-      const result = await fetchGitignoreTemplate(name);
-      expect(result.source).toBeDefined();
-      expect(result.source.length).toBeGreaterThan(0);
-    }
-  });
-});
-
-// ============================================================================
-// Additional Coverage Tests
-// ============================================================================
-
-describe("API error handling", () => {
-  afterEach(() => {
-    restoreFetch();
-  });
-
-  it("should handle 304 Not Modified response", async () => {
-    // First mock a successful fetch to populate cache
-    mockFetch({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({ name: "Node", source: "# Node content" }),
-      headers: { get: (name: string) => name === "etag" ? '"etag123"' : null },
-    });
-    await fetchGitignoreTemplate("Node");
-
-    // Then mock a 304 response
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 304,
-      json: () => Promise.resolve({}),
-      headers: { get: () => null },
+      const result = await fetchGitignoreTemplate("Node");
+      expect(result.source).toContain("node_modules");
+      expect(result.fallback).toBe(true);
     });
 
-    // Should return cached content
-    const result = await fetchGitignoreTemplate("Node");
-    expect(result.source).toBeDefined();
-  });
+    it("should throw error for unknown template when offline", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockRejectedValue(new Error("Network error"))
+      );
 
-  it("should throw error for API errors on non-bundled templates", async () => {
-    mockFetch({ ok: false, status: 500 });
-
-    await expect(fetchGitignoreTemplate("UnknownTemplate999")).rejects.toThrow();
-  });
-
-  it("should return stale cache on network error when available", async () => {
-    // First, successfully fetch a template
-    mockFetch({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({ name: "TestTemplate", source: "# Test content" }),
-      headers: { get: () => '"etag456"' },
+      await expect(fetchGitignoreTemplate("UnknownTemplate123")).rejects.toThrow(
+        "not found and no fallback available"
+      );
     });
 
-    // Force cache by making initial request
-    const cacheDir = getCacheDir();
-    const cachePath = path.join(cacheDir, "TestCache.json");
-    if (!fs.existsSync(cacheDir)) {
+    it("should fetch template from API successfully", async () => {
+      const mockResponse = {
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ source: "# Node gitignore\nnode_modules/" }),
+        headers: new Map([["etag", '"abc123"']]),
+      };
+      (mockResponse.headers as any).get = (key: string) =>
+        key === "etag" ? '"abc123"' : null;
+
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse));
+
+      // Clear any existing cache to ensure API is called
+      clearCache();
+
+      const result = await fetchGitignoreTemplate("TestTemplate");
+      expect(result.source).toContain("node_modules");
+      expect(result.fromCache).toBe(false);
+      expect(result.fallback).toBe(false);
+    });
+
+    it("should handle 304 Not Modified response", async () => {
+      // First, set up a cached entry
+      const cacheDir = getCacheDir();
       fs.mkdirSync(cacheDir, { recursive: true });
-    }
-    fs.writeFileSync(cachePath, JSON.stringify({
-      name: "TestCache",
-      source: "# Cached content",
-      etag: '"oldEtag"',
-      cachedAt: Date.now() - 8 * 24 * 60 * 60 * 1000, // Stale (8 days old)
-    }));
+      const cacheEntry = {
+        source: "# Cached content\nnode_modules/",
+        cachedAt: Date.now(),
+        etag: '"abc123"',
+      };
+      fs.writeFileSync(
+        path.join(cacheDir, "CachedTemplate.json"),
+        JSON.stringify(cacheEntry)
+      );
 
-    // Mock network error
-    global.fetch = vi.fn().mockRejectedValue(new Error("Network error"));
+      const mockResponse = {
+        ok: false,
+        status: 304,
+        json: () => Promise.resolve({}),
+        headers: new Map(),
+      };
+      (mockResponse.headers as any).get = () => null;
 
-    const result = await fetchGitignoreTemplate("TestCache");
-    expect(result.source).toContain("Cached content");
-    expect(result.fromCache).toBe(true);
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse));
 
-    // Cleanup
-    fs.unlinkSync(cachePath);
-  });
-});
-
-describe("listGitignoreTemplates error scenarios", () => {
-  afterEach(() => {
-    restoreFetch();
-  });
-
-  it("should handle 304 Not Modified for template list", async () => {
-    // Setup: Write a cache file for templates list
-    const cacheDir = getCacheDir();
-    const listCachePath = path.join(cacheDir, "templates.json");
-    if (!fs.existsSync(cacheDir)) {
-      fs.mkdirSync(cacheDir, { recursive: true });
-    }
-    fs.writeFileSync(listCachePath, JSON.stringify({
-      templates: ["Node", "Python", "Go"],
-      etag: '"listeTag123"',
-      cachedAt: Date.now() - 8 * 24 * 60 * 60 * 1000, // Stale cache
-    }));
-
-    // Mock 304 response
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 304,
-      json: () => Promise.resolve([]),
-      headers: { get: () => null },
+      const result = await fetchGitignoreTemplate("CachedTemplate");
+      expect(result.source).toContain("Cached content");
+      expect(result.fromCache).toBe(true);
     });
 
-    const templates = await listGitignoreTemplates();
-    expect(templates).toContain("Node");
+    it("should handle API errors and fall back to bundled", async () => {
+      const mockResponse = {
+        ok: false,
+        status: 500,
+        json: () => Promise.resolve({}),
+        headers: new Map(),
+      };
+      (mockResponse.headers as any).get = () => null;
 
-    // Cleanup
-    fs.unlinkSync(listCachePath);
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse));
+
+      const result = await fetchGitignoreTemplate("Node");
+      expect(result.source).toContain("node_modules");
+      expect(result.fallback).toBe(true);
+    });
   });
 
-  it("should return stale cache on API error for template list", async () => {
-    // Setup stale cache
-    const cacheDir = getCacheDir();
-    const listCachePath = path.join(cacheDir, "templates.json");
-    if (!fs.existsSync(cacheDir)) {
-      fs.mkdirSync(cacheDir, { recursive: true });
-    }
-    fs.writeFileSync(listCachePath, JSON.stringify({
-      templates: ["CachedTemplate1", "CachedTemplate2"],
-      etag: '"staleEtag"',
-      cachedAt: Date.now() - 10 * 24 * 60 * 60 * 1000, // Very stale
-    }));
-
-    // Mock API error
-    mockFetch({ ok: false, status: 503 });
-
-    const templates = await listGitignoreTemplates();
-    expect(templates).toContain("CachedTemplate1");
-
-    // Cleanup
-    fs.unlinkSync(listCachePath);
-  });
-
-  it("should handle successful template list fetch", async () => {
-    mockFetch({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve(["Node", "Python", "Ruby", "Go"]),
-      headers: { get: (name: string) => name === "etag" ? '"freshEtag"' : null },
+  describe("listGitignoreTemplates", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
     });
 
-    const templates = await listGitignoreTemplates();
-    expect(Array.isArray(templates)).toBe(true);
-  });
-});
+    it("should return array of template names", async () => {
+      const mockResponse = {
+        ok: true,
+        json: () => Promise.resolve(["Node", "Python", "Go"]),
+      };
 
-describe("cache file operations", () => {
-  it("should handle corrupted cache file gracefully", async () => {
-    const cacheDir = getCacheDir();
-    const corruptedPath = path.join(cacheDir, "CorruptedTemplate.json");
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse));
 
-    if (!fs.existsSync(cacheDir)) {
-      fs.mkdirSync(cacheDir, { recursive: true });
-    }
-    fs.writeFileSync(corruptedPath, "{ invalid json }");
-
-    // Should not throw, should proceed to API call or bundled
-    mockFetch({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({ name: "CorruptedTemplate", source: "# Fresh content" }),
-      headers: { get: () => null },
+      const templates = await listGitignoreTemplates();
+      expect(templates).toContain("Node");
+      expect(templates).toContain("Python");
+      expect(templates).toContain("Go");
     });
 
-    const result = await fetchGitignoreTemplate("CorruptedTemplate");
-    expect(result.source).toBeDefined();
+    it("should return empty array on API error", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Network error")));
 
-    // Cleanup
-    restoreFetch();
-    try {
-      fs.unlinkSync(corruptedPath);
-    } catch { /* ignore */ }
-  });
-
-  it("should handle corrupted template list cache gracefully", async () => {
-    const cacheDir = getCacheDir();
-    const listCachePath = path.join(cacheDir, "templates.json");
-
-    if (!fs.existsSync(cacheDir)) {
-      fs.mkdirSync(cacheDir, { recursive: true });
-    }
-    fs.writeFileSync(listCachePath, "{ corrupted json }");
-
-    mockFetch({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve(["Node", "Python"]),
-      headers: { get: () => null },
+      const templates = await listGitignoreTemplates();
+      expect(templates).toEqual([]);
     });
 
-    const templates = await listGitignoreTemplates();
-    expect(Array.isArray(templates)).toBe(true);
+    it("should return empty array on non-ok response", async () => {
+      const mockResponse = {
+        ok: false,
+        status: 500,
+      };
 
-    // Cleanup
-    restoreFetch();
-    try {
-      fs.unlinkSync(listCachePath);
-    } catch { /* ignore */ }
-  });
-});
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse));
 
-describe("fetchGitignoreTemplate edge cases", () => {
-  afterEach(() => {
-    restoreFetch();
-  });
-
-  it("should use ETag for conditional requests when cache exists", async () => {
-    // Setup cache with ETag
-    const cacheDir = getCacheDir();
-    const cachePath = path.join(cacheDir, "ETagTest.json");
-    if (!fs.existsSync(cacheDir)) {
-      fs.mkdirSync(cacheDir, { recursive: true });
-    }
-    fs.writeFileSync(cachePath, JSON.stringify({
-      name: "ETagTest",
-      source: "# Old content",
-      etag: '"testEtag789"',
-      cachedAt: Date.now() - 8 * 24 * 60 * 60 * 1000, // Stale
-    }));
-
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({ name: "ETagTest", source: "# New content" }),
-      headers: { get: (name: string) => name === "etag" ? '"newEtag"' : null },
+      const templates = await listGitignoreTemplates();
+      expect(templates).toEqual([]);
     });
-    global.fetch = fetchSpy;
-
-    await fetchGitignoreTemplate("ETagTest");
-
-    // Verify ETag was sent in request
-    expect(fetchSpy).toHaveBeenCalled();
-    const callArgs = fetchSpy.mock.calls[0];
-    expect(callArgs[1].headers["If-None-Match"]).toBe('"testEtag789"');
-
-    // Cleanup
-    try {
-      fs.unlinkSync(cachePath);
-    } catch { /* ignore */ }
   });
-});
 
-describe("clearCache edge cases", () => {
-  it("should only remove .json files from cache", () => {
-    const cacheDir = getCacheDir();
-    if (!fs.existsSync(cacheDir)) {
+  describe("clearCache", () => {
+    it("should remove all cached files", () => {
+      const cacheDir = getCacheDir();
       fs.mkdirSync(cacheDir, { recursive: true });
-    }
 
-    // Create a non-json file
-    const nonJsonPath = path.join(cacheDir, "keepme.txt");
-    fs.writeFileSync(nonJsonPath, "keep this");
+      // Create some test cache files
+      fs.writeFileSync(path.join(cacheDir, "Node.json"), "{}");
+      fs.writeFileSync(path.join(cacheDir, "Python.json"), "{}");
 
-    // Create a json file
-    const jsonPath = path.join(cacheDir, "deleteme.json");
-    fs.writeFileSync(jsonPath, "{}");
+      clearCache();
 
-    clearCache();
+      const files = fs.existsSync(cacheDir)
+        ? fs.readdirSync(cacheDir).filter((f) => f.endsWith(".json"))
+        : [];
+      expect(files).toEqual([]);
+    });
 
-    // Non-json should still exist
-    expect(fs.existsSync(nonJsonPath)).toBe(true);
-    // Json should be deleted
-    expect(fs.existsSync(jsonPath)).toBe(false);
+    it("should handle non-existent cache directory", () => {
+      // Just make sure it doesn't throw
+      expect(() => clearCache()).not.toThrow();
+    });
+  });
 
-    // Cleanup
-    fs.unlinkSync(nonJsonPath);
+  describe("getCacheStats", () => {
+    beforeEach(() => {
+      clearCache();
+    });
+
+    it("should return zero stats for empty cache", () => {
+      const stats = getCacheStats();
+      expect(stats.count).toBe(0);
+      expect(stats.totalSize).toBe(0);
+      expect(stats.oldestFile).toBeUndefined();
+    });
+
+    it("should return correct stats for cached files", () => {
+      const cacheDir = getCacheDir();
+      fs.mkdirSync(cacheDir, { recursive: true });
+
+      // Create test cache files
+      const content1 = JSON.stringify({ source: "test1", cachedAt: Date.now() });
+      const content2 = JSON.stringify({ source: "test2", cachedAt: Date.now() });
+      fs.writeFileSync(path.join(cacheDir, "Template1.json"), content1);
+      fs.writeFileSync(path.join(cacheDir, "Template2.json"), content2);
+
+      const stats = getCacheStats();
+      expect(stats.count).toBe(2);
+      expect(stats.totalSize).toBeGreaterThan(0);
+    });
+
+    it("should identify oldest file", () => {
+      const cacheDir = getCacheDir();
+      fs.mkdirSync(cacheDir, { recursive: true });
+
+      // Create files with different modification times
+      const oldContent = JSON.stringify({ source: "old", cachedAt: Date.now() - 10000 });
+      fs.writeFileSync(path.join(cacheDir, "OldTemplate.json"), oldContent);
+
+      // Wait a bit and create a newer file
+      const newContent = JSON.stringify({ source: "new", cachedAt: Date.now() });
+      fs.writeFileSync(path.join(cacheDir, "NewTemplate.json"), newContent);
+
+      // Touch the old file to make it older
+      const oldTime = new Date(Date.now() - 86400000); // 1 day ago
+      fs.utimesSync(path.join(cacheDir, "OldTemplate.json"), oldTime, oldTime);
+
+      const stats = getCacheStats();
+      expect(stats.oldestFile).toBe("OldTemplate");
+    });
   });
 });

@@ -55,7 +55,7 @@ vi.mock("../../src/progress.js", () => ({
 }));
 
 import { runChecksInParallel, runAutomatedChecks } from "../../src/verifier/index.js";
-import type { VerificationCapabilities } from "../../src/verifier/verification-types.js";
+import type { VerificationCapabilities } from "../../src/verifier/types/index.js";
 
 describe("Parallel Checks Integration", () => {
   let testDir: string;

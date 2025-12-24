@@ -16,7 +16,7 @@
 
 ## TDD Mode Configuration
 
-The project's TDD enforcement is controlled by `metadata.tddMode` in `ai/feature_list.json`:
+The project's TDD enforcement is controlled by `metadata.tddMode` in `ai/tasks/index.json`:
 
 | Mode | Effect | AI Agent Behavior |
 |------|--------|-------------------|
@@ -92,7 +92,7 @@ describe('auth.login', () => {
 When `agent-foreman next` shows TDD guidance, it suggests test file paths:
 
 ```
-📝 Suggested Test Files:
+Suggested Test Files:
    Unit: tests/module/feature.test.ts
    E2E:  e2e/module/feature.spec.ts
 ```
@@ -121,10 +121,10 @@ The AI agent MUST verify:
 
 ```bash
 # Check that tests exist and implementation is correct
-agent-foreman check <feature_id>
+agent-foreman check <task_id>
 
-# If check passes, complete the feature
-agent-foreman done <feature_id>
+# If check passes, complete the task
+agent-foreman done <task_id>
 ```
 
 ---
@@ -137,11 +137,12 @@ agent-foreman done <feature_id>
 | "disable strict TDD" / "optional tests" | Set `tddMode: "recommended"` |
 | "turn off TDD" | Set `tddMode: "disabled"` |
 
-To change mode manually, edit `ai/feature_list.json`:
+To change mode manually, edit `ai/tasks/index.json`:
 ```json
 {
   "metadata": {
-    "tddMode": "strict"
+    "tddMode": "strict",
+    ...
   }
 }
 ```
@@ -150,16 +151,16 @@ To change mode manually, edit `ai/feature_list.json`:
 
 ## Common Mistakes to Avoid
 
-### ❌ WRONG: Implementation First
+### WRONG: Implementation First
 
 ```
 1. Read acceptance criteria
-2. Write implementation code  ← WRONG! Tests don't exist yet
+2. Write implementation code  <- WRONG! Tests don't exist yet
 3. Write tests that pass
 4. Done
 ```
 
-### ✅ CORRECT: Tests First
+### CORRECT: Tests First
 
 ```
 1. Read acceptance criteria
@@ -180,3 +181,27 @@ To change mode manually, edit `ai/feature_list.json`:
 3. **Enables safe refactoring** - Tests catch regressions immediately
 4. **Documents behavior** - Tests serve as executable specifications
 5. **Catches bugs early** - Failing tests reveal problems before deployment
+
+---
+
+## testRequirements Structure
+
+```json
+"testRequirements": {
+  "unit": {
+    "required": false,
+    "pattern": "tests/auth/**/*.test.ts",
+    "cases": ["should login", "should logout"]
+  },
+  "e2e": {
+    "required": false,
+    "pattern": "e2e/auth/**/*.spec.ts",
+    "tags": ["@auth"],
+    "scenarios": ["user can login"]
+  }
+}
+```
+
+- `required: true` - Task cannot complete without matching test files (TDD enforcement)
+- `pattern` - Glob pattern for selective test execution in quick mode
+- `cases`/`scenarios` - Expected test names (optional, for documentation)

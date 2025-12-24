@@ -1,10 +1,8 @@
 # status Command
 
-Show current harness status and project progress.
+Show current task/feature harness status overview.
 
-> 显示当前工具包状态和项目进度。
-
-## Synopsis
+## Command Syntax
 
 ```bash
 agent-foreman status [options]
@@ -12,353 +10,331 @@ agent-foreman status [options]
 
 ## Description
 
-The `status` command provides a comprehensive overview of the project's feature development progress. It displays feature statistics, completion percentage, recent activity, and the next feature to work on.
-
-> `status` 命令提供项目功能开发进度的全面概述。它显示功能统计、完成百分比、最近活动以及下一个要处理的功能。
+The `status` command displays a comprehensive overview of the project's task status, including counts by status, completion percentage, recent activity, and the next task to work on.
 
 ## Options
 
-| Option | Alias | Default | Description |
-|--------|-------|---------|-------------|
-| `--json` | - | `false` | Output as JSON for scripting |
-| `--quiet` | `-q` | `false` | Minimal output (one-liner) |
+| Option | Alias | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--json` | - | boolean | `false` | Output as JSON for scripting |
+| `--quiet` | `-q` | boolean | `false` | Suppress decorative output |
 
 ## Execution Flow
 
 ```mermaid
 flowchart TD
-    Start([Start]) --> GetCWD[Get Current Working Directory]
-    GetCWD --> LoadFeatures[loadFeatureList]
+    A[Start: runStatus] --> B[Load Feature Index]
+    B --> C[Load Feature List]
+    C --> D{Feature List Exists?}
+    D -->|No| E[Exit: Run init first]
+    D -->|Yes| F{Index Exists?}
 
-    LoadFeatures --> CheckLoaded{Loaded?}
-    CheckLoaded -->|No| ShowError[Show Error Message]
-    ShowError --> End([End])
+    F -->|Yes| G[getFeatureStatsQuick]
+    F -->|No| H[getFeatureStats]
+    G --> I[Calculate Statistics]
+    H --> I
 
-    CheckLoaded -->|Yes| GetStats[getFeatureStats]
-    GetStats --> GetNext[selectNextFeature]
-    GetNext --> GetCompletion[getCompletionPercentage]
-    GetCompletion --> GetRecent[getRecentEntries]
+    F -->|Yes| J[selectNextFeatureQuick]
+    F -->|No| K[selectNextFeature]
+    J --> L[Next Feature]
+    K --> L
 
-    GetRecent --> CheckMode{Output Mode?}
+    I --> M[getCompletionPercentage]
+    M --> N[getRecentEntries]
+    N --> O{Output Mode?}
 
-    CheckMode -->|JSON| OutputJSON[Generate JSON]
-    CheckMode -->|Quiet| OutputQuiet[One-liner Output]
-    CheckMode -->|Normal| OutputNormal[Full Output]
+    O -->|JSON| P[Output JSON]
+    O -->|Quiet| Q[Output Minimal]
+    O -->|Normal| R[Output Full Dashboard]
 
-    subgraph JSONOutput["JSON Output"]
-        OutputJSON --> FormatJSON[Format JSON Object]
-        FormatJSON --> PrintJSON[Print JSON]
-    end
-
-    subgraph QuietOutput["Quiet Output"]
-        OutputQuiet --> PrintPercent[Print Completion %]
-        PrintPercent --> PrintNext[Print Next Feature ID]
-    end
-
-    subgraph NormalOutput["Normal Output"]
-        OutputNormal --> PrintHeader[Print Header]
-        PrintHeader --> PrintGoal[Print Project Goal]
-        PrintGoal --> PrintStats[Print Feature Stats]
-        PrintStats --> PrintProgress[Print Progress Bar]
-        PrintProgress --> PrintActivity[Print Recent Activity]
-        PrintActivity --> PrintNextUp[Print Next Feature]
-    end
-
-    PrintJSON --> End
-    PrintNext --> End
-    PrintNextUp --> End
+    P --> S[End]
+    Q --> S
+    R --> S
 ```
-
-## Detailed Step-by-Step Flow
-
-### 1. Load Feature List
-- Load `ai/feature_list.json`
-- If not found, display error and exit
-
-### 2. Calculate Statistics
-- **Feature Stats**: Count features by status
-  - `passing` - Completed features
-  - `failing` - Not yet implemented
-  - `failed` - Implementation attempted but verification failed
-  - `needs_review` - May be affected by changes
-  - `blocked` - External dependency blocking
-  - `deprecated` - No longer needed
-- **Completion Percentage**: `passing / total * 100`
-- **Next Feature**: Auto-select using priority algorithm
-- **Recent Activity**: Last 5 progress log entries
-
-### 3. Output Generation
-
-**JSON Mode:**
-```json
-{
-  "goal": "Project goal",
-  "updatedAt": "ISO timestamp",
-  "stats": { ... },
-  "completion": 75,
-  "recentActivity": [ ... ],
-  "nextFeature": { ... }
-}
-```
-
-**Quiet Mode:**
-```
-75% complete | 15/20 passing
-Next: auth.register
-```
-
-**Normal Mode:**
-- Project header with goal and last update
-- Feature status breakdown
-- Visual progress bar
-- Recent activity log
-- Next feature recommendation
 
 ## Data Flow Diagram
 
 ```mermaid
-flowchart LR
+graph TB
     subgraph Input
-        FeatureList[ai/feature_list.json]
-        ProgressLog[ai/progress.log]
+        A1[Working Directory]
+        A2[CLI Options]
     end
 
-    subgraph Processing
-        StatsCalc[Statistics Calculator]
-        Selector[Feature Selector]
-        Formatter[Output Formatter]
+    subgraph DataLoad["Data Loading"]
+        B1[loadFeatureIndex]
+        B2[loadFeatureList]
+        B3[getRecentEntries]
     end
 
-    subgraph Output
-        Console[Console Output]
-        JSON[JSON Output]
+    subgraph Statistics["Statistics Calculation"]
+        C1[Feature Stats]
+        C2[Completion Percentage]
+        C3[Next Feature Selection]
     end
 
-    FeatureList --> StatsCalc
-    FeatureList --> Selector
+    subgraph StatsBreakdown["Stats Breakdown"]
+        D1[passing count]
+        D2[failing count]
+        D3[failed count]
+        D4[needs_review count]
+        D5[blocked count]
+        D6[deprecated count]
+    end
 
-    ProgressLog --> Formatter
+    subgraph Output["Output Generation"]
+        E1[JSON Mode]
+        E2[Quiet Mode]
+        E3[Normal Dashboard]
+    end
 
-    StatsCalc --> Formatter
-    Selector --> Formatter
+    subgraph Dashboard["Dashboard Components"]
+        F1[Project Goal]
+        F2[Last Updated]
+        F3[Status Breakdown]
+        F4[Progress Bar]
+        F5[Recent Activity]
+        F6[Next Up]
+    end
 
-    Formatter --> Console
-    Formatter --> JSON
+    A1 --> B1
+    A1 --> B2
+    A1 --> B3
+    A2 --> E1
+    A2 --> E2
+    A2 --> E3
+
+    B1 --> C1
+    B2 --> C1
+    B2 --> C2
+    B2 --> C3
+
+    C1 --> D1
+    C1 --> D2
+    C1 --> D3
+    C1 --> D4
+    C1 --> D5
+    C1 --> D6
+
+    D1 --> E1
+    D1 --> E2
+    D1 --> E3
+    C2 --> E3
+    C3 --> E3
+    B3 --> E3
+
+    E3 --> F1
+    E3 --> F2
+    E3 --> F3
+    E3 --> F4
+    E3 --> F5
+    E3 --> F6
 ```
 
-## Statistics Calculation
+## Key Functions
 
-```mermaid
-flowchart TD
-    Features[All Features] --> Count[Count by Status]
+### `runStatus(outputJson, quiet)`
 
-    Count --> Passing[passing]
-    Count --> Failing[failing]
-    Count --> Failed[failed]
-    Count --> NeedsReview[needs_review]
-    Count --> Blocked[blocked]
-    Count --> Deprecated[deprecated]
+**Location**: `src/commands/status.ts:21`
 
-    Passing --> Total[Total Features]
-    Failing --> Total
-    Failed --> Total
-    NeedsReview --> Total
-    Blocked --> Total
-    Deprecated --> Total
+Main entry point for the status command.
 
-    Passing --> Completion[Completion %]
-    Total --> Completion
+**Parameters**:
+- `outputJson: boolean` - Enable JSON output mode
+- `quiet: boolean` - Enable minimal output mode
 
-    style Passing fill:#00cc00
-    style Failing fill:#ff6666
-    style Failed fill:#ff3333
-    style NeedsReview fill:#ffcc00
-    style Blocked fill:#999999
-    style Deprecated fill:#666666
-```
+### `getFeatureStats(features)` / `getFeatureStatsQuick(cwd)`
 
-## Dependencies
+**Location**: `src/features/stats.ts`
 
-### Internal Modules
-- `src/feature-list.ts` - Feature operations
-  - `loadFeatureList()` - Load feature data
-  - `selectNextFeature()` - Get next priority feature
-  - `getFeatureStats()` - Calculate status counts
-  - `getCompletionPercentage()` - Calculate completion
-- `src/progress-log.ts` - Progress tracking
-  - `getRecentEntries()` - Load recent activity
+Calculates task statistics by status.
 
-### External Dependencies
-- `chalk` - Console output styling
-
-## Files Read
-
-| File | Purpose |
-|------|---------|
-| `ai/feature_list.json` | Feature backlog and metadata |
-| `ai/progress.log` | Recent activity entries |
-
-## Files Written
-
-None - this is a read-only command.
-
-## Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | Success (always, even if no feature list) |
-
-## JSON Output Schema
-
-```json
+**Returns**:
+```typescript
 {
-  "goal": "string",
-  "updatedAt": "ISO timestamp",
-  "stats": {
-    "passing": "number",
-    "failing": "number",
-    "failed": "number",
-    "needsReview": "number",
-    "blocked": "number",
-    "deprecated": "number",
-    "total": "number"
-  },
-  "completion": "number (0-100)",
-  "recentActivity": [
-    {
-      "type": "INIT | STEP | CHANGE | REPLAN | VERIFY",
-      "timestamp": "ISO timestamp",
-      "summary": "string"
-    }
-  ],
-  "nextFeature": {
-    "id": "string",
-    "description": "string",
-    "status": "string"
-  } | null
+  passing: number;
+  failing: number;
+  failed: number;
+  needs_review: number;
+  blocked: number;
+  deprecated: number;
 }
 ```
 
-## Examples
+### `getCompletionPercentage(features)`
 
-### Basic Status
-```bash
-# Show full project status
-agent-foreman status
-```
+**Location**: `src/features/stats.ts`
 
-### JSON Output
-```bash
-# Output as JSON for scripting
-agent-foreman status --json
-```
+Calculates overall completion percentage.
 
-### Completion Check in CI
-```bash
-# Quick check for CI pipelines
-agent-foreman status -q
-```
+**Formula**: `(passing / (total - deprecated)) * 100`
 
-### Parse with jq
-```bash
-# Get completion percentage
-agent-foreman status --json | jq '.completion'
+### `getRecentEntries(cwd, count)`
 
-# Get next feature ID
-agent-foreman status --json | jq -r '.nextFeature.id'
-```
+**Location**: `src/progress-log.ts`
 
-## Console Output Example
+Retrieves recent progress log entries.
 
-### Normal Mode
+**Parameters**:
+- `cwd: string` - Working directory
+- `count: number` - Number of entries to retrieve
+
+**Returns**: `ProgressLogEntry[]`
+
+## Output Modes
+
+### Normal Mode (Default)
+
 ```
 📊 Project Status
-   Goal: Build a task management API
-   Last updated: 2024-01-15T10:30:00Z
+   Goal: Build a REST API for user management
+   Last updated: 2025-01-15T10:00:00Z
 
-   Feature Status:
-   ✓ Passing: 15
+   Task Status:
+   ✓ Passing: 5
    ⚠ Needs Review: 2
    ✗ Failing: 8
    ⚡ Failed: 1
    ⏸ Blocked: 0
-   ⊘ Deprecated: 0
+   ⊘ Deprecated: 1
 
-   Completion: [████████████████░░░░░░░░░░░░░░] 58%
+   Completion: [████████░░░░░░░░░░░░░░░░░░░░░░] 29%
 
    Recent Activity:
-   2024-01-15 [STEP] Completed auth.login
-   2024-01-15 [VERIFY] Verified auth.register: pass
-   2024-01-14 [CHANGE] Updated api.users acceptance
-   2024-01-14 [STEP] Completed api.users.list
-   2024-01-14 [INIT] Initialized harness
+   2025-01-15 [STEP] Completed auth.login
+   2025-01-14 [VERIFY] Verified auth.register: pass
+   2025-01-14 [INIT] Initialized harness
 
    Next Up:
-   → auth.register: User registration with email verification
+   → auth.logout: User can log out
 ```
 
-### Quiet Mode
-```
-58% complete | 15/26 passing
-Next: auth.register
-```
+### JSON Mode (`--json`)
 
-### JSON Mode
 ```json
 {
-  "goal": "Build a task management API",
-  "updatedAt": "2024-01-15T10:30:00Z",
+  "goal": "Build a REST API for user management",
+  "updatedAt": "2025-01-15T10:00:00Z",
   "stats": {
-    "passing": 15,
+    "passing": 5,
     "failing": 8,
     "failed": 1,
     "needsReview": 2,
     "blocked": 0,
-    "deprecated": 0,
-    "total": 26
+    "deprecated": 1,
+    "total": 17
   },
-  "completion": 58,
+  "completion": 29,
   "recentActivity": [
     {
       "type": "STEP",
-      "timestamp": "2024-01-15T10:30:00Z",
+      "timestamp": "2025-01-15T10:30:00Z",
       "summary": "Completed auth.login"
     }
   ],
   "nextFeature": {
-    "id": "auth.register",
-    "description": "User registration with email verification",
+    "id": "auth.logout",
+    "description": "User can log out",
     "status": "failing"
   }
 }
 ```
 
-## Progress Bar Visualization
+### Quiet Mode (`--quiet`)
 
-The progress bar uses 30 characters to visualize completion:
+```
+29% complete | 5/17 passing
+Next: auth.logout
+```
 
-| Completion | Progress Bar |
-|------------|--------------|
-| 0% | `[░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]` |
-| 25% | `[████████░░░░░░░░░░░░░░░░░░░░░░]` |
-| 50% | `[███████████████░░░░░░░░░░░░░░░]` |
-| 75% | `[██████████████████████░░░░░░░░]` |
-| 100% | `[██████████████████████████████]` |
+## Status Indicators
 
-## Status Color Coding
+| Status | Icon | Color | Description |
+|--------|------|-------|-------------|
+| `passing` | ✓ | Green | Acceptance criteria met |
+| `failing` | ✗ | Red | Not yet implemented |
+| `failed` | ⚡ | Red | Implementation attempted but failed |
+| `needs_review` | ⚠ | Yellow | Potentially affected by changes |
+| `blocked` | ⏸ | Gray | External dependency blocking |
+| `deprecated` | ⊘ | Gray | No longer needed |
 
-| Status | Symbol | Color |
-|--------|--------|-------|
-| passing | ✓ | Green |
-| needs_review | ⚠ | Yellow |
-| failing | ✗ | Red |
-| failed | ⚡ | Red |
-| blocked | ⏸ | Gray |
-| deprecated | ⊘ | Gray |
+## Progress Bar
+
+Visual representation of completion:
+
+```
+[████████░░░░░░░░░░░░░░░░░░░░░░] 29%
+ ^^^^^^^^                        ^^
+ Filled (passing)               Percentage
+         ^^^^^^^^^^^^^^^^^^^^^^
+         Empty (remaining)
+```
+
+- Bar width: 30 characters
+- Filled blocks (█): Proportional to completion
+- Empty blocks (░): Remaining work
+
+## Recent Activity Log Types
+
+| Type | Color | Description |
+|------|-------|-------------|
+| `INIT` | Blue | Harness initialization |
+| `STEP` | Green | Task status change |
+| `CHANGE` | Yellow | Task modification |
+| `REPLAN` | Magenta | Feature replanning |
+| `VERIFY` | Magenta | Verification result |
+
+## Examples
+
+### Basic Status
+
+```bash
+# Show full status dashboard
+agent-foreman status
+```
+
+### JSON Output
+
+```bash
+# Get status as JSON for scripting
+agent-foreman status --json
+
+# Extract specific info with jq
+agent-foreman status --json | jq '.completion'
+agent-foreman status --json | jq '.nextFeature.id'
+```
+
+### Quiet Mode
+
+```bash
+# Minimal output for quick checks
+agent-foreman status -q
+```
+
+## Quick vs Full Operations
+
+The status command uses optimized "quick" operations when a feature index exists:
+
+| Operation | Quick (with index) | Full (without index) |
+|-----------|-------------------|---------------------|
+| Stats | `getFeatureStatsQuick` | `getFeatureStats` |
+| Next Selection | `selectNextFeatureQuick` | `selectNextFeature` |
+| Performance | O(1) index lookup | O(n) file loading |
+
+The index file (`ai/tasks/index.json`) enables faster operations by caching:
+- Feature statuses
+- Priority numbers
+- Module assignments
+
+## Error Handling
+
+| Error | Cause | Resolution |
+|-------|-------|------------|
+| "No task list found" | Harness not initialized | Run `agent-foreman init` first |
 
 ## Related Commands
 
-- `agent-foreman next` - Get next feature details
-- `agent-foreman init` - Initialize harness
-- `agent-foreman check` - Verify feature
-- `agent-foreman done` - Complete feature
+- [`init`](./init.md) - Initialize the harness
+- [`next`](./next.md) - Get next task details
+- [`check`](./check.md) - Verify task implementation
+- [`done`](./done.md) - Mark task as complete

@@ -1,10 +1,8 @@
 # next Command
 
-Show next feature to work on or specific feature details with TDD guidance.
+Show the next task to work on or display details of a specific task.
 
-> 显示下一个要处理的功能或特定功能的详情及 TDD 指导。
-
-## Synopsis
+## Command Syntax
 
 ```bash
 agent-foreman next [feature_id] [options]
@@ -12,441 +10,364 @@ agent-foreman next [feature_id] [options]
 
 ## Description
 
-The `next` command displays the next feature to implement based on priority order. It provides comprehensive context including git history, progress log, feature statistics, and AI-generated TDD guidance. When a specific feature ID is provided, it shows details for that feature instead of auto-selecting.
-
-> `next` 命令根据优先级顺序显示下一个要实现的功能。它提供全面的上下文，包括 git 历史、进度日志、功能统计和 AI 生成的 TDD 指导。当提供特定功能 ID 时，它会显示该功能的详细信息而不是自动选择。
+The `next` command selects and displays the highest priority task that needs attention, or shows details for a specific task if an ID is provided. It includes external memory synchronization (git history, progress log) and TDD guidance.
 
 ## Arguments
 
-| Argument | Description |
-|----------|-------------|
-| `feature_id` | (Optional) Specific feature to display |
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `feature_id` | string | No | Specific task ID to display. If omitted, auto-selects next priority task |
 
 ## Options
 
-| Option | Alias | Default | Description |
-|--------|-------|---------|-------------|
-| `--dry-run` | `-d` | `false` | Show plan without changes |
-| `--check` | `-c` | `false` | Run basic tests before showing next |
-| `--allow-dirty` | - | `false` | Allow running with uncommitted changes |
-| `--json` | - | `false` | Output as JSON for scripting |
-| `--quiet` | `-q` | `false` | Suppress decorative output |
-| `--refresh-guidance` | - | `false` | Force regenerate TDD guidance (ignore cache) |
+| Option | Alias | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--dry-run` | `-d` | boolean | `false` | Show plan without making changes |
+| `--check` | `-c` | boolean | `false` | Run basic tests before showing next task |
+| `--allow-dirty` | - | boolean | `false` | Allow running with uncommitted changes |
+| `--json` | - | boolean | `false` | Output as JSON for scripting |
+| `--quiet` | `-q` | boolean | `false` | Suppress decorative output |
+| `--refresh-guidance` | - | boolean | `false` | Force regenerate TDD guidance (ignore cache) |
 
 ## Execution Flow
 
 ```mermaid
 flowchart TD
-    Start([Start]) --> CheckDirty{Allow Dirty?}
-    CheckDirty -->|No| CheckGitStatus{Git Clean?}
-    CheckGitStatus -->|No| DirtyError[Show Error & Exit]
-    CheckGitStatus -->|Yes| LoadFeatures
-    CheckDirty -->|Yes| LoadFeatures
+    A[Start: runNext] --> B{--allow-dirty?}
+    B -->|No| C{Has Uncommitted Changes?}
+    C -->|Yes| D[Exit: Working directory not clean]
+    C -->|No| E[Continue]
+    B -->|Yes| E
 
-    LoadFeatures[Load Feature List] --> CheckLoaded{Loaded?}
-    CheckLoaded -->|No| NoListError[Show Error & Exit]
-    CheckLoaded -->|Yes| SelectFeature
+    E --> F[Load Feature List]
+    F --> G{Feature List Exists?}
+    G -->|No| H[Exit: Run init first]
+    G -->|Yes| I{feature_id provided?}
 
-    SelectFeature{Feature ID<br/>Provided?} -->|Yes| FindById[Find Feature by ID]
-    SelectFeature -->|No| AutoSelect[selectNextFeature]
+    I -->|Yes| J[Find Feature by ID]
+    J --> K{Feature Found?}
+    K -->|No| L[Exit: Task not found]
+    K -->|Yes| M[Selected Feature]
 
-    FindById --> CheckFound{Found?}
-    CheckFound -->|No| NotFoundError[Show Error & Exit]
-    CheckFound -->|Yes| CheckOutputMode
-    AutoSelect --> CheckAuto{Any Pending?}
-    CheckAuto -->|No| AllComplete[Show All Complete]
-    CheckAuto -->|Yes| CheckOutputMode
+    I -->|No| N{Index Exists?}
+    N -->|Yes| O[selectNextFeatureQuick]
+    N -->|No| P[selectNextFeature]
+    O --> Q{Feature Selected?}
+    P --> Q
+    Q -->|No| R[Exit: All tasks passing]
+    Q -->|Yes| M
 
-    AllComplete --> End([End])
+    M --> S{Output Mode?}
+    S -->|JSON| T[outputJsonMode]
+    S -->|Quiet| U[outputQuietMode]
+    S -->|Normal| V[Full Display Mode]
 
-    CheckOutputMode{Output Mode?}
-    CheckOutputMode -->|JSON| GenerateJSON
-    CheckOutputMode -->|Quiet| QuietOutput
-    CheckOutputMode -->|Normal| NormalOutput
+    V --> W[Calculate Stats & Completion]
+    W --> X[displayExternalMemorySync]
+    X --> Y[displayFeatureInfo]
+    Y --> Z[displayTDDGuidance]
 
-    subgraph JSON["JSON Output Mode"]
-        GenerateJSON[Suppress Console] --> DetectCaps1[Detect Capabilities]
-        DetectCaps1 --> GenTDDGuide1[Generate TDD Guidance]
-        GenTDDGuide1 --> OutputJSON[Output JSON]
-    end
-
-    subgraph Quiet["Quiet Output Mode"]
-        QuietOutput[Print Feature ID] --> PrintDesc[Print Description]
-        PrintDesc --> PrintAcceptance[Print Acceptance]
-    end
-
-    subgraph Normal["Normal Output Mode"]
-        NormalOutput[Print Header] --> PrintCWD[Print Current Directory]
-        PrintCWD --> PrintGitLog[Print Recent Git Commits]
-        PrintGitLog --> PrintProgress[Print Recent Progress]
-        PrintProgress --> PrintStats[Print Feature Stats]
-        PrintStats --> CheckRunCheck{--check Flag?}
-        CheckRunCheck -->|Yes| RunTests[Run ai/init.sh check]
-        CheckRunCheck -->|No| DisplayFeature
-        RunTests --> DisplayFeature[Display Feature Details]
-        DisplayFeature --> GenerateTDD
-    end
-
-    subgraph TDDGen["TDD Guidance Generation"]
-        GenerateTDD{Cache Valid?} -->|Yes| UseCached[Use Cached Guidance]
-        GenerateTDD -->|No| DetectCaps2[Detect Capabilities]
-        DetectCaps2 --> TryAIGen[Try AI Generation]
-        TryAIGen --> AISuccess{Success?}
-        AISuccess -->|Yes| SaveCache[Save to Feature]
-        AISuccess -->|No| FallbackRegex[Fallback to Regex]
-        SaveCache --> DisplayTDD
-        FallbackRegex --> DisplayTDD
-        UseCached --> DisplayTDD[Display TDD Guidance]
-    end
-
-    OutputJSON --> End
-    QuietOutput --> End
-    DisplayTDD --> End
-
-    DirtyError --> Exit([Exit 1])
-    NoListError --> Exit
-    NotFoundError --> Exit
+    T --> AA[End]
+    U --> AA
+    Z --> AA
 ```
-
-## Feature Selection Priority
-
-```mermaid
-flowchart TD
-    AllFeatures[All Features] --> FilterStatus[Filter by Status]
-
-    FilterStatus --> NeedsReview[needs_review]
-    FilterStatus --> Failing[failing]
-
-    NeedsReview --> Sort[Sort by Priority Number]
-    Failing --> Sort
-
-    Sort --> |Lower = Higher| Selected[Selected Feature]
-
-    style NeedsReview fill:#ffcc00
-    style Failing fill:#ff6666
-```
-
-Priority order:
-1. **Status first**: `needs_review` > `failing` (other statuses excluded)
-2. **Then priority number**: Lower number = higher priority (1 is highest)
-
-## Detailed Step-by-Step Flow
-
-### 1. Clean Working Directory Check
-- If not `--allow-dirty`, verify git working directory is clean
-- Error if uncommitted changes exist (prevents context confusion)
-
-### 2. Load Feature List
-- Load `ai/feature_list.json`
-- Validate against schema
-- Auto-migrate to strict TDD if enabled
-
-### 3. Feature Selection
-**If feature_id provided:**
-- Find feature by ID using `findFeatureById()`
-- Error if not found
-
-**If no feature_id:**
-- Call `selectNextFeature()` to auto-select:
-  - Filter features with status `needs_review` or `failing`
-  - Sort by status priority, then by priority number
-
-### 4. Output Generation
-
-**JSON Mode (`--json`):**
-- Suppress all console output
-- Detect capabilities quietly
-- Generate TDD guidance
-- Output structured JSON object
-
-**Quiet Mode (`--quiet`):**
-- Minimal output: ID, description, status, acceptance criteria
-
-**Normal Mode:**
-- **External Memory Sync Section:**
-  - Current working directory
-  - Recent git commits (last 5)
-  - Recent progress log entries (last 5)
-  - Feature statistics with progress bar
-- **Optional Test Check** (if `--check`):
-  - Run `ai/init.sh check`
-  - Show pass/fail status
-- **Feature Details Section:**
-  - Feature ID, module, priority, status
-  - Description
-  - Acceptance criteria
-  - Dependencies (if any)
-  - Notes (if any)
-- **Next Actions:**
-  - Show `check` and `done` command examples
-- **TDD Guidance Section:**
-  - TDD enforcement warning (if strict mode)
-  - Suggested test files
-  - Test cases with assertions
-  - E2E scenarios (if applicable)
-
-### 5. TDD Guidance Generation
-
-```mermaid
-flowchart LR
-    Check{Cache Valid?} -->|Yes| UseCached[Use Cached]
-    Check -->|No| Detect[Detect Capabilities]
-    Detect --> AIGen[AI Generation]
-    AIGen -->|Success| Save[Save to Feature]
-    AIGen -->|Fail| Regex[Regex Fallback]
-    Save --> Display
-    Regex --> Display
-    UseCached --> Display[Display Guidance]
-```
-
-Guidance includes:
-- Suggested test file paths (unit and E2E)
-- Unit test cases with assertions
-- E2E scenarios with steps
-- Test skeleton preview (for supported frameworks)
 
 ## Data Flow Diagram
 
 ```mermaid
-flowchart LR
+graph TB
     subgraph Input
-        FeatureList[ai/feature_list.json]
-        GitLog[Git Log]
-        ProgressLog[ai/progress.log]
-        Capabilities[ai/capabilities.json]
+        A1[feature_id Parameter]
+        A2[CLI Options]
+        A3[Working Directory]
     end
 
-    subgraph Processing
-        Selector[Feature Selector]
-        TDDGen[TDD Generator]
-        Formatter[Output Formatter]
+    subgraph Validation
+        B1[Git Status Check]
+        B2[Feature List Load]
+        B3[Feature Index Load]
     end
 
-    subgraph Output
-        Console[Console Output]
-        JSON[JSON Output]
-        UpdatedFL[Updated feature_list.json<br/>with TDD guidance]
+    subgraph Selection["Feature Selection"]
+        C1{feature_id provided?}
+        C2[findFeatureById]
+        C3[selectNextFeature]
+        C4[selectNextFeatureQuick]
+        C5[Selected Feature]
     end
 
-    FeatureList --> Selector
-    Selector --> Formatter
+    subgraph Display["Display Components"]
+        D1[External Memory Sync]
+        D2[Feature Info]
+        D3[TDD Guidance]
+    end
 
-    Capabilities --> TDDGen
-    Selector --> TDDGen
-    TDDGen --> Formatter
-    TDDGen --> UpdatedFL
+    subgraph ExternalMemory["External Memory Sync Content"]
+        E1[Current Directory]
+        E2[Git Log - Last 5 Commits]
+        E3[Progress Log - Last 5 Entries]
+        E4[Task Statistics]
+        E5[Progress Bar]
+        E6[Basic Tests - Optional]
+    end
 
-    GitLog --> Formatter
-    ProgressLog --> Formatter
+    subgraph FeatureDisplay["Feature Display Content"]
+        F1[Task ID & Module]
+        F2[Description]
+        F3[Acceptance Criteria]
+        F4[Dependencies]
+        F5[Notes]
+        F6[Next Steps]
+    end
 
-    Formatter --> Console
-    Formatter --> JSON
+    subgraph TDDContent["TDD Guidance Content"]
+        G1[TDD Mode Check]
+        G2[Capability Detection]
+        G3[AI TDD Generation]
+        G4[Suggested Test Files]
+        G5[Test Case Mapping]
+        G6[E2E Scenarios]
+    end
+
+    A1 --> C1
+    A2 --> B1
+    A3 --> B1
+    B1 --> B2
+    B2 --> B3
+
+    C1 -->|Yes| C2
+    C1 -->|No| C3
+    B3 -->|Exists| C4
+    C4 --> C5
+    C2 --> C5
+    C3 --> C5
+
+    C5 --> D1
+    C5 --> D2
+    C5 --> D3
+
+    D1 --> E1
+    D1 --> E2
+    D1 --> E3
+    D1 --> E4
+    D1 --> E5
+    D1 --> E6
+
+    D2 --> F1
+    D2 --> F2
+    D2 --> F3
+    D2 --> F4
+    D2 --> F5
+    D2 --> F6
+
+    D3 --> G1
+    G1 --> G2
+    G2 --> G3
+    G3 --> G4
+    G3 --> G5
+    G3 --> G6
 ```
 
-## JSON Output Schema
+## Feature Selection Priority
+
+Tasks are selected in this order:
+
+1. **Status Priority**: `needs_review` > `failing`
+   - Other statuses (`passing`, `blocked`, `deprecated`, `failed`) are excluded
+2. **Priority Number**: Lower number = higher priority (1 is highest)
+
+```mermaid
+graph LR
+    A[All Features] --> B{Status Filter}
+    B -->|needs_review| C[Priority Sort]
+    B -->|failing| C
+    B -->|Other| D[Excluded]
+    C --> E[Lowest Priority # First]
+    E --> F[Selected Feature]
+```
+
+## Key Functions
+
+### `runNext(featureId, dryRun, runCheck, allowDirty, outputJson, quiet, refreshGuidance)`
+
+**Location**: `src/commands/next.ts:29`
+
+Main entry point for the next command.
+
+**Parameters**:
+- `featureId?: string` - Optional specific task ID
+- `dryRun: boolean` - Show without changes
+- `runCheck: boolean` - Run tests first
+- `allowDirty: boolean` - Skip uncommitted changes check
+- `outputJson: boolean` - JSON output mode
+- `quiet: boolean` - Minimal output
+- `refreshGuidance: boolean` - Force regenerate TDD guidance
+
+### `displayExternalMemorySync(cwd, stats, completion, runCheck)`
+
+**Location**: `src/commands/next-display.ts:27`
+
+Displays the external memory synchronization section:
+- Current working directory
+- Recent git commits (last 5)
+- Recent progress log entries (last 5)
+- Task status breakdown
+- Progress bar visualization
+- Optional: Run basic tests via `ai/init.sh check`
+
+### `displayFeatureInfo(feature, dryRun)`
+
+**Location**: `src/commands/next-display.ts:124`
+
+Displays task information:
+- Task ID, module, priority, status
+- Full description
+- Numbered acceptance criteria
+- Dependencies (if any)
+- Implementation notes (if any)
+- Next steps guidance
+
+### `displayTDDGuidance(cwd, feature, refreshGuidance, metadata)`
+
+**Location**: `src/commands/next-display.ts:173`
+
+Displays TDD guidance section:
+- Checks TDD mode (strict/recommended/disabled)
+- Uses cached guidance if valid
+- Generates new AI guidance if needed
+- Falls back to regex-based guidance
+- Shows suggested test files
+- Shows unit test cases and E2E scenarios
+
+## Output Modes
+
+### Normal Mode (Default)
+
+Full decorated output with:
+- External memory sync section
+- Task info section
+- TDD guidance section
+
+### JSON Mode (`--json`)
 
 ```json
 {
   "feature": {
-    "id": "string",
-    "description": "string",
-    "module": "string",
-    "priority": "number",
-    "status": "string",
-    "acceptance": ["string"],
-    "dependsOn": ["string"],
-    "notes": "string | null"
+    "id": "auth.login",
+    "description": "User can log in",
+    "module": "auth",
+    "priority": 1,
+    "status": "failing",
+    "acceptance": ["..."],
+    "dependsOn": [],
+    "notes": null
   },
   "stats": {
-    "passing": "number",
-    "failing": "number",
-    "needsReview": "number",
-    "total": "number"
+    "passing": 5,
+    "failing": 10,
+    "needsReview": 2,
+    "total": 17
   },
-  "completion": "number",
-  "cwd": "string",
-  "tddGuidance": {
-    "suggestedTestFiles": {
-      "unit": ["string"],
-      "e2e": ["string"]
-    },
-    "unitTestCases": [{
-      "name": "string",
-      "assertions": ["string"]
-    }],
-    "e2eScenarios": [{
-      "name": "string",
-      "steps": ["string"]
-    }]
-  }
+  "completion": 29,
+  "cwd": "/path/to/project",
+  "tddGuidance": { ... }
 }
 ```
 
-## Dependencies
+### Quiet Mode (`--quiet`)
 
-### Internal Modules
-- `src/feature-list.ts` - Feature operations
-  - `loadFeatureList()`, `saveFeatureList()`
-  - `selectNextFeature()`, `findFeatureById()`
-  - `getFeatureStats()`, `getCompletionPercentage()`
-- `src/progress-log.ts` - Progress tracking
-  - `getRecentEntries()`
-- `src/capabilities/index.ts` - Capability detection
-  - `detectCapabilities()`
-- `src/tdd-guidance/index.ts` - TDD guidance generation
-  - `generateTDDGuidance()`
-- `src/tdd-ai-generator.ts` - AI-powered guidance
-  - `generateTDDGuidanceWithAI()`
-- `src/git-utils.ts` - Git operations
-  - `isGitRepo()`, `hasUncommittedChanges()`
+```
+Task: auth.login
+Description: User can log in
+Status: failing
+Acceptance:
+  1. User enters valid credentials and is logged in
+  2. Invalid credentials show error message
+```
 
-### External Dependencies
-- `chalk` - Console output styling
-- `child_process` - Git command execution
+## TDD Guidance Generation
 
-## Files Read
+```mermaid
+flowchart TD
+    A[Start TDD Guidance] --> B{Cache Valid?}
+    B -->|Yes| C[Use Cached Guidance]
+    B -->|No| D[Detect Capabilities]
 
-| File | Purpose |
-|------|---------|
-| `ai/feature_list.json` | Feature backlog |
-| `ai/progress.log` | Recent activity |
-| `ai/capabilities.json` | Test framework detection |
-| `.git/` | Git status and history |
+    D --> E[Generate AI TDD Guidance]
+    E --> F{AI Success?}
+    F -->|Yes| G[Save to Feature Cache]
+    F -->|No| H[Fallback: Regex Generation]
 
-## Files Written
+    G --> I[Display Guidance]
+    H --> I
+    C --> I
 
-| File | Purpose |
-|------|---------|
-| `ai/feature_list.json` | Cache TDD guidance in feature |
+    I --> J{Strict TDD Mode?}
+    J -->|Yes| K[Show Enforcement Warning]
+    J -->|No| L[Show Standard Guidance]
 
-## Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | Success (or all features complete) |
-| 1 | Working directory not clean / Feature not found / No feature list |
+    K --> M[Display Test Files]
+    L --> M
+    M --> N[Display Test Cases]
+    N --> O[End]
+```
 
 ## Examples
 
-### Auto-Select Next Feature
+### Auto-Select Next Task
+
 ```bash
-# Get highest priority pending feature
+# Get the highest priority pending task
 agent-foreman next
 ```
 
-### Specific Feature
+### Specific Task
+
 ```bash
-# Get details for specific feature
+# Get details for a specific task
 agent-foreman next auth.login
 ```
 
-### JSON Output for Scripting
-```bash
-# Output as JSON
-agent-foreman next --json | jq '.feature.id'
-```
+### With Tests
 
-### Allow Dirty Working Directory
 ```bash
-# Bypass clean directory check
-agent-foreman next --allow-dirty
-```
-
-### Refresh TDD Guidance
-```bash
-# Force regenerate guidance (ignore cache)
-agent-foreman next auth.login --refresh-guidance
-```
-
-### Run Tests Before Showing
-```bash
-# Run basic checks first
+# Run basic tests before showing next task
 agent-foreman next --check
 ```
 
-## Console Output Example
+### JSON Output
 
+```bash
+# Output as JSON for scripting
+agent-foreman next --json | jq '.feature.id'
 ```
-═══════════════════════════════════════════════════════════════
-                    EXTERNAL MEMORY SYNC
-═══════════════════════════════════════════════════════════════
 
-📁 Current Directory:
-   /Users/dev/my-project
+### Force TDD Guidance Refresh
 
-📜 Recent Git Commits:
-   abc1234 feat(auth): add login endpoint
-   def5678 fix(api): handle timeout errors
-   ghi9012 docs: update README
-
-📝 Recent Progress:
-   2024-01-15 10:30 [STEP] Completed auth.login
-   2024-01-15 09:15 [INIT] Initialized harness
-
-📊 Feature Status:
-   ✓ Passing: 5 | ✗ Failing: 7 | ⚠ Review: 2 | Blocked: 1
-   Progress: [████████░░░░░░░░░░░░░░░░░░░░░░] 33%
-
-═══════════════════════════════════════════════════════════════
-                     NEXT TASK
-═══════════════════════════════════════════════════════════════
-
-📋 Feature: auth.register
-   Module: auth | Priority: 2
-   Status: failing
-
-   Description:
-   User registration with email verification
-
-   Acceptance Criteria:
-   1. User can register with email and password
-   2. Validation errors display correctly
-   3. Confirmation email is sent
-
-═══════════════════════════════════════════════════════════════
-   When done:
-     1. Verify:   agent-foreman check auth.register
-     2. Complete: agent-foreman done auth.register
-═══════════════════════════════════════════════════════════════
-
-!!! TDD ENFORCEMENT ACTIVE !!!
-   Tests are REQUIRED for this feature to pass verification.
-   The 'check' and 'done' commands will fail without tests.
-
-═══════════════════════════════════════════════════════════════
-                    TDD GUIDANCE (REQUIRED)
-═══════════════════════════════════════════════════════════════
-
-   (AI-generated by claude)
-
-📝 Suggested Test Files:
-   Unit: tests/auth/register.test.ts
-   E2E:  e2e/auth/register.spec.ts
-
-📋 Unit Test Cases:
-   1. should register user with valid email and password
-      → expect user to be created in database
-      → expect password to be hashed
-   2. should return validation errors for invalid input
-      → expect error for invalid email format
-      → expect error for weak password
-   3. should send confirmation email after registration
-      → expect email service to be called
-      → expect email to contain verification link
-
-🎭 E2E Scenarios:
-   1. user completes registration flow
-      → navigate to registration page
-      → fill in email and password
-      → submit form
-      → ... 2 more steps
-
-═══════════════════════════════════════════════════════════════
+```bash
+# Regenerate TDD guidance ignoring cache
+agent-foreman next auth.login --refresh-guidance
 ```
+
+### Allow Dirty Working Directory
+
+```bash
+# Skip uncommitted changes check
+agent-foreman next --allow-dirty
+```
+
+## Error Handling
+
+| Error | Cause | Resolution |
+|-------|-------|------------|
+| "Working directory not clean" | Uncommitted git changes | Commit or stash changes, or use `--allow-dirty` |
+| "No task list found" | Harness not initialized | Run `agent-foreman init` first |
+| "Task not found" | Invalid feature ID | Check available tasks with `agent-foreman status` |
+| "All tasks passing" | No pending tasks | All work complete! |
 
 ## Related Commands
 
-- `agent-foreman status` - View overall project status
-- `agent-foreman check` - Verify feature implementation
-- `agent-foreman done` - Mark feature as complete
-- `agent-foreman impact` - Analyze feature dependencies
+- [`init`](./init.md) - Initialize the harness
+- [`status`](./status.md) - View all tasks status
+- [`check`](./check.md) - Verify task implementation
+- [`done`](./done.md) - Mark task as complete

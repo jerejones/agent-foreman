@@ -4,7 +4,7 @@
  */
 
 import { glob } from "glob";
-import type { Feature, FeatureListMetadata } from "./types.js";
+import type { Feature, FeatureListMetadata } from "./types/index.js";
 
 /**
  * Result of test file gate verification
@@ -20,6 +20,17 @@ export interface TestGateResult {
   foundTestFiles: string[];
   /** Any errors encountered during verification */
   errors: string[];
+}
+
+/**
+ * Result of TDD gate verification
+ * Extends TestGateResult with TDD-specific fields
+ */
+export interface TDDGateResult extends TestGateResult {
+  /** Whether strict TDD mode is enabled */
+  strictMode: boolean;
+  /** Patterns that were checked for existence */
+  checkedPatterns: string[];
 }
 
 /**
@@ -153,39 +164,28 @@ function sanitizeModuleName(module: string): string {
     .replace(/^-|-$/g, "");
 }
 
-// ============================================================================
-// TDD Gate (Extended Verification)
-// ============================================================================
-
 /**
- * Extended TDD gate result with strict mode information
- */
-export interface TDDGateResult extends TestGateResult {
-  /** Whether the feature is in strict TDD mode */
-  strictMode: boolean;
-  /** Test patterns that were checked */
-  checkedPatterns: string[];
-}
-
-/**
- * Verify TDD gate for a feature
+ * Verify TDD gate for a feature based on project-wide TDD mode settings
  *
- * This is an enhanced version of verifyTestFilesExist that:
- * 1. Respects project-level strict TDD mode
- * 2. In strict mode, requires tests even if testRequirements.required is false
- * 3. Provides detailed pattern information for error messages
+ * In strict mode:
+ * - All features require tests regardless of testRequirements.*.required
+ * - Gate fails if no test files match the default pattern
+ *
+ * In recommended/disabled mode:
+ * - Only checks explicit testRequirements.*.required = true
  *
  * @param cwd - Current working directory
  * @param feature - The feature to verify
- * @param metadata - Feature list metadata (for tddMode setting)
- * @returns TDD gate result with existence check status
+ * @param metadata - Feature list metadata containing tddMode
+ * @returns TDD gate result
  */
 export async function verifyTDDGate(
   cwd: string,
   feature: Feature,
-  metadata: FeatureListMetadata
+  metadata?: FeatureListMetadata
 ): Promise<TDDGateResult> {
-  const strictMode = metadata.tddMode === "strict";
+  const strictMode = metadata?.tddMode === "strict";
+
   const result: TDDGateResult = {
     passed: true,
     missingUnitTests: [],
@@ -196,29 +196,27 @@ export async function verifyTDDGate(
     checkedPatterns: [],
   };
 
-  // Determine if we need to check for tests
-  const hasExplicitUnitRequirement =
-    feature.testRequirements?.unit?.required === true;
-  const hasExplicitE2ERequirement =
-    feature.testRequirements?.e2e?.required === true;
-  const shouldCheckTests =
-    strictMode || hasExplicitUnitRequirement || hasExplicitE2ERequirement;
+  // Determine if we should check for tests
+  const shouldCheckUnitTests =
+    strictMode || feature.testRequirements?.unit?.required === true;
+  const shouldCheckE2ETests = feature.testRequirements?.e2e?.required === true;
 
-  // If not in strict mode and no explicit requirements, pass automatically
-  if (!shouldCheckTests) {
+  // If nothing to check, return passing result
+  if (!shouldCheckUnitTests && !shouldCheckE2ETests) {
     return result;
   }
 
-  // Get unit test pattern
-  const unitPattern =
-    feature.testRequirements?.unit?.pattern ||
-    `tests/${sanitizeModuleName(feature.module)}/**/*.test.*`;
+  // Check unit tests
+  if (shouldCheckUnitTests) {
+    const unitPattern =
+      feature.testRequirements?.unit?.pattern ||
+      `tests/${sanitizeModuleName(feature.module)}/**/*.test.*`;
 
-  // In strict mode OR when unit tests are explicitly required, check for unit tests
-  if (strictMode || hasExplicitUnitRequirement) {
     result.checkedPatterns.push(unitPattern);
+
     try {
       const files = await glob(unitPattern, { cwd, nodir: true });
+
       if (files.length === 0) {
         result.passed = false;
         result.missingUnitTests.push(unitPattern);
@@ -232,15 +230,17 @@ export async function verifyTDDGate(
     }
   }
 
-  // Check E2E tests if explicitly required (strict mode doesn't auto-require E2E)
-  if (hasExplicitE2ERequirement) {
+  // Check E2E tests (only if explicitly required, not affected by strict mode)
+  if (shouldCheckE2ETests) {
     const e2ePattern =
       feature.testRequirements?.e2e?.pattern ||
       `e2e/**/*${sanitizeModuleName(feature.module)}*.spec.*`;
 
     result.checkedPatterns.push(e2ePattern);
+
     try {
       const files = await glob(e2ePattern, { cwd, nodir: true });
+
       if (files.length === 0) {
         result.passed = false;
         result.missingE2ETests.push(e2ePattern);

@@ -3,8 +3,8 @@
  * Uses AI agents to generate intelligent TDD guidance from acceptance criteria
  */
 
-import type { Feature, CachedTDDGuidance } from "./types.js";
-import type { ExtendedCapabilities } from "./verifier/verification-types.js";
+import type { Feature, CachedTDDGuidance } from "./types/index.js";
+import type { ExtendedCapabilities } from "./verifier/types/index.js";
 import { callAnyAvailableAgent } from "./agents.js";
 
 /**
@@ -44,7 +44,7 @@ export function buildTDDPrompt(
 
   return `Analyze this feature for TDD guidance:
 
-Feature ID: ${feature.id}
+Task ID: ${feature.id}
 Description: ${feature.description}
 Module: ${feature.module}
 

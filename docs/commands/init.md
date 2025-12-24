@@ -1,10 +1,8 @@
 # init Command
 
-Initialize or upgrade the long-task harness for a project.
+Initialize or upgrade the long-task harness for AI-driven development.
 
-> 为项目初始化或升级长任务工具包。
-
-## Synopsis
+## Command Syntax
 
 ```bash
 agent-foreman init [goal] [options]
@@ -12,362 +10,279 @@ agent-foreman init [goal] [options]
 
 ## Description
 
-The `init` command sets up the agent-foreman harness in a project. It uses AI to analyze the project structure, detect features, and create the necessary configuration files for feature-driven development.
-
-> `init` 命令在项目中设置 agent-foreman 工具包。它使用 AI 分析项目结构、检测功能，并创建功能驱动开发所需的配置文件。
+The `init` command sets up the agent-foreman harness in a project. It performs AI-powered project analysis, generates a task list, and creates the necessary infrastructure files for task-driven development.
 
 ## Arguments
 
-| Argument | Description |
-|----------|-------------|
-| `goal` | Project goal (auto-detected from package.json/README if not provided) |
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `goal` | string | No | Project goal description. Auto-detected from package.json or README if not provided |
 
 ## Options
 
-| Option | Alias | Default | Choices | Description |
-|--------|-------|---------|---------|-------------|
-| `--mode` | `-m` | `merge` | `merge`, `new`, `scan` | Init mode |
-| `--verbose` | `-v` | `false` | - | Show detailed output |
+| Option | Alias | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--mode` | `-m` | string | `merge` | Init mode: `merge`, `new`, or `scan` |
+| `--task-type` | `-t` | string | - | Default verification type: `code`, `ops`, `data`, `infra`, `manual` |
+| `--verbose` | `-v` | boolean | `false` | Show detailed output |
 
-### Mode Options
+### Init Modes
 
-| Mode | Description |
-|------|-------------|
-| `merge` | Keep existing features, add newly discovered ones |
-| `new` | Backup old list, create fresh feature list |
-| `scan` | Preview only, no file modifications |
+- **merge**: Combines AI-detected features with existing features (default)
+- **new**: Creates a fresh feature list from AI analysis, discarding existing
+- **scan**: Only scans project capabilities without generating features
+
+### Task Types
+
+- **code**: Software development tasks (unit tests, build verification)
+- **ops**: Operational tasks (manual checklist verification)
+- **data**: Data processing tasks (output validation)
+- **infra**: Infrastructure tasks (resource state checks)
+- **manual**: Manual verification only (no automation)
 
 ## Execution Flow
 
 ```mermaid
 flowchart TD
-    Start([Start]) --> GetCWD[Get Current Working Directory]
-    GetCWD --> CheckGit{Is Git Repo?}
+    A[Start: runInit] --> B{Is Git Repository?}
+    B -->|No| C[Initialize Git Repository]
+    C --> D{Git Init Success?}
+    D -->|No| E[Exit with Error]
+    D -->|Yes| F[Continue]
+    B -->|Yes| F
 
-    CheckGit -->|No| InitGit[git init]
-    InitGit --> GitSuccess{Success?}
-    GitSuccess -->|No| GitError[Exit with Error]
-    GitSuccess -->|Yes| Analyze
-    CheckGit -->|Yes| Analyze
+    F --> G[Detect and Analyze Project]
+    G --> H[AI Agent Analysis]
+    H --> I{Analysis Success?}
+    I -->|No| J[Exit: AI analysis failed]
+    I -->|Yes| K[Display Analysis Results]
 
-    subgraph Analysis["AI Analysis Phase"]
-        Analyze[detectAndAnalyzeProject] --> DetectGoal{Goal Provided?}
-        DetectGoal -->|No| AutoDetect[detectProjectGoal]
-        AutoDetect --> AIAnalyze
-        DetectGoal -->|Yes| AIAnalyze[AI Scan Project]
-        AIAnalyze --> ParseSurvey[Parse Project Survey]
-    end
+    K --> L{Mode = scan?}
+    L -->|Yes| M[Skip TDD Prompt]
+    L -->|No| N[Prompt TDD Mode Selection]
+    N --> O[10s Timeout with Default]
+    O --> P[User Selection or Default]
+    M --> Q[Merge or Create Features]
+    P --> Q
 
-    ParseSurvey --> CheckMode{Mode = scan?}
-    CheckMode -->|Yes| SkipTDD[Skip TDD Prompt]
-    CheckMode -->|No| TDDPrompt[Prompt TDD Mode]
+    Q --> R[Apply Task Type if Specified]
+    R --> S[Save Feature List]
+    S --> T[Generate Harness Files]
+    T --> U[Create init.sh]
+    T --> V[Create .claude/rules]
+    T --> W[Create progress.log]
+    T --> X[Create ai/tasks/ structure]
 
-    subgraph TDD["TDD Mode Selection"]
-        TDDPrompt --> WaitInput{User Input<br/>within 10s?}
-        WaitInput -->|Yes| ParseTDD[Parse Response]
-        WaitInput -->|Timeout| DefaultTDD[Default: recommended]
-        ParseTDD --> TDDMode[Set TDD Mode]
-        DefaultTDD --> TDDMode
-    end
+    U --> Y[Display Success Message]
+    V --> Y
+    W --> Y
+    X --> Y
 
-    SkipTDD --> MergeFeatures
-    TDDMode --> MergeFeatures
-
-    subgraph Merge["Feature Processing"]
-        MergeFeatures[mergeOrCreateFeatures] --> CheckMergeMode{Mode?}
-        CheckMergeMode -->|merge| LoadExisting[Load Existing Features]
-        LoadExisting --> MergeNew[Merge New Discoveries]
-        CheckMergeMode -->|new| BackupOld[Backup Old List]
-        BackupOld --> CreateFresh[Create Fresh List]
-        CheckMergeMode -->|scan| PreviewOnly[Preview Only]
-    end
-
-    MergeNew --> GenerateFiles
-    CreateFresh --> GenerateFiles
-    PreviewOnly --> DisplayScan[Display Scan Results]
-    DisplayScan --> End
-
-    subgraph Generate["File Generation"]
-        GenerateFiles[generateHarnessFiles] --> WriteFeatureList[Write ai/feature_list.json]
-        WriteFeatureList --> WriteProgressLog[Write ai/progress.log]
-        WriteProgressLog --> WriteCapabilities[Write ai/capabilities.json]
-        WriteCapabilities --> WriteInitScript[Write ai/init.sh]
-    end
-
-    WriteInitScript --> ShowSuccess[Show Success Message]
-    ShowSuccess --> CheckStrictTDD{TDD = strict?}
-    CheckStrictTDD -->|Yes| ShowTDDWarning[Show TDD Warning]
-    CheckStrictTDD -->|No| ShowNextStep
-    ShowTDDWarning --> ShowNextStep[Show Next Steps]
-    ShowNextStep --> End([End])
-
-    GitError --> Exit([Exit 1])
+    Y --> Z{TDD Mode = strict?}
+    Z -->|Yes| AA[Display TDD Warning]
+    Z -->|No| AB[Display Next Steps]
+    AA --> AB
+    AB --> AC[End]
 ```
-
-## Detailed Step-by-Step Flow
-
-### 1. Git Repository Check
-- Check if current directory is a git repository
-- If not, automatically initialize git (`git init`)
-- Exit with error if git initialization fails
-
-### 2. AI Analysis Phase
-- Call `detectAndAnalyzeProject(cwd, goal, verbose)` from `src/init-helpers.ts`
-- If no goal provided, auto-detect from:
-  - `package.json` description
-  - `README.md` content
-- Spawn AI agent to analyze project:
-  - Detect tech stack
-  - Identify modules
-  - Discover features (existing and potential)
-  - Assess completion status
-
-### 3. TDD Mode Selection
-- Prompt user for TDD mode (10-second timeout)
-- Options:
-  - **strict**: Tests required for all features
-  - **recommended**: Tests suggested but not required (default)
-  - **disabled**: No TDD guidance
-- Auto-select "recommended" on timeout
-
-### 4. Feature Processing
-Based on mode:
-
-**Merge Mode (default)**:
-- Load existing `ai/feature_list.json` if exists
-- Merge newly discovered features
-- Preserve existing feature status and notes
-- Add new features with `failing` status
-
-**New Mode**:
-- Backup existing feature list (if any)
-- Create fresh feature list from AI discoveries
-- All features start with `failing` status
-
-**Scan Mode**:
-- Preview discovered features only
-- No file modifications
-
-### 5. File Generation
-Generate harness files in `ai/` directory:
-
-| File | Purpose |
-|------|---------|
-| `ai/feature_list.json` | Feature backlog with TDD mode |
-| `ai/progress.log` | Progress tracking log |
-| `ai/capabilities.json` | Project capabilities cache |
-| `ai/init.sh` | Bootstrap script |
-
-### 6. Completion
-- Display success message
-- If strict TDD mode, show enforcement warning
-- Show next step instructions
 
 ## Data Flow Diagram
 
 ```mermaid
-flowchart LR
+graph LR
     subgraph Input
-        Goal[User Goal]
-        Mode[Init Mode]
-        TDDChoice[TDD Choice]
-        Project[Project Files]
-        ExistingFL[Existing<br/>feature_list.json]
+        A1[Project Directory]
+        A2[Goal Parameter]
+        A3[Mode Option]
+        A4[Task Type Option]
     end
 
-    subgraph Processing
-        GoalDetect[Goal Detector]
-        AIAgent[AI Agent]
-        FeatureMerge[Feature Merger]
-        FileGen[File Generator]
+    subgraph AI_Analysis["AI Analysis Phase"]
+        B1[detectAndAnalyzeProject]
+        B2[Claude/Codex/Gemini Agent]
+        B3[ProjectSurvey Result]
     end
 
-    subgraph Output
-        FeatureList[ai/feature_list.json]
-        ProgressLog[ai/progress.log]
-        Capabilities[ai/capabilities.json]
-        InitScript[ai/init.sh]
+    subgraph TDD_Config["TDD Configuration"]
+        C1[promptTDDMode]
+        C2[User Input or Timeout]
+        C3[TDDMode Selection]
     end
 
-    Goal --> GoalDetect
-    Project --> GoalDetect
-    GoalDetect --> AIAgent
+    subgraph Feature_Generation["Feature Generation"]
+        D1[mergeOrCreateFeatures]
+        D2[Existing Features]
+        D3[AI-Detected Features]
+        D4[Merged FeatureList]
+    end
 
-    Project --> AIAgent
-    AIAgent --> FeatureMerge
+    subgraph File_Generation["File Generation"]
+        E1[generateHarnessFiles]
+        E2[ai/tasks/index.json]
+        E3[ai/tasks/module/*.md]
+        E4[ai/init.sh]
+        E5[ai/progress.log]
+        E6[.claude/rules/]
+    end
 
-    Mode --> FeatureMerge
-    ExistingFL --> FeatureMerge
-    TDDChoice --> FeatureMerge
+    A1 --> B1
+    A2 --> B1
+    B1 --> B2
+    B2 --> B3
 
-    FeatureMerge --> FileGen
+    A3 --> C1
+    C1 --> C2
+    C2 --> C3
 
-    FileGen --> FeatureList
-    FileGen --> ProgressLog
-    FileGen --> Capabilities
-    FileGen --> InitScript
+    B3 --> D1
+    A3 --> D1
+    D2 --> D1
+    D3 --> D1
+    C3 --> D1
+    D1 --> D4
+
+    A4 --> D4
+    D4 --> E1
+    E1 --> E2
+    E1 --> E3
+    E1 --> E4
+    E1 --> E5
+    E1 --> E6
 ```
 
-## Feature List Schema
+## Key Functions
 
-```mermaid
-classDiagram
-    class FeatureList {
-        +Feature[] features
-        +Metadata metadata
-    }
+### `runInit(goal, mode, verbose, taskType)`
 
-    class Feature {
-        +string id
-        +string description
-        +string module
-        +number priority
-        +FeatureStatus status
-        +string[] acceptance
-        +string[] dependsOn
-        +string[] supersedes
-        +string[] tags
-        +number version
-        +string origin
-        +string notes
-        +TestRequirements testRequirements
-    }
+**Location**: `src/commands/init.ts:87`
 
-    class Metadata {
-        +string projectGoal
-        +string createdAt
-        +string updatedAt
-        +string version
-        +TDDMode tddMode
-    }
+Main entry point for the init command.
 
-    class TestRequirements {
-        +UnitTestReq unit
-        +E2ETestReq e2e
-    }
+**Parameters**:
+- `goal: string` - Project goal description
+- `mode: InitMode` - Init mode (merge/new/scan)
+- `verbose: boolean` - Enable verbose output
+- `taskType?: TaskType` - Optional default task type
 
-    FeatureList --> Feature
-    FeatureList --> Metadata
-    Feature --> TestRequirements
-```
+**Process**:
+1. Verify/initialize git repository
+2. Run AI project analysis
+3. Prompt for TDD mode (interactive with 10s timeout)
+4. Generate/merge features based on mode
+5. Apply task type to all features
+6. Generate harness infrastructure files
 
-## Dependencies
+### `promptTDDMode()`
 
-### Internal Modules
-- `src/init-helpers.ts` - Multi-step init orchestration
-  - `detectAndAnalyzeProject()` - AI-powered analysis
-  - `mergeOrCreateFeatures()` - Feature processing
-  - `generateHarnessFiles()` - File generation
-- `src/git-utils.ts` - Git operations
-  - `isGitRepo()` - Check git status
-  - `gitInit()` - Initialize git repository
-- `src/commands/helpers.ts` - Command helpers
-  - `promptConfirmation()` - User prompts
+**Location**: `src/commands/init.ts:20`
 
-### External Dependencies
-- `chalk` - Console output styling
-- `readline` - User input handling
-- AI CLI tools: `claude`, `codex`, or `gemini`
+Interactive TDD mode selection with timeout.
 
-## Files Read
+**Returns**: `Promise<TDDMode | undefined>`
+
+**Options**:
+- `[1] Strict` - Tests REQUIRED before marking tasks done
+- `[2] Recommended` - Tests suggested but optional (default)
+- `[3] Disabled` - No TDD guidance or enforcement
+
+**Timeout**: 10 seconds, defaults to "recommended"
+
+### `detectAndAnalyzeProject(cwd, goal, verbose)`
+
+**Location**: `src/init/index.js`
+
+AI-powered project analysis using Claude, Codex, or Gemini.
+
+**Returns**: `{ success: boolean, survey?: ProjectSurvey, agentUsed?: string, error?: string }`
+
+### `mergeOrCreateFeatures(cwd, survey, goal, mode, verbose, tddMode)`
+
+**Location**: `src/init/index.js`
+
+Generates or merges feature list based on mode.
+
+**Returns**: `FeatureList`
+
+### `generateHarnessFiles(cwd, survey, featureList, goal, mode)`
+
+**Location**: `src/init/index.js`
+
+Creates all harness infrastructure files.
+
+## Output Files
 
 | File | Purpose |
 |------|---------|
-| `ai/feature_list.json` | Existing features (merge mode) |
-| `package.json` | Project metadata, goal detection |
-| `README.md` | Project description |
-| Source files | Feature detection |
-
-## Files Written
-
-| File | Purpose |
-|------|---------|
-| `ai/feature_list.json` | Feature backlog |
-| `ai/progress.log` | Progress tracking |
-| `ai/capabilities.json` | Capabilities cache |
-| `ai/init.sh` | Bootstrap script |
-
-## Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | Success |
-| 1 | AI analysis failed / Git init failed |
+| `ai/tasks/index.json` | Lightweight task index for quick lookups |
+| `ai/tasks/{module}/{id}.md` | Individual task definitions in Markdown |
+| `ai/init.sh` | Bootstrap script with check/dev/bootstrap modes |
+| `ai/progress.log` | Session handoff audit log |
+| `.claude/rules/` | Rule files for Claude Code integration |
 
 ## Examples
 
 ### Basic Initialization
+
 ```bash
-# Auto-detect goal and initialize
+# Auto-detect goal and merge with existing features
 agent-foreman init
+
+# Specify goal explicitly
+agent-foreman init "Build a REST API for user management"
+
+# Start fresh with new feature list
+agent-foreman init --mode new
+
+# Only scan capabilities
+agent-foreman init --mode scan
 ```
 
-### Custom Goal
-```bash
-# Provide explicit project goal
-agent-foreman init "Build a task management API"
-```
+### With Task Type
 
-### Merge Mode (Default)
 ```bash
-# Preserve existing features, add new discoveries
-agent-foreman init -m merge
-```
+# Initialize for infrastructure project
+agent-foreman init "Deploy Kubernetes cluster" --task-type infra
 
-### Fresh Start
-```bash
-# Create new feature list, backup existing
-agent-foreman init -m new
-```
-
-### Preview Only
-```bash
-# See what would be discovered without changes
-agent-foreman init -m scan
+# Initialize for operational tasks
+agent-foreman init "Set up monitoring" --task-type ops
 ```
 
 ### Verbose Output
+
 ```bash
-# Show detailed analysis progress
 agent-foreman init -v
 ```
 
-## Console Output Example
+## TDD Mode Behavior
 
-```
-🚀 Initializing harness (mode: merge)...
-  Analyzing project...
-✓ AI analysis successful (agent: claude)
-  Found 12 features
+### Strict Mode
 
-📋 TDD Mode Configuration
-   Strict mode requires tests for all features.
-   The 'check' and 'done' commands will fail without tests.
-   (Auto-skip in 10s with default: recommended)
+When TDD mode is set to `strict`:
+- All features require tests to pass verification
+- `agent-foreman check` and `done` commands will fail without test files
+- TDD workflow guidance is displayed prominently
+- Features auto-migrate to `testRequirements.unit.required: true`
 
-   Enable strict TDD mode? (tests required for all features) [y/N]: y
-   ✓ Strict TDD mode enabled
+### Recommended Mode (Default)
 
-🎉 Harness initialized successfully!
+- TDD guidance is shown but not enforced
+- Tests are suggested but optional
+- Verification succeeds even without test files
 
-!!! STRICT TDD MODE ENABLED !!!
-   All features require tests to pass verification.
-   Write tests BEFORE implementation (RED → GREEN → REFACTOR).
+### Disabled Mode
 
-Next: Run 'agent-foreman next' to start working on features
-```
+- No TDD guidance displayed
+- Useful for legacy projects or non-code tasks
 
-## TDD Mode Impact
+## Error Handling
 
-| Mode | check Command | done Command | Feature Requirements |
-|------|--------------|--------------|---------------------|
-| `strict` | Blocks without tests | Blocks without tests | `testRequirements.unit.required: true` |
-| `recommended` | Warning only | Warning only | Tests suggested |
-| `disabled` | No TDD checks | No TDD checks | No requirements |
+| Error | Cause | Resolution |
+|-------|-------|------------|
+| "AI analysis failed" | No AI agent available | Install gemini, codex, or claude CLI |
+| "Failed to initialize git" | Git not installed or permission issue | Install git or check permissions |
 
 ## Related Commands
 
-- `agent-foreman analyze` - Generate architecture report
-- `agent-foreman next` - Get next feature to work on
-- `agent-foreman status` - View project status
-- `agent-foreman scan` - Scan project capabilities
+- [`next`](./next.md) - Get next task to work on
+- [`status`](./status.md) - View project status
+- [`scan`](./scan.md) - Scan project capabilities
+- [`analyze`](./analyze.md) - Generate architecture analysis

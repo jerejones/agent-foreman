@@ -1,9 +1,10 @@
 /**
- * Shared types for verifier module
+ * Verifier-specific types
+ * Local types used within the verifier module
  */
 
-import type { AutomatedCheckResult, E2ETestMode, E2ECapabilityInfo } from "./verification-types.js";
-import type { TestDiscoveryResult } from "../test-discovery.js";
+import type { AutomatedCheckResult, E2ECapabilityInfo } from "./types/index.js";
+import type { TestDiscoveryResult } from "../testing/index.js";
 
 /**
  * Options for running automated checks
@@ -30,15 +31,7 @@ export interface AutomatedCheckOptions {
    * - "tags": Run E2E tests matching e2eTags
    * - "skip": Skip E2E tests entirely
    */
-  e2eMode?: E2ETestMode;
-  /**
-   * Use ai/init.sh check instead of direct commands
-   * When true, delegates all test orchestration to the generated shell script
-   * which implements quick mode, selective testing, and E2E tag filtering
-   */
-  useInitScript?: boolean;
-  /** Path to the init script (default: ai/init.sh) */
-  initScriptPath?: string;
+  e2eMode?: "full" | "smoke" | "tags" | "skip";
   /**
    * Run checks in parallel for faster execution
    * When true, independent checks (test, typecheck, lint, build) run concurrently
@@ -48,7 +41,7 @@ export interface AutomatedCheckOptions {
   parallel?: boolean;
   /**
    * Skip build step (for fast check mode)
-   * When true, build check is skipped even if capabilities.hasBuild is true
+   * When true, build command is not executed
    * Default: false
    */
   skipBuild?: boolean;
@@ -74,4 +67,27 @@ export interface TDDVerifyOptions {
   skipE2E?: boolean;
   /** E2E test tags */
   e2eTags?: string[];
+}
+
+/**
+ * Result of executing all verification strategies for a feature
+ */
+export interface StrategyExecutionResult {
+  /** All strategy results */
+  results: Array<{
+    strategy: import("./types/index.js").VerificationStrategy;
+    result: import("../strategies/index.js").StrategyResult;
+  }>;
+  /** Overall verdict based on all strategies */
+  verdict: import("./types/index.js").VerificationVerdict;
+  /** Combined output from all strategies */
+  overallReasoning: string;
+  /** Criteria results mapped from strategy outputs */
+  criteriaResults: import("./types/index.js").CriterionResult[];
+  /** Agent used (for AI strategies) */
+  agentUsed?: string;
+  /** Suggestions from strategies */
+  suggestions?: string[];
+  /** Code quality notes from strategies */
+  codeQualityNotes?: string[];
 }

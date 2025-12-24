@@ -20,36 +20,25 @@ describe("Prompts", () => {
       expect(content).toContain("My project goal");
     });
 
-    it("should include reference to .claude/rules/", () => {
-      const content = generateMinimalClaudeMd("Test");
+    it("should reference rules directory", () => {
+      const content = generateMinimalClaudeMd("Test goal");
 
       expect(content).toContain(".claude/rules/");
-    });
-
-    it("should include generator attribution", () => {
-      const content = generateMinimalClaudeMd("Test");
-
-      expect(content).toContain("agent-foreman");
-    });
-
-    it("should NOT include harness section", () => {
-      const content = generateMinimalClaudeMd("Test");
-
-      expect(content).not.toContain("## Long-Task Harness");
-      expect(content).not.toContain("### Core Files");
-      expect(content).not.toContain("### Feature Status Values");
-    });
-
-    it("should start with markdown header", () => {
-      const content = generateMinimalClaudeMd("Test");
-
-      expect(content.startsWith("# Project Instructions")).toBe(true);
+      expect(content).toContain("loaded automatically by Claude Code");
     });
 
     it("should handle empty goal", () => {
       const content = generateMinimalClaudeMd("");
 
+      expect(content).toContain("# Project Instructions");
       expect(content).toContain("## Project Goal");
+    });
+
+    it("should handle goal with special characters", () => {
+      const goal = "Build a *special* app with `code` and <html>";
+      const content = generateMinimalClaudeMd(goal);
+
+      expect(content).toContain(goal);
     });
   });
 
@@ -66,7 +55,7 @@ describe("Prompts", () => {
       expect(message).toContain("Feature: auth.login");
     });
 
-    it("should extract module from feature ID", () => {
+    it("should extract module from task ID", () => {
       const message = generateCommitMessage(
         "api.users.create",
         "Create user endpoint",
@@ -82,7 +71,7 @@ describe("Prompts", () => {
       expect(message).toContain("Generated with agent-foreman");
     });
 
-    it("should handle single-segment feature ID", () => {
+    it("should handle single-segment task ID", () => {
       const message = generateCommitMessage("core", "Core feature", "Summary");
 
       expect(message).toContain("feat(core):");
@@ -101,7 +90,7 @@ describe("Prompts", () => {
 
       const guidance = generateFeatureGuidance(feature);
 
-      expect(guidance).toContain("## Feature: auth.login");
+      expect(guidance).toContain("## Task: auth.login");
       expect(guidance).toContain("**Description:** User login functionality");
     });
 
@@ -134,7 +123,7 @@ describe("Prompts", () => {
       const guidance = generateFeatureGuidance(feature);
 
       expect(guidance).toContain("### Dependencies");
-      expect(guidance).toContain("Ensure these features are passing first:");
+      expect(guidance).toContain("Ensure these tasks are passing first:");
       expect(guidance).toContain("- auth.login");
       expect(guidance).toContain("- auth.register");
     });
@@ -195,23 +184,21 @@ describe("Prompts", () => {
 
       expect(guidance).toContain("### Workflow");
       expect(guidance).toContain("1. Review acceptance criteria above");
-      expect(guidance).toContain("2. Implement the feature");
-      expect(guidance).toContain("3. Run `agent-foreman check");
-      expect(guidance).toContain("to verify implementation");
-      expect(guidance).toContain("4. Run `agent-foreman done");
-      expect(guidance).toContain("to mark complete + commit");
+      expect(guidance).toContain("2. Implement the task");
+      expect(guidance).toContain("3. Run `agent-foreman done");
+      expect(guidance).toContain("(auto-verifies + commits)");
     });
   });
 
   describe("generateImpactGuidance", () => {
-    it("should generate guidance for no affected features", () => {
+    it("should generate guidance for no affected tasks", () => {
       const guidance = generateImpactGuidance("auth.login", []);
 
       expect(guidance).toContain("## Impact Review: auth.login");
-      expect(guidance).toContain("No other features are affected");
+      expect(guidance).toContain("No other tasks are affected");
     });
 
-    it("should list affected features in table", () => {
+    it("should list affected tasks in table", () => {
       const affected = [
         { id: "auth.profile", reason: "Depends on login" },
         { id: "auth.settings", reason: "Uses auth token" },
@@ -220,7 +207,7 @@ describe("Prompts", () => {
       const guidance = generateImpactGuidance("auth.login", affected);
 
       expect(guidance).toContain("## Impact Review: auth.login");
-      expect(guidance).toContain("| Feature | Reason | Action |");
+      expect(guidance).toContain("| Task | Reason | Action |");
       expect(guidance).toContain("| auth.profile | Depends on login | Review and update status |");
       expect(guidance).toContain("| auth.settings | Uses auth token | Review and update status |");
     });
@@ -231,7 +218,7 @@ describe("Prompts", () => {
       const guidance = generateImpactGuidance("feature", affected);
 
       expect(guidance).toContain("### Recommended Actions");
-      expect(guidance).toContain("1. Review each affected feature");
+      expect(guidance).toContain("1. Review each affected task");
       expect(guidance).toContain("2. Run tests for affected modules");
       expect(guidance).toContain("3. Mark as `needs_review`");
       expect(guidance).toContain("4. Update `notes` field");
@@ -262,7 +249,7 @@ describe("Prompts", () => {
 
       const summary = generateSessionSummary([], remaining, null);
 
-      expect(summary).toContain("### Remaining: 3 features");
+      expect(summary).toContain("### Remaining: 3 tasks");
     });
 
     it("should show next feature when available", () => {
@@ -277,7 +264,7 @@ describe("Prompts", () => {
     it("should show completion message when no next feature", () => {
       const summary = generateSessionSummary([], [], null);
 
-      expect(summary).toContain("All features are complete!");
+      expect(summary).toContain("All tasks are complete!");
     });
 
     it("should handle empty completed list", () => {
@@ -294,7 +281,7 @@ describe("Prompts", () => {
       const summary = generateSessionSummary(completed, remaining, next);
 
       expect(summary).toContain("### Completed This Session");
-      expect(summary).toContain("### Remaining: 1 features");
+      expect(summary).toContain("### Remaining: 1 tasks");
       expect(summary).toContain("### Next Up");
     });
   });

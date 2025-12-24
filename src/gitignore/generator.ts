@@ -1,74 +1,48 @@
 /**
- * Main gitignore generator module
- *
- * Generates comprehensive .gitignore files based on:
- * - Config file detection (next.config.js → Nextjs)
- * - Language detection (typescript → Node)
- * - Multiple templates combined for polyglot projects
+ * Gitignore generator with auto-detection support
  */
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, basename } from "node:path";
-import {
-  getBundledTemplate,
-  isBundledTemplate,
-  BUNDLED_TEMPLATES,
-} from "./bundled-templates.js";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { getBundledTemplate, isBundledTemplate } from "./bundled-templates.js";
 import { fetchGitignoreTemplate } from "./github-api.js";
 
-// ============================================================================
-// Types
-// ============================================================================
-
-export interface GitignoreResult {
-  success: boolean;
-  action: "created" | "updated" | "skipped" | "error";
-  reason: string;
-  templates?: string[];
-}
-
-export interface GeneratorOptions {
-  /** Additional custom patterns to include */
-  customPatterns?: string[];
-  /** Skip fetching from API (use bundled only) */
-  bundledOnly?: boolean;
-}
-
-// ============================================================================
-// Template Mappings
-// ============================================================================
-
 /**
- * Map config files to GitHub template names
+ * Mapping from config files to template names
+ * Comprehensive list covering major ecosystems and frameworks
  */
 export const CONFIG_TO_TEMPLATE: Record<string, string> = {
-  // Next.js
-  "next.config.js": "Nextjs",
-  "next.config.mjs": "Nextjs",
-  "next.config.ts": "Nextjs",
-
-  // Vite / Node.js
-  "vite.config.js": "Node",
-  "vite.config.ts": "Node",
-  "vite.config.mjs": "Node",
-
-  // Nuxt
-  "nuxt.config.js": "Node",
-  "nuxt.config.ts": "Node",
-
-  // SvelteKit
-  "svelte.config.js": "Node",
-  "svelte.config.ts": "Node",
-
-  // Node.js
+  // Node.js / JavaScript ecosystem
   "package.json": "Node",
   "package-lock.json": "Node",
   "yarn.lock": "Node",
   "pnpm-lock.yaml": "Node",
+  "bun.lockb": "Node",
+  ".npmrc": "Node",
+  "tsconfig.json": "Node",
+  "vite.config.js": "Node",
+  "vite.config.ts": "Node",
+  "vite.config.mjs": "Node",
+  "webpack.config.js": "Node",
+  "rollup.config.js": "Node",
+  "esbuild.config.js": "Node",
+
+  // Next.js
+  "next.config.js": "Nextjs",
+  "next.config.ts": "Nextjs",
+  "next.config.mjs": "Nextjs",
+
+  // Nuxt.js
+  "nuxt.config.js": "Node",
+  "nuxt.config.ts": "Node",
+
+  // Svelte
+  "svelte.config.js": "Node",
 
   // Go
   "go.mod": "Go",
   "go.sum": "Go",
+  "go.work": "Go",
 
   // Rust
   "Cargo.toml": "Rust",
@@ -78,134 +52,191 @@ export const CONFIG_TO_TEMPLATE: Record<string, string> = {
   "pyproject.toml": "Python",
   "requirements.txt": "Python",
   "setup.py": "Python",
+  "setup.cfg": "Python",
   "Pipfile": "Python",
+  "Pipfile.lock": "Python",
   "poetry.lock": "Python",
+  "conda.yaml": "Python",
+  "environment.yml": "Python",
 
-  // Java
+  // Java / JVM
   "pom.xml": "Java",
   "build.gradle": "Java",
   "build.gradle.kts": "Java",
   "settings.gradle": "Java",
   "settings.gradle.kts": "Java",
+  "gradlew": "Java",
+  ".mvn": "Java",
 };
 
 /**
- * Map detected languages to GitHub template names
+ * Mapping from language names to template names
+ * Includes languages, frameworks, and common aliases
  */
 export const LANGUAGE_TO_TEMPLATE: Record<string, string> = {
-  // JavaScript / TypeScript → Node
+  // JavaScript / TypeScript ecosystem
   typescript: "Node",
   javascript: "Node",
+  js: "Node",
+  ts: "Node",
   nodejs: "Node",
   node: "Node",
+  npm: "Node",
+  yarn: "Node",
+  pnpm: "Node",
+  bun: "Node",
+
+  // Frontend frameworks (Node-based)
   react: "Node",
   vue: "Node",
   angular: "Node",
+  svelte: "Node",
+  solid: "Node",
+  preact: "Node",
+  qwik: "Node",
+  astro: "Node",
+
+  // Next.js
+  nextjs: "Nextjs",
+  next: "Nextjs",
+  "next.js": "Nextjs",
+
+  // Nuxt.js
+  nuxtjs: "Node",
+  nuxt: "Node",
+  "nuxt.js": "Node",
 
   // Python
   python: "Python",
+  py: "Python",
+  python3: "Python",
+  pip: "Python",
+  poetry: "Python",
+  pipenv: "Python",
+  conda: "Python",
+
+  // Python frameworks
   django: "Python",
   flask: "Python",
   fastapi: "Python",
+  tornado: "Python",
+  pyramid: "Python",
 
   // Go
   go: "Go",
   golang: "Go",
 
+  // Go frameworks
+  gin: "Go",
+  echo: "Go",
+  fiber: "Go",
+
   // Rust
   rust: "Rust",
+  rs: "Rust",
+  cargo: "Rust",
 
-  // Java
+  // Rust frameworks
+  actix: "Rust",
+  rocket: "Rust",
+  axum: "Rust",
+
+  // Java / JVM
   java: "Java",
   kotlin: "Java",
+  kt: "Java",
+  scala: "Java",
+  groovy: "Java",
+  maven: "Java",
+  gradle: "Java",
+
+  // Java frameworks
   spring: "Java",
   springboot: "Java",
-
-  // Next.js
-  next: "Nextjs",
-  nextjs: "Nextjs",
+  "spring-boot": "Java",
+  quarkus: "Java",
+  micronaut: "Java",
 };
 
 /**
- * Template display names for section headers
+ * Minimal gitignore content for quick setup
  */
-const TEMPLATE_DISPLAY_NAMES: Record<string, string> = {
-  Node: "Node.js",
-  Python: "Python",
-  Go: "Go",
-  Rust: "Rust",
-  Java: "Java",
-  Nextjs: "Next.js",
-};
-
-// ============================================================================
-// Agent-Foreman Patterns
-// ============================================================================
-
-/**
- * Agent-foreman specific patterns (always included)
- */
-const AGENT_FOREMAN_PATTERNS = `# === agent-foreman ===
-# Auto-generated cache file
-ai/capabilities.json
-`;
-
-/**
- * Minimal gitignore for immediate protection
- */
-export const MINIMAL_GITIGNORE = `# === Essential Protection ===
-# Environment variables
+export const MINIMAL_GITIGNORE = `# Essential patterns
 .env
-.env.*
-!.env.example
-
-# Dependencies
+.env.local
+.env*.local
 node_modules/
-vendor/
-__pycache__/
-.venv/
-
-# Build artifacts
 dist/
-build/
+.DS_Store
+__pycache__/
 .next/
 target/
-
-# IDE
-.idea/
-.vscode/
-*.swp
-
-# OS
-.DS_Store
-Thumbs.db
 `;
 
-// ============================================================================
-// Core Functions
-// ============================================================================
+/**
+ * Result of gitignore generation operation
+ */
+export interface GitignoreResult {
+  /** Whether the operation succeeded */
+  success: boolean;
+  /** Action taken */
+  action: "created" | "updated" | "skipped" | "error";
+  /** Reason for the action */
+  reason?: string;
+  /** Templates that were used */
+  templates?: string[];
+}
 
 /**
- * Get a template by name with priority: bundled → cached → API fetch
+ * Detect templates from config files in a directory
+ * @param cwd - Directory to scan
+ * @returns Array of unique template names
  */
-export async function getTemplate(
-  name: string,
-  options: GeneratorOptions = {}
-): Promise<string | null> {
-  // 1. Try bundled template first (instant, offline)
-  if (isBundledTemplate(name)) {
-    const bundled = getBundledTemplate(name);
-    if (bundled) {
-      return bundled;
+export function detectTemplatesFromConfigFiles(cwd: string): string[] {
+  const templates = new Set<string>();
+
+  for (const [configFile, template] of Object.entries(CONFIG_TO_TEMPLATE)) {
+    const configPath = path.join(cwd, configFile);
+    if (fs.existsSync(configPath)) {
+      templates.add(template);
     }
   }
 
-  // 2. Skip API fetch if bundledOnly option is set
-  if (options.bundledOnly) {
-    return null;
+  return Array.from(templates);
+}
+
+/**
+ * Detect templates from language names
+ * @param languages - Array of language names
+ * @returns Array of unique template names
+ */
+export function detectTemplatesFromLanguages(languages: string[]): string[] {
+  const templates = new Set<string>();
+
+  for (const lang of languages) {
+    const normalizedLang = lang.toLowerCase().trim();
+    const template = LANGUAGE_TO_TEMPLATE[normalizedLang];
+    if (template) {
+      templates.add(template);
+    }
   }
 
-  // 3. Try API fetch (cached → fresh)
+  return Array.from(templates);
+}
+
+/**
+ * Get template content (bundled or from API)
+ * @param name - Template name
+ * @returns Template content or null
+ */
+export async function getTemplate(name: string): Promise<string | null> {
+  // Try bundled first for speed
+  if (isBundledTemplate(name)) {
+    const bundled = getBundledTemplate(name);
+    if (bundled) return bundled;
+  }
+
+  // Try API
   try {
     const result = await fetchGitignoreTemplate(name);
     return result.source;
@@ -215,113 +246,67 @@ export async function getTemplate(
 }
 
 /**
- * Detect templates from config files
- */
-export function detectTemplatesFromConfigFiles(
-  configFiles: string[]
-): string[] {
-  const templates = new Set<string>();
-
-  for (const file of configFiles) {
-    const fileName = basename(file);
-    const template = CONFIG_TO_TEMPLATE[fileName];
-    if (template) {
-      templates.add(template);
-    }
-  }
-
-  return Array.from(templates);
-}
-
-/**
- * Detect templates from languages
- */
-export function detectTemplatesFromLanguages(languages: string[]): string[] {
-  const templates = new Set<string>();
-
-  for (const lang of languages) {
-    const normalized = lang.toLowerCase().replace(/[^a-z0-9]/g, "");
-    const template = LANGUAGE_TO_TEMPLATE[normalized];
-    if (template) {
-      templates.add(template);
-    }
-  }
-
-  return Array.from(templates);
-}
-
-/**
  * Generate gitignore content from multiple templates
+ * @param templates - Array of template names
+ * @returns Combined gitignore content with sections
  */
-export async function generateGitignoreContent(
-  templateNames: string[],
-  options: GeneratorOptions = {}
-): Promise<string> {
+export async function generateGitignoreContent(templates: string[]): Promise<string> {
+  if (templates.length === 0) {
+    return MINIMAL_GITIGNORE;
+  }
+
   const sections: string[] = [];
 
-  // Always start with agent-foreman patterns
-  sections.push(AGENT_FOREMAN_PATTERNS);
+  // Add header
+  sections.push("# Generated by agent-foreman");
+  sections.push(`# Templates: ${templates.join(", ")}`);
+  sections.push("");
 
-  // Get unique template names
-  const uniqueTemplates = [...new Set(templateNames)];
-
-  // Fetch and add each template
-  for (const name of uniqueTemplates) {
-    const content = await getTemplate(name, options);
+  // Add each template as a section
+  for (const templateName of templates) {
+    const content = await getTemplate(templateName);
     if (content) {
-      const displayName = TEMPLATE_DISPLAY_NAMES[name] || name;
-      sections.push(`# === ${displayName} ===`);
+      sections.push(`# ─── ${templateName} ───────────────────────────────────────────`);
       sections.push(content.trim());
       sections.push("");
     }
   }
 
-  // Add custom patterns if provided
-  if (options.customPatterns && options.customPatterns.length > 0) {
-    sections.push("# === Custom ===");
-    sections.push(options.customPatterns.join("\n"));
-    sections.push("");
-  }
+  // Add agent-foreman specific patterns
+  sections.push("# ─── Agent Foreman ───────────────────────────────────────────");
+  sections.push("ai/verification/");
+  sections.push(".agent-foreman/");
+  sections.push("");
 
   return sections.join("\n");
 }
 
 /**
- * Generate gitignore for a project based on config files and languages
+ * Generate gitignore for a project
+ * @param cwd - Directory to generate gitignore for
+ * @param options - Generation options
+ * @returns Generation result
  */
 export async function generateGitignore(
-  configFiles: string[],
-  languages: string[],
-  options: GeneratorOptions = {}
-): Promise<string> {
-  // Detect templates from config files (more precise)
-  const configTemplates = detectTemplatesFromConfigFiles(configFiles);
+  cwd: string,
+  options: {
+    templates?: string[];
+    autoDetect?: boolean;
+    languages?: string[];
+    overwrite?: boolean;
+  } = {}
+): Promise<GitignoreResult> {
+  const {
+    templates: explicitTemplates = [],
+    autoDetect = true,
+    languages = [],
+    overwrite = false,
+  } = options;
 
-  // Detect templates from languages (broader fallback)
-  const langTemplates = detectTemplatesFromLanguages(languages);
+  const gitignorePath = path.join(cwd, ".gitignore");
 
-  // Combine, prioritizing config file detection
-  const allTemplates = [...new Set([...configTemplates, ...langTemplates])];
-
-  // If no templates detected, use Node as default for JS/TS projects
-  if (allTemplates.length === 0) {
-    allTemplates.push("Node");
-  }
-
-  return generateGitignoreContent(allTemplates, options);
-}
-
-// ============================================================================
-// File Operations
-// ============================================================================
-
-/**
- * Ensure minimal gitignore exists (for gitInit)
- */
-export function ensureMinimalGitignore(cwd: string): GitignoreResult {
-  const gitignorePath = join(cwd, ".gitignore");
-
-  if (existsSync(gitignorePath)) {
+  // Check if .gitignore exists
+  if (fs.existsSync(gitignorePath) && !overwrite) {
     return {
       success: true,
       action: "skipped",
@@ -329,130 +314,86 @@ export function ensureMinimalGitignore(cwd: string): GitignoreResult {
     };
   }
 
-  try {
-    writeFileSync(gitignorePath, MINIMAL_GITIGNORE);
-    return {
-      success: true,
-      action: "created",
-      reason: "Created minimal .gitignore for immediate protection",
-    };
-  } catch (error) {
-    return {
-      success: false,
-      action: "error",
-      reason: `Failed to create .gitignore: ${(error as Error).message}`,
-    };
-  }
-}
+  // Collect templates
+  const templates = new Set<string>(explicitTemplates);
 
-/**
- * Get patterns that are missing from existing gitignore
- */
-function getMissingPatterns(
-  existingContent: string,
-  requiredPatterns: string[]
-): string[] {
-  const lines = existingContent
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l && !l.startsWith("#"));
-
-  return requiredPatterns.filter((pattern) => {
-    const normalized = pattern.replace(/\/$/, "");
-    return !lines.some((line) => {
-      const normalizedLine = line.replace(/\/$/, "");
-      return normalizedLine === normalized || normalizedLine === pattern;
-    });
-  });
-}
-
-/**
- * Ensure comprehensive gitignore exists (for generateHarnessFiles)
- */
-export async function ensureComprehensiveGitignore(
-  cwd: string,
-  configFiles: string[],
-  languages: string[],
-  options: GeneratorOptions = {}
-): Promise<GitignoreResult> {
-  const gitignorePath = join(cwd, ".gitignore");
-
-  // Detect templates
-  const configTemplates = detectTemplatesFromConfigFiles(configFiles);
-  const langTemplates = detectTemplatesFromLanguages(languages);
-  const allTemplates = [...new Set([...configTemplates, ...langTemplates])];
-
-  // If .gitignore doesn't exist, create it
-  if (!existsSync(gitignorePath)) {
-    try {
-      const content = await generateGitignoreContent(allTemplates, options);
-      writeFileSync(gitignorePath, content);
-      return {
-        success: true,
-        action: "created",
-        reason: `Generated from ${allTemplates.length} template(s)`,
-        templates: allTemplates,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        action: "error",
-        reason: `Failed to create .gitignore: ${(error as Error).message}`,
-      };
+  // Auto-detect from config files
+  if (autoDetect) {
+    for (const t of detectTemplatesFromConfigFiles(cwd)) {
+      templates.add(t);
     }
   }
 
-  // .gitignore exists - check for missing essential patterns
-  const existingContent = readFileSync(gitignorePath, "utf-8");
-
-  // Essential patterns that should be present
-  const essentialPatterns = ["ai/capabilities.json"];
-
-  // Add language-specific essential patterns
-  if (
-    allTemplates.includes("Node") ||
-    allTemplates.includes("Nextjs")
-  ) {
-    essentialPatterns.push("node_modules/");
-  }
-  if (allTemplates.includes("Python")) {
-    essentialPatterns.push("__pycache__/", ".venv/");
-  }
-  if (allTemplates.includes("Go")) {
-    essentialPatterns.push("vendor/");
-  }
-  if (allTemplates.includes("Rust")) {
-    essentialPatterns.push("target/");
-  }
-  if (allTemplates.includes("Nextjs")) {
-    essentialPatterns.push(".next/");
+  // Add language-based templates
+  for (const t of detectTemplatesFromLanguages(languages)) {
+    templates.add(t);
   }
 
-  const missingPatterns = getMissingPatterns(existingContent, essentialPatterns);
+  // Generate content
+  const templateArray = Array.from(templates);
+  const content = await generateGitignoreContent(templateArray);
 
-  if (missingPatterns.length === 0) {
-    return {
-      success: true,
-      action: "skipped",
-      reason: ".gitignore already has essential patterns",
-    };
-  }
-
-  // Append missing patterns
+  // Write file
   try {
-    const appendContent = `\n# === Added by agent-foreman ===\n${missingPatterns.join("\n")}\n`;
-    writeFileSync(gitignorePath, existingContent.trimEnd() + appendContent);
+    fs.writeFileSync(gitignorePath, content);
     return {
       success: true,
-      action: "updated",
-      reason: `Added ${missingPatterns.length} missing pattern(s)`,
-      templates: allTemplates,
+      action: fs.existsSync(gitignorePath) && overwrite ? "updated" : "created",
+      templates: templateArray,
     };
   } catch (error) {
     return {
       success: false,
       action: "error",
-      reason: `Failed to update .gitignore: ${(error as Error).message}`,
+      reason: error instanceof Error ? error.message : "Unknown error",
     };
   }
+}
+
+/**
+ * Ensure minimal gitignore exists (for git init)
+ * @param cwd - Directory to check
+ * @returns Result of the operation
+ */
+export function ensureMinimalGitignore(cwd: string): GitignoreResult {
+  const gitignorePath = path.join(cwd, ".gitignore");
+
+  if (fs.existsSync(gitignorePath)) {
+    return { success: true, action: "skipped", reason: ".gitignore exists" };
+  }
+
+  try {
+    fs.writeFileSync(gitignorePath, MINIMAL_GITIGNORE);
+    return { success: true, action: "created" };
+  } catch (error) {
+    return {
+      success: false,
+      action: "error",
+      reason: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+/**
+ * Ensure comprehensive gitignore exists (for harness generation)
+ * @param cwd - Directory to check
+ * @returns Result of the operation
+ */
+export async function ensureComprehensiveGitignore(cwd: string): Promise<GitignoreResult> {
+  const gitignorePath = path.join(cwd, ".gitignore");
+
+  // If .gitignore exists and has content, skip
+  if (fs.existsSync(gitignorePath)) {
+    const content = fs.readFileSync(gitignorePath, "utf-8").trim();
+    if (content.length > 50) {
+      // Has substantial content
+      return { success: true, action: "skipped", reason: ".gitignore already has content" };
+    }
+  }
+
+  // Generate comprehensive gitignore with auto-detection
+  return generateGitignore(cwd, {
+    autoDetect: true,
+    overwrite: true,
+  });
 }

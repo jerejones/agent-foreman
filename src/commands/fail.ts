@@ -1,21 +1,17 @@
 /**
- * Fail command - Mark a feature as failed and continue to next
- *
- * Used when verification fails or implementation cannot be completed.
- * This enables the loop workflow to continue without stopping.
+ * 'fail' command implementation
+ * Mark a task/feature as failed with a reason
  */
-
 import chalk from "chalk";
 
 import {
   loadFeatureList,
-  saveFeatureList,
   findFeatureById,
   updateFeatureStatus,
-  selectNextFeature,
-  getFeatureStats,
-  getCompletionPercentage,
-} from "../feature-list.js";
+  buildAndSaveIndex,
+  updateFeatureStatusQuick,
+} from "../features/index.js";
+import { loadFeatureIndex } from "../storage/index.js";
 import {
   appendProgressLog,
   createVerifyEntry,
@@ -23,9 +19,6 @@ import {
 
 /**
  * Run the fail command
- * @param featureId - Feature ID to mark as failed
- * @param reason - Reason for failure
- * @param loopMode - Whether to show loop continuation guidance
  */
 export async function runFail(
   featureId: string,
@@ -36,108 +29,83 @@ export async function runFail(
 
   const featureList = await loadFeatureList(cwd);
   if (!featureList) {
-    console.log(chalk.red("✗ No feature list found. Run 'agent-foreman init' first."));
+    console.log(chalk.red("✗ No task list found."));
     process.exit(1);
   }
 
   const feature = findFeatureById(featureList.features, featureId);
   if (!feature) {
-    console.log(chalk.red(`✗ Feature '${featureId}' not found.`));
+    console.log(chalk.red(`✗ Task '${featureId}' not found.`));
     process.exit(1);
   }
 
   // Check if already failed
   if (feature.status === "failed") {
-    console.log(chalk.yellow(`⚠ Feature '${featureId}' is already marked as failed.`));
-    const next = selectNextFeature(featureList.features);
-    if (next) {
-      console.log(chalk.gray(`\n  Next up: ${next.id}`));
+    console.log(chalk.yellow(`⚠ Task '${featureId}' is already marked as failed.`));
+    if (feature.notes) {
+      console.log(chalk.gray(`  Previous reason: ${feature.notes}`));
     }
-    return;
+    process.exit(0);
   }
 
   // Build notes with reason
-  const timestamp = new Date().toISOString();
-  const failureNote = reason
-    ? `[${timestamp.split("T")[0]}] Failed: ${reason}`
-    : `[${timestamp.split("T")[0]}] Marked as failed`;
-
-  const updatedNotes = feature.notes
-    ? `${feature.notes}\n${failureNote}`
-    : failureNote;
+  const notes = reason
+    ? `Verification failed: ${reason}`
+    : feature.notes
+      ? `${feature.notes} | Marked as failed`
+      : "Marked as failed";
 
   // Update status to failed
-  featureList.features = updateFeatureStatus(
-    featureList.features,
-    featureId,
-    "failed",
-    updatedNotes
-  );
+  const index = await loadFeatureIndex(cwd);
+  if (!index) {
+    // Create index from featureList if it doesn't exist (legacy fallback)
+    await buildAndSaveIndex(cwd, featureList);
+  }
+  await updateFeatureStatusQuick(cwd, featureId, "failed", notes);
+  // Also update in-memory list for selectNextFeature/getFeatureStats
+  featureList.features = updateFeatureStatus(featureList.features, featureId, "failed", notes);
 
-  // Save
-  await saveFeatureList(cwd, featureList);
-
-  // Log to progress
-  await appendProgressLog(
-    cwd,
-    createVerifyEntry(
-      featureId,
-      "fail",
-      reason || "Marked as failed"
-    )
-  );
+  // Log progress
+  await appendProgressLog(cwd, createVerifyEntry(featureId, "fail", `Marked ${featureId} as failed: ${reason || "No reason provided"}`));
 
   console.log(chalk.red(`\n✗ Marked '${featureId}' as failed`));
   if (reason) {
     console.log(chalk.gray(`  Reason: ${reason}`));
   }
 
-  // Show next feature
-  const next = selectNextFeature(featureList.features);
+  // Loop mode: show continuation instructions
+  if (loopMode) {
+    const { selectNextFeature, getFeatureStats, getCompletionPercentage } = await import("../features/index.js");
+    const next = selectNextFeature(featureList.features);
 
-  if (next) {
-    console.log(chalk.gray(`\n  Next up: ${next.id}`));
-
-    // Loop mode: Output explicit continuation guidance
-    if (loopMode) {
+    if (next) {
       const stats = getFeatureStats(featureList.features);
-      const completed = stats.passing;
-      const failed = stats.failed;
+      const total = featureList.features.filter(f => f.status !== "deprecated").length;
       const percent = getCompletionPercentage(featureList.features);
 
       console.log(chalk.bold.cyan("\n══════════════════════════════════════════════════════════════"));
-      console.log(chalk.bold.cyan("                   CONTINUE TO NEXT FEATURE"));
+      console.log(chalk.bold.cyan("                   CONTINUE TO NEXT TASK"));
       console.log(chalk.bold.cyan("══════════════════════════════════════════════════════════════\n"));
 
       console.log(chalk.white(`   Failed: ${featureId}`));
-      console.log(chalk.white(`   Status: ${completed} passing, ${failed} failed, ${stats.failing} pending`));
-      console.log(chalk.white(`   Progress: ${percent}%`));
+      console.log(chalk.white(`   Next up: ${next.id}`));
+      console.log(chalk.white(`   Progress: ${stats.passing}/${total} passing (${percent}%)`));
+      if (stats.failed > 0) {
+        console.log(chalk.red(`   Failed tasks: ${stats.failed}`));
+      }
 
-      console.log(chalk.bold.yellow("\n   NEXT STEPS:"));
+      console.log(chalk.bold.yellow("\n   LOOP INSTRUCTION:"));
       console.log(chalk.gray("   1. agent-foreman next"));
-      console.log(chalk.gray("   2. Implement feature"));
-      console.log(chalk.gray("   3. agent-foreman check <feature_id>"));
-      console.log(chalk.gray("   4. agent-foreman done <feature_id>"));
+      console.log(chalk.gray("   2. Implement task"));
+      console.log(chalk.gray("   3. agent-foreman check <task_id>"));
+      console.log(chalk.gray("   4. agent-foreman done <task_id>"));
+      console.log(chalk.gray("   5. REPEAT until all tasks processed"));
 
-      console.log(chalk.bold.green("\n   ➤ Continue NOW. Do NOT stop."));
+      console.log(chalk.bold.green("\n   ➤ Continue to the next task NOW."));
       console.log(chalk.bold.cyan("══════════════════════════════════════════════════════════════\n"));
+    } else {
+      console.log(chalk.gray("\n  No more tasks to process."));
+      console.log(chalk.gray("  Run 'agent-foreman status' for summary."));
     }
-  } else {
-    // All features processed
-    const stats = getFeatureStats(featureList.features);
-
-    console.log(chalk.bold.blue("\n══════════════════════════════════════════════════════════════"));
-    console.log(chalk.bold.blue("                   ALL FEATURES PROCESSED"));
-    console.log(chalk.bold.blue("══════════════════════════════════════════════════════════════\n"));
-
-    console.log(chalk.bold("   Summary:"));
-    console.log(chalk.green(`   ✓ Passing: ${stats.passing}`));
-    console.log(chalk.red(`   ✗ Failed: ${stats.failed}`));
-    if (stats.blocked > 0) {
-      console.log(chalk.yellow(`   ○ Blocked: ${stats.blocked}`));
-    }
-
-    console.log(chalk.gray("\n   Run 'agent-foreman status' for details."));
-    console.log(chalk.bold.blue("══════════════════════════════════════════════════════════════\n"));
   }
 }

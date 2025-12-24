@@ -1,7 +1,7 @@
 ---
-description: Show current project status with feature completion and recent activity
+description: Show task completion status and progress summary
 allowed-tools: Bash, Read, Glob, Grep
-argument-hint: [--json|--quiet]
+argument-hint: "[--json|--quiet]"
 ---
 
 # EXECUTE NOW
@@ -26,11 +26,11 @@ Wait for completion. Review the status shown.
 
 The command displays:
 - **Project goal** - What the project aims to achieve
-- **Feature counts** - Passing, failing, blocked, needs_review, failed, deprecated
+- **Task counts** - Passing, failing, blocked, needs_review, failed, deprecated
 - **Completion percentage** - Visual progress bar
 - **Recent activity** - Latest entries from progress log
 
-## Feature Status Indicators
+## Task Status Indicators
 
 | Symbol | Status | Meaning |
 |--------|--------|---------|

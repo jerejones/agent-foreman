@@ -1,263 +1,110 @@
 # check Command
 
-AI-powered verification of feature completion against acceptance criteria.
+AI-powered verification of code changes or task completion.
 
-> AI 驱动的功能完成验证，对照验收标准检查。
-
-## Synopsis
+## Command Syntax
 
 ```bash
-# Fast check mode (default - no feature_id)
-agent-foreman check [options]
-
-# Task-based full verification
-agent-foreman check <feature_id> [options]
-
-# Full verification with auto-select
-agent-foreman check --full [options]
+agent-foreman check [feature_id] [options]
 ```
 
 ## Description
 
-The `check` command has three modes:
+The `check` command provides layered verification with three modes:
 
-1. **Fast Check Mode** (default, no feature_id): Git diff-based verification with selective tests and task impact notification. Skips build and E2E tests for speed.
-
-2. **Task-Based Verification** (with feature_id): Full verification of a specific task including all tests, build, and AI analysis.
-
-3. **Full Verification with Auto-Select** (`--full` without feature_id): Automatically selects the next pending task and runs full verification.
-
-**Important**: This command verifies but does NOT mark the feature as complete - use `done` for that.
-
-> `check` 命令有三种模式：
-> 1. **快速检查模式**（默认，无 feature_id）：基于 Git diff 的验证，包含选择性测试和任务影响通知。跳过构建和 E2E 测试以提高速度。
-> 2. **基于任务的验证**（有 feature_id）：对特定任务进行完整验证，包括所有测试、构建和 AI 分析。
-> 3. **全量验证自动选择**（`--full` 无 feature_id）：自动选择下一个待处理任务并运行完整验证。
+| Mode | Command | Description | Duration |
+|------|---------|-------------|----------|
+| **Fast** (default) | `check` | Git diff → selective tests + task impact | 10-30s |
+| **AI** | `check --ai` | Fast + AI verification for affected tasks | 2-5 min |
+| **Full** | `check --full` | All tests + build + E2E + AI analysis | 5-10 min |
+| **Task** | `check <task_id>` | Task-scoped full verification | varies |
 
 ## Arguments
 
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `feature_id` | No | The feature to verify. Omit for fast check mode, or use `--full` to auto-select |
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `feature_id` | string | No | Task ID for full verification (omit for fast mode) |
 
 ## Options
 
-| Option | Alias | Default | Description |
-|--------|-------|---------|-------------|
-| `--verbose` | `-v` | `false` | Show detailed output |
-| `--full` | - | `false` | Run full verification (all tests + build + E2E). Auto-selects next task if no feature_id |
-| `--ai` | - | `false` | Enable AI verification (fast check: for affected tasks; task mode: autonomous exploration) |
-| `--skip-checks` | `-s` | `false` | Skip automated checks (AI only) |
-| `--quick` | - | `true` | Run only related tests (for task mode) |
-| `--test-pattern` | - | - | Explicit test pattern |
-| `--skip-e2e` | - | `false` | Skip E2E tests entirely |
+| Option | Alias | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--full` | - | boolean | `false` | Run full verification (all tests + build + E2E) |
+| `--ai` | - | boolean | `false` | Enable AI verification (autonomous exploration for tasks, affected tasks for fast mode) |
+| `--verbose` | `-v` | boolean | `false` | Show detailed output |
+| `--skip-checks` | `-s` | boolean | `false` | Skip automated checks, AI only |
+| `--quick` | - | boolean | `true` | Run only related tests (for task mode) |
+| `--test-pattern` | - | string | - | Explicit test pattern to use |
+| `--skip-e2e` | - | boolean | `false` | Skip E2E tests entirely |
 
 ## Execution Flow
 
-### Fast Check Mode (No Feature ID)
-
 ```mermaid
 flowchart TD
-    Start([agent-foreman check]) --> GetChanges[Get Changed Files from Git]
-    GetChanges --> HasChanges{Has Changes?}
+    A[Start: runCheck] --> B{Has feature_id?}
+    B -->|No| C{--full flag?}
+    C -->|No| D[FAST CHECK MODE]
+    C -->|Yes| E[FULL CHECK MODE]
+    B -->|Yes| F[TASK CHECK MODE]
 
-    HasChanges -->|No| NoChanges[No changes detected]
-    NoChanges --> End([End])
-
-    HasChanges -->|Yes| CheckHighRisk{High-Risk Files?}
-    CheckHighRisk -->|Yes| WarnHighRisk[Warn: Recommend --full]
-    CheckHighRisk -->|No| Continue
-    WarnHighRisk --> Continue
-
-    Continue[Run Fast Checks] --> RunChecks
-
-    subgraph RunChecks["Layer 1: Fast Checks"]
-        Typecheck[Typecheck]
-        Lint[Lint]
-        SelectiveTests[Selective Tests]
+    subgraph FastCheck["Fast Check Mode (Layer 1-2)"]
+        D --> D1[Get changed files from git]
+        D1 --> D2{High-risk files?}
+        D2 -->|Yes| D3[Warn: recommend --full]
+        D2 -->|No| D4[Continue]
+        D3 --> D4
+        D4 --> D5[Run typecheck + lint]
+        D5 --> D6[Run selective tests]
+        D6 --> D7[Detect task impact]
+        D7 --> D8{--ai?}
+        D8 -->|Yes| D9[AI Task Verification]
+        D8 -->|No| D10[Display results]
+        D9 --> D10
     end
 
-    RunChecks --> TaskImpact
-
-    subgraph TaskImpact["Layer 2: Task Impact"]
-        FindAffected[Find Affected Tasks]
-        ShowImpact[Show Task Impact]
+    subgraph TaskCheck["Task Check Mode"]
+        F --> F1[Load Feature List]
+        F1 --> F2{Feature Found?}
+        F2 -->|No| F3[Exit: Task not found]
+        F2 -->|Yes| F4{TDD Gate Required?}
+        F4 -->|Yes| F5[TDD Verification Gate]
+        F5 --> F6{Gate Passed?}
+        F6 -->|No| F7[Exit: Missing tests]
+        F6 -->|Yes| F8[Run Verification]
+        F4 -->|No| F8
+        F8 --> F9[Display Result]
     end
 
-    TaskImpact --> AIOption{--ai flag?}
-    AIOption -->|Yes| AIVerify
-    AIOption -->|No| ShowResult
-
-    subgraph AIVerify["Layer 3: AI Verification"]
-        VerifyTasks[AI Verify Affected Tasks]
-    end
-
-    AIVerify --> ShowResult[Show Results]
-    ShowResult --> End
+    E --> F1
 ```
 
-### Task-Based Verification (With Feature ID)
+## Fast Check Mode (Default)
 
-```mermaid
-flowchart TD
-    Start([Start]) --> LoadFeatures[loadFeatureList]
-    LoadFeatures --> CheckLoaded{Loaded?}
-    CheckLoaded -->|No| NoListError[Exit: No Feature List]
-    CheckLoaded -->|Yes| FindFeature[findFeatureById]
+When running `agent-foreman check` without arguments:
 
-    FindFeature --> CheckFound{Found?}
-    CheckFound -->|No| NotFoundError[Exit: Feature Not Found]
-    CheckFound -->|Yes| CheckTDDMode
+### Layer 1: Fast Deterministic Checks
+- TypeScript type checking (`tsc --noEmit`)
+- Linting (if configured)
+- Selective unit tests based on changed files
 
-    subgraph TDDGate["TDD Verification Gate"]
-        CheckTDDMode{Strict Mode OR<br/>Required Tests?}
-        CheckTDDMode -->|Yes| RunTDDGate[verifyTDDGate]
-        CheckTDDMode -->|No| SkipTDDGate[Skip TDD Gate]
+### Layer 2: Task Impact Detection
+- Maps changed files to affected tasks using:
+  1. Explicit `affectedBy` glob patterns (high confidence)
+  2. Test patterns from `testRequirements` (medium confidence)
+  3. Module-based matching (low confidence)
 
-        RunTDDGate --> TDDPassed{Tests Exist?}
-        TDDPassed -->|No| TDDFail[Show Missing Tests]
-        TDDFail --> TDDExit[Exit 1]
-        TDDPassed -->|Yes| ShowTestsExist[Show Found Tests]
-    end
+### Layer 3: AI Task Verification (opt-in)
+- Enabled with `--ai` flag
+- AI analyzes affected tasks against acceptance criteria
 
-    SkipTDDGate --> SelectMode
-    ShowTestsExist --> SelectMode
+### Skipped by Default
+- Build step
+- E2E tests
+- Full AI analysis
 
-    subgraph VerificationPhase["Feature Verification"]
-        SelectMode[Select Verification Mode] --> ModeSelect{Autonomous?}
-        ModeSelect -->|Yes| AutonomousVerify[verifyFeatureAutonomous]
-        ModeSelect -->|No| StandardVerify[verifyFeature]
+### High-Risk File Detection
 
-        subgraph Standard["Standard Verification"]
-            StandardVerify --> RunAllChecks[Run Automated Checks]
-            RunAllChecks --> GetDiff[Get Git Diff]
-            GetDiff --> AIAnalyze[Analyze with AI]
-        end
-
-        subgraph Autonomous["Autonomous Verification"]
-            AutonomousVerify --> SpawnAgent[Spawn AI Agent]
-            SpawnAgent --> ExploreCode[Explore Codebase]
-            ExploreCode --> EvalCriteria[Evaluate Criteria]
-        end
-    end
-
-    AIAnalyze --> FormatResult[formatVerificationResult]
-    EvalCriteria --> FormatResult
-
-    FormatResult --> UpdateFeature[updateFeatureVerification]
-    UpdateFeature --> SaveList[saveFeatureList]
-    SaveList --> LogProgress[appendProgressLog]
-
-    LogProgress --> DisplayResult[Display Result]
-    DisplayResult --> CheckVerdict{Verdict?}
-
-    CheckVerdict -->|pass| ShowPass[Show Success]
-    CheckVerdict -->|fail| ShowFail[Show Failure]
-    CheckVerdict -->|needs_review| ShowReview[Show Review Needed]
-
-    ShowPass --> SuggestDone[Suggest: agent-foreman done]
-    ShowFail --> SuggestFix[Suggest: Fix Issues]
-    ShowReview --> SuggestManual[Suggest: Manual Review]
-
-    SuggestDone --> End([End])
-    SuggestFix --> End
-    SuggestManual --> End
-
-    NoListError --> Exit([Exit 1])
-    NotFoundError --> Exit
-    TDDExit --> Exit
-```
-
-## Verification Modes
-
-### Fast Check Mode (Default)
-
-When called without a feature_id:
-1. Gets changed files from git diff
-2. Detects high-risk changes (package.json, tsconfig.json, etc.)
-3. Runs selective tests based on changed files
-4. Runs typecheck and lint (skips build)
-5. Shows task impact notification (affected tasks)
-6. Optionally runs AI verification with `--ai` flag
-
-### Task-Based Verification
-
-When called with a feature_id:
-1. Run automated checks (tests, lint, typecheck, build)
-2. Get git diff of uncommitted changes
-3. Send diff + acceptance criteria to AI
-4. AI evaluates each criterion
-
-### Autonomous Mode
-
-1. Build exploration prompt with acceptance criteria
-2. Spawn AI agent with full codebase access
-3. Agent autonomously explores code
-4. Agent evaluates each criterion and provides verdict
-
-### TDD Mode (Strict)
-
-1. **Gate Check**: Verify test files exist
-2. Run tests matching feature patterns
-3. Tests must pass for feature to pass
-
-## Automated Checks Flow
-
-```mermaid
-flowchart LR
-    subgraph Checks["Automated Checks"]
-        direction TB
-        Tests[Tests]
-        Lint[Lint]
-        Typecheck[Typecheck]
-        Build[Build]
-    end
-
-    subgraph Results["Check Results"]
-        direction TB
-        TestResult[Test Result]
-        LintResult[Lint Result]
-        TypeResult[Typecheck Result]
-        BuildResult[Build Result]
-    end
-
-    subgraph Output["Combined Output"]
-        AllPassed{All Passed?}
-        PassSummary[Pass Summary]
-        FailSummary[Fail Summary]
-    end
-
-    Tests --> TestResult
-    Lint --> LintResult
-    Typecheck --> TypeResult
-    Build --> BuildResult
-
-    TestResult --> AllPassed
-    LintResult --> AllPassed
-    TypeResult --> AllPassed
-    BuildResult --> AllPassed
-
-    AllPassed -->|Yes| PassSummary
-    AllPassed -->|No| FailSummary
-```
-
-### Check Execution Order
-1. **Tests** - Run project test suite (or selective tests in quick mode)
-2. **Lint** - Run linter if configured
-3. **Typecheck** - Run TypeScript check if configured
-4. **Build** - Run build if configured (skipped in fast check mode)
-
-### Fast Check vs Full Mode
-
-| Mode | Tests | Typecheck | Lint | Build | E2E | Task Impact | AI |
-|------|-------|-----------|------|-------|-----|-------------|-----|
-| Fast (default) | Selective | Yes | Yes | No | No | Yes | Optional (--ai) |
-| Full (--full) | All | Yes | Yes | Yes | Yes | No | Yes |
-| Task-based | Pattern | Yes | Yes | Yes | Optional | No | Yes |
-
-## High-Risk File Detection
-
-Fast check mode warns when these files are changed:
+The following files trigger a warning to use `--full`:
 - `package.json`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`
 - `tsconfig*.json`
 - `.eslintrc*`, `eslint.config.*`
@@ -265,191 +112,227 @@ Fast check mode warns when these files are changed:
 - `.env*`
 - `Cargo.toml`, `go.mod`, `requirements.txt`
 
-When high-risk files are detected, the command suggests using `--full` mode.
+## Task Check Mode
 
-## Data Flow Diagram
+When running `agent-foreman check <task_id>`:
+
+### TDD Gate Verification
+
+When TDD mode is `strict` or the feature has `testRequirements.required: true`:
 
 ```mermaid
-flowchart LR
-    subgraph Input
-        FeatureList[ai/feature_list.json]
-        GitDiff[Git Diff]
-        Capabilities[ai/capabilities.json]
-        SourceCode[Source Code]
-    end
+flowchart TD
+    A[TDD Gate Check] --> B[Get Test Patterns]
+    B --> C[Scan for Test Files]
+    C --> D{Files Found?}
 
-    subgraph Processing
-        TDDGate[TDD Gate]
-        CheckExecutor[Check Executor]
-        AIAnalyzer[AI Analyzer]
-        Formatter[Result Formatter]
-    end
+    D -->|Unit Tests Missing| E[Add to missingUnitTests]
+    D -->|E2E Tests Missing| F[Add to missingE2ETests]
+    D -->|All Found| G[Gate Passed]
 
-    subgraph Output
-        VerificationResult[Verification Result]
-        UpdatedFeature[Updated Feature]
-        ProgressEntry[Progress Log Entry]
-    end
+    E --> H{All Required Found?}
+    F --> H
+    H -->|No| I[Gate Failed]
+    H -->|Yes| G
 
-    FeatureList --> TDDGate
-    FeatureList --> CheckExecutor
-    FeatureList --> AIAnalyzer
+    I --> J[Display Missing Tests]
+    J --> K[Display TDD Workflow]
+    K --> L[Exit with Error]
 
-    Capabilities --> CheckExecutor
-    GitDiff --> AIAnalyzer
-    SourceCode --> AIAnalyzer
-
-    TDDGate --> Formatter
-    CheckExecutor --> Formatter
-    AIAnalyzer --> Formatter
-
-    Formatter --> VerificationResult
-    Formatter --> UpdatedFeature
-    Formatter --> ProgressEntry
+    G --> M[Continue Verification]
 ```
 
-## Verification Result Schema
+### Verification Modes
+
+#### Standard Mode (Default)
+Uses diff-based analysis:
+1. Gets git diff for recent changes
+2. Runs automated checks (tests, typecheck, lint)
+3. Generates verdict based on test results
+
+#### AI Autonomous Mode (with `--ai`)
+AI-powered exploration:
+1. AI agent explores codebase
+2. Identifies implementation files
+3. Runs targeted tests
+4. Deep analysis of acceptance criteria
+5. Generates comprehensive verdict
+
+## Key Functions
+
+### `runCheck(featureId?, verbose, skipChecks, ai, testMode, testPattern, skipE2E, e2eMode, full)`
+
+**Location**: `src/commands/check.ts:42`
+
+Main entry point for the check command.
+
+**Parameters**:
+- `featureId?: string` - Task ID to verify (optional, triggers fast mode if omitted)
+- `verbose: boolean` - Show detailed output
+- `skipChecks: boolean` - Skip automated checks
+- `ai: boolean` - Enable AI verification (autonomous exploration for tasks, affected tasks for fast mode)
+- `testMode: 'full' | 'quick' | 'skip'` - Test execution mode
+- `testPattern?: string` - Custom test pattern
+- `skipE2E: boolean` - Skip E2E tests
+- `e2eMode?: 'full' | 'smoke' | 'tags' | 'skip'` - E2E execution mode
+- `full: boolean` - Run full verification
+
+### `runLayeredCheck(cwd, options)`
+
+**Location**: `src/verifier/layered-check.ts:115`
+
+Executes fast layered check mode.
+
+**Parameters**:
+- `cwd: string` - Working directory
+- `options: LayeredCheckOptions` - Check options
+
+**Returns**: `LayeredCheckResult`
+
+### `isHighRiskChange(files)`
+
+**Location**: `src/verifier/layered-check.ts:105`
+
+Checks if changed files are high-risk (config/deps).
+
+**Returns**: `boolean`
+
+### `getTaskImpact(cwd, changedFiles)`
+
+**Location**: `src/verifier/task-impact.ts:32`
+
+Maps changed files to affected tasks.
+
+**Returns**: `TaskImpact[]`
+
+### `verifyTDDGate(cwd, feature, metadata)`
+
+**Location**: `src/test-gate.ts`
+
+Verifies that required test files exist.
+
+**Returns**:
+```typescript
+{
+  passed: boolean;
+  missingUnitTests: string[];
+  missingE2ETests: string[];
+  foundTestFiles: string[];
+}
+```
+
+### `verifyFeature(cwd, feature, options)`
+
+**Location**: `src/verifier/core.ts`
+
+Standard verification with diff-based analysis.
+
+**Returns**: `VerificationResult`
+
+### `verifyFeatureAutonomous(cwd, feature, options)`
+
+**Location**: `src/verifier/autonomous.ts`
+
+Autonomous AI-powered verification.
+
+**Returns**: `VerificationResult`
+
+## Result Structures
+
+### LayeredCheckResult
+
+```typescript
+interface LayeredCheckResult {
+  // Layer 1: Fast checks
+  changedFiles: string[];
+  checks: {
+    typecheck?: AutomatedCheckResult;
+    lint?: AutomatedCheckResult;
+    tests?: AutomatedCheckResult;
+  };
+
+  // Layer 2: Task impact
+  affectedTasks: TaskImpact[];
+
+  // Layer 3: AI verification (optional)
+  taskVerification?: Array<{
+    taskId: string;
+    verdict: 'pass' | 'fail' | 'needs_review';
+    reasoning: string;
+  }>;
+
+  // Summary
+  duration: number;
+  passed: boolean;
+  skipped: string[];
+  highRiskEscalation: boolean;
+}
+```
+
+### TaskImpact
+
+```typescript
+interface TaskImpact {
+  taskId: string;
+  reason: string;
+  confidence: 'high' | 'medium' | 'low';
+  matchedFiles: string[];
+}
+```
+
+### VerificationResult
 
 ```typescript
 interface VerificationResult {
   verdict: 'pass' | 'fail' | 'needs_review';
-  criteriaResults: {
+  confidence: number; // 0-1
+  criteriaResults: Array<{
     criterion: string;
-    verdict: 'pass' | 'fail' | 'uncertain';
+    passed: boolean;
     evidence: string;
-    reasoning?: string;
-  }[];
+  }>;
   automatedChecks: {
-    tests?: { passed: boolean; output?: string };
-    lint?: { passed: boolean; output?: string };
-    typecheck?: { passed: boolean; output?: string };
-    build?: { passed: boolean; output?: string };
+    tests: { passed: boolean; output: string };
+    typecheck: { passed: boolean; output: string };
+    lint: { passed: boolean; output: string };
+    e2e?: { passed: boolean; output: string };
   };
-  aiAnalysis?: {
+  aiAnalysis: {
     summary: string;
-    confidence: number;
-    suggestions?: string[];
+    suggestions: string[];
   };
 }
 ```
 
-## Dependencies
-
-### Internal Modules
-- `src/feature-list.ts` - Feature operations
-- `src/progress-log.ts` - Progress tracking
-- `src/test-gate.ts` - TDD verification gate
-- `src/verifier/index.ts` - Verification orchestration
-  - `verifyFeature()` - Standard verification
-  - `verifyFeatureAutonomous()` - Autonomous verification
-  - `createVerificationSummary()` - Result summary
-  - `formatVerificationResult()` - Display formatting
-- `src/verifier/layered-check.ts` - Fast check mode
-  - `runLayeredCheck()` - Fast verification
-  - `isHighRiskChange()` - High-risk file detection
-- `src/verifier/task-impact.ts` - Task impact detection
-  - `getTaskImpact()` - Map files to affected tasks
-
-### External Dependencies
-- `chalk` - Console output styling
-- AI CLI tools for autonomous verification
-
-## Files Read
-
-| File | Purpose |
-|------|---------|
-| `ai/feature_list.json` | Feature details and criteria |
-| `ai/capabilities.json` | Test/lint/typecheck commands |
-| Git working directory | Code changes for analysis |
-
-## Files Written
-
-| File | Purpose |
-|------|---------|
-| `ai/feature_list.json` | Update verification summary |
-| `ai/progress.log` | Append VERIFY entry |
-
-## Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | Verification completed (any verdict) |
-| 1 | Feature not found / No feature list / TDD gate failed |
-
-## Examples
-
-### Fast Check (Default)
-```bash
-# Quick verification of current changes
-agent-foreman check
-
-# Fast check with AI verification for affected tasks
-agent-foreman check --ai
-
-# Fast check with verbose output
-agent-foreman check -v
-```
-
-### Full Verification
-```bash
-# Full verification, auto-select next task
-agent-foreman check --full
-
-# Full verification of specific task
-agent-foreman check auth.login
-```
-
-### Task-Based Verification
-```bash
-# Verify specific feature
-agent-foreman check auth.login
-
-# Verbose output
-agent-foreman check auth.login -v
-
-# Skip automated checks (AI only)
-agent-foreman check auth.login --skip-checks
-
-# Skip E2E tests
-agent-foreman check auth.login --skip-e2e
-
-# Custom test pattern
-agent-foreman check auth.login --test-pattern "tests/auth/**/*.test.ts"
-```
-
-## Console Output Example
+## Output Examples
 
 ### Fast Check Mode
+
 ```
 ╭─ ⚡ FAST CHECK ──────────────────────────────────────╮
-│ Changed: 3 files
+│ Changed: 3 files                                     │
 │ Skipped: AI analysis, build, e2e                     │
 │                                                      │
-│ ✓ typecheck    passed (2.1s)
-│ ✓ lint         passed (0.8s)
-│ ✓ tests        passed (3.5s) [2 files]
+│ ✓ typecheck    passed (2.1s)                         │
+│ ✓ lint         passed (1.3s)                         │
+│ ✓ tests        passed (8.5s) [12 files]              │
 │                                                      │
-│ ⚡ FAST CHECK PASSED (6.4s)
+│ ⚡ FAST CHECK PASSED (11.9s)                         │
 ╰──────────────────────────────────────────────────────╯
 
 ℹ TASK IMPACT:
   These changes may affect:
     • auth.login
-      matches affectedBy pattern: src/auth/**/*
+      file in module: auth
+    • api.users
+      matches test pattern: tests/api/**/*.test.ts
 
   To verify acceptance criteria:
   $ agent-foreman check --ai
 ```
 
-### Fast Check with High-Risk Warning
-```
-╭─ ⚡ FAST CHECK ──────────────────────────────────────╮
-│ Changed: 5 files
-│ ⚠ High-risk files changed (config/deps)              │
-│   Recommend: agent-foreman check --full              │
-```
+### Task Check Mode
 
-### TDD Gate (Strict Mode)
 ```
 ═══════════════════════════════════════════════════════════════
                     TDD VERIFICATION GATE
@@ -457,40 +340,30 @@ agent-foreman check auth.login --test-pattern "tests/auth/**/*.test.ts"
 
    Mode: STRICT TDD (tests required by project configuration)
    ✓ Test files exist
-     Found: tests/auth/login.test.ts, tests/auth/login.integration.test.ts
-```
+     Found: tests/auth/login.test.ts, tests/auth/logout.test.ts
 
-### Verification Result (Pass)
-```
 ═══════════════════════════════════════════════════════════════
-                    FEATURE VERIFICATION
+                      TASK VERIFICATION
 ═══════════════════════════════════════════════════════════════
 
-📋 Feature: auth.login
+📋 Task: auth.login
    Module: auth | Priority: 1
+   Mode: AI autonomous exploration  # only shown with --ai flag
+   Test mode: Quick (selective tests)
 
 📝 Acceptance Criteria:
-   1. User can login with valid credentials
-   2. Error message displays for invalid credentials
-   3. Session token is stored in localStorage
+   1. User enters valid credentials and is logged in
+   2. Invalid credentials show error message
+   3. Session persists across page reloads
 
-🔍 Verification Results:
+🔍 Running Verification...
 
-   Automated Checks:
-   ✓ Tests: PASSED (15/15 tests)
-   ✓ Lint: PASSED (no issues)
-   ✓ Typecheck: PASSED (no errors)
-   ✓ Build: PASSED
+✓ Tests passed (3/3)
+✓ Type check passed
+✓ Lint passed
+✓ AI Analysis: All acceptance criteria satisfied
 
-   AI Analysis:
-   ✓ Criterion 1: PASS
-     Evidence: Login endpoint returns 200 with valid credentials
-   ✓ Criterion 2: PASS
-     Evidence: Error component renders with message from API
-   ✓ Criterion 3: PASS
-     Evidence: useAuth hook saves token to localStorage
-
-   Overall: PASS (confidence: 95%)
+Verdict: PASS (confidence: 0.95)
 
    Results saved to ai/verification/results.json
    Feature list updated with verification summary
@@ -499,58 +372,87 @@ agent-foreman check auth.login --test-pattern "tests/auth/**/*.test.ts"
    Run 'agent-foreman done auth.login' to mark as passing
 ```
 
-### Verification Result (Fail)
-```
-   AI Analysis:
-   ✓ Criterion 1: PASS
-     Evidence: Login endpoint implemented correctly
-   ✗ Criterion 2: FAIL
-     Evidence: Error message not displayed, only console.log
-   ✓ Criterion 3: PASS
-     Evidence: Token saved to localStorage
+## Examples
 
-   Overall: FAIL
+### Fast Check (Default)
 
-   ✗ Verification failed. Review the criteria above and fix issues.
-
-   Options:
-   1. Fix issues and run 'agent-foreman check auth.login' again
-   2. Mark as failed: 'agent-foreman fail auth.login -r "reason"'
+```bash
+# Quick verification of current changes
+agent-foreman check
 ```
 
-### TDD Gate Failure
-```
-═══════════════════════════════════════════════════════════════
-                    TDD VERIFICATION GATE
-═══════════════════════════════════════════════════════════════
+### Fast Check with AI Task Verification
 
-   Mode: STRICT TDD (tests required by project configuration)
-
-   ✗ TDD GATE FAILED: Required test files are missing
-
-   Missing Unit Tests:
-     • tests/auth/**/*.test.ts
-
-   TDD Workflow Required:
-   1. Create test file(s) matching the pattern(s) above
-   2. Write failing tests for acceptance criteria
-   3. Implement the feature to make tests pass
-   4. Run 'agent-foreman check auth.login' again
-
-   Run 'agent-foreman next auth.login' for TDD guidance
+```bash
+# Fast checks + AI verification for affected tasks
+agent-foreman check --ai
 ```
 
-## Verdict Meanings
+### Full Verification
 
-| Verdict | Meaning | Action |
-|---------|---------|--------|
-| `pass` | All criteria met | Run `done` to complete |
-| `fail` | One or more criteria not met | Fix issues and re-check |
-| `needs_review` | Uncertain about some criteria | Manual review required |
+```bash
+# Run all tests + build + E2E
+agent-foreman check --full
+```
+
+### Task-Specific Verification
+
+```bash
+# Verify a specific task (without AI)
+agent-foreman check auth.login
+
+# Verify with AI autonomous exploration
+agent-foreman check auth.login --ai
+```
+
+### Verbose Output
+
+```bash
+# See detailed output
+agent-foreman check -v
+agent-foreman check auth.login -v
+```
+
+### Skip E2E Tests
+
+```bash
+# Skip E2E tests for faster iteration
+agent-foreman check auth.login --skip-e2e
+```
+
+### Custom Test Pattern
+
+```bash
+# Use specific test pattern
+agent-foreman check auth.login --test-pattern "tests/auth/**/*.test.ts"
+```
+
+### AI Only
+
+```bash
+# Skip automated checks, rely on AI
+agent-foreman check auth.login --skip-checks
+```
+
+## Error Handling
+
+| Error | Cause | Resolution |
+|-------|-------|------------|
+| "No task list found" | Harness not initialized | Run `agent-foreman init` first |
+| "Task not found" | Invalid feature ID | Check `agent-foreman status` for valid IDs |
+| "TDD Gate Failed" | Required test files missing | Create test files matching patterns |
+| "No changed files" | No git changes detected | Make changes first or use `--full` |
+
+## Verdicts
+
+| Verdict | Meaning | Next Step |
+|---------|---------|-----------|
+| `pass` | All criteria satisfied | Run `agent-foreman done <id>` |
+| `fail` | Criteria not met | Fix issues and re-run |
+| `needs_review` | Some criteria uncertain | Manual review needed |
 
 ## Related Commands
 
-- `agent-foreman next` - Get feature details and TDD guidance
-- `agent-foreman done` - Mark feature as complete
-- `agent-foreman scan` - Refresh capability detection
-- `agent-foreman fail` - Mark feature as failed
+- [`next`](./next.md) - Get task details
+- [`done`](./done.md) - Mark task complete after check
+- [`impact`](./impact.md) - Analyze change impact

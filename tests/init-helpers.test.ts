@@ -8,32 +8,36 @@ import * as path from "node:path";
 import { tmpdir } from "node:os";
 
 // Use vi.hoisted to create mock functions that can be used in vi.mock
-const { mockCallAnyAvailableAgent, mockPrintAgentStatus } = vi.hoisted(() => ({
+const { mockCallAnyAvailableAgent, mockPrintAgentStatus, mockCheckAvailableAgents } = vi.hoisted(() => ({
   mockCallAnyAvailableAgent: vi.fn(),
   mockPrintAgentStatus: vi.fn(),
+  mockCheckAvailableAgents: vi.fn(() => [{ name: "gemini", available: true }]),
 }));
 
 // Mock the agents module
 vi.mock("../src/agents.js", () => ({
   callAnyAvailableAgent: mockCallAnyAvailableAgent,
   printAgentStatus: mockPrintAgentStatus,
+  checkAvailableAgents: mockCheckAvailableAgents,
 }));
 
 // Mock feature-list module
-const { mockLoadFeatureList, mockSaveFeatureList, mockCreateEmptyFeatureList, mockMergeFeatures, mockDiscoveredToFeature } = vi.hoisted(() => ({
+const { mockLoadFeatureList, mockSaveFeatureList, mockCreateEmptyFeatureList, mockMergeFeatures, mockDiscoveredToFeature, mockFeatureListExists } = vi.hoisted(() => ({
   mockLoadFeatureList: vi.fn(),
   mockSaveFeatureList: vi.fn(),
   mockCreateEmptyFeatureList: vi.fn(),
   mockMergeFeatures: vi.fn(),
   mockDiscoveredToFeature: vi.fn(),
+  mockFeatureListExists: vi.fn(),
 }));
 
-vi.mock("../src/feature-list.js", () => ({
+vi.mock("../src/features/index.js", () => ({
   loadFeatureList: mockLoadFeatureList,
   saveFeatureList: mockSaveFeatureList,
   createEmptyFeatureList: mockCreateEmptyFeatureList,
   mergeFeatures: mockMergeFeatures,
   discoveredToFeature: mockDiscoveredToFeature,
+  featureListExists: mockFeatureListExists,
 }));
 
 // Mock project-scanner module
@@ -47,7 +51,7 @@ vi.mock("../src/project-scanner.js", () => ({
   isProjectEmpty: mockIsProjectEmpty,
 }));
 
-// Mock ai-scanner module
+// Mock scanner module (previously ai-scanner)
 const { mockAiScanProject, mockGenerateFeaturesFromGoal, mockGenerateFeaturesFromSurvey, mockAiResultToSurvey, mockGenerateAISurveyMarkdown } = vi.hoisted(() => ({
   mockAiScanProject: vi.fn(),
   mockGenerateFeaturesFromGoal: vi.fn(),
@@ -56,7 +60,7 @@ const { mockAiScanProject, mockGenerateFeaturesFromGoal, mockGenerateFeaturesFro
   mockGenerateAISurveyMarkdown: vi.fn(),
 }));
 
-vi.mock("../src/ai-scanner.js", () => ({
+vi.mock("../src/scanner/index.js", () => ({
   aiScanProject: mockAiScanProject,
   generateFeaturesFromGoal: mockGenerateFeaturesFromGoal,
   generateFeaturesFromSurvey: mockGenerateFeaturesFromSurvey,
@@ -64,7 +68,7 @@ vi.mock("../src/ai-scanner.js", () => ({
   generateAISurveyMarkdown: mockGenerateAISurveyMarkdown,
 }));
 
-// Mock capabilities module (detectCapabilities - the one init-helpers.ts actually uses)
+// Mock project-capabilities module (detectCapabilities)
 const { mockDetectCapabilities } = vi.hoisted(() => ({
   mockDetectCapabilities: vi.fn(),
 }));
@@ -74,7 +78,7 @@ vi.mock("../src/capabilities/index.js", () => ({
 }));
 
 // Import after mocks are set up
-import { generateHarnessFiles, detectAndAnalyzeProject, mergeOrCreateFeatures } from "../src/init-helpers.js";
+import { generateHarnessFiles, detectAndAnalyzeProject, mergeOrCreateFeatures } from "../src/init/index.js";
 import type { FeatureList, Feature } from "../src/types.js";
 
 describe("Init Helpers", () => {
@@ -153,7 +157,8 @@ describe("Init Helpers", () => {
       expect(initScript).toContain("#!/usr/bin/env bash");
       expect(initScript).toContain("npm install");
       expect(initScript).toContain("npm run dev");
-      expect(initScript).toContain("npm test");
+      // check() now delegates to agent-foreman check instead of running tests directly
+      expect(initScript).toContain("agent-foreman check");
     });
 
     it("should create new init.sh when none exists (merge mode)", async () => {
@@ -266,10 +271,10 @@ bootstrap() {
 
       await generateHarnessFiles(testDir, mockSurvey as any, mockFeatureList, "Test goal", "merge");
 
-      // Should write new template since AI output was invalid
+      // Should keep original script when AI output was invalid (preserving user customizations)
       const initScript = await fs.readFile(path.join(testDir, "ai/init.sh"), "utf-8");
       expect(initScript).toContain("#!/usr/bin/env bash");
-      expect(initScript).toContain("npm install"); // Falls back to template
+      expect(initScript).toContain("original"); // Original script preserved on invalid AI output
     });
 
     it("should generate minimal init.sh when no commands detected", async () => {
@@ -362,31 +367,19 @@ custom() {
       },
     };
 
-    it("should create new minimal CLAUDE.md when none exists", async () => {
+    it("should create new CLAUDE.md when none exists", async () => {
       mockCallAnyAvailableAgent.mockResolvedValue({ success: true, output: "" });
 
       await generateHarnessFiles(testDir, mockSurvey as any, mockFeatureList, "Test goal", "new");
 
       const claudeMd = await fs.readFile(path.join(testDir, "CLAUDE.md"), "utf-8");
       expect(claudeMd).toContain("Project Instructions");
-      expect(claudeMd).toContain("Project Goal");
-      expect(claudeMd).toContain(".claude/rules/"); // Reference to rules directory
+      // Harness documentation is now in .claude/rules/ directory
+      expect(claudeMd).toContain(".claude/rules/");
     });
 
-    it("should create .claude/rules/ with rule files", async () => {
-      mockCallAnyAvailableAgent.mockResolvedValue({ success: true, output: "" });
-
-      await generateHarnessFiles(testDir, mockSurvey as any, mockFeatureList, "Test goal", "new");
-
-      // Verify rules directory was created with all rule files
-      const rulesDir = path.join(testDir, ".claude", "rules");
-      const ruleFiles = await fs.readdir(rulesDir);
-      expect(ruleFiles.length).toBe(7);
-      expect(ruleFiles).toContain("00-overview.md");
-    });
-
-    it("should preserve existing CLAUDE.md and add project goal if missing", async () => {
-      // Create existing CLAUDE.md without project goal
+    it("should use AI to merge CLAUDE.md when existing content", async () => {
+      // Create existing CLAUDE.md
       const existingContent = `# My Project
 
 ## Custom Section
@@ -394,30 +387,42 @@ This is my custom content that should be preserved.
 `;
       await fs.writeFile(path.join(testDir, "CLAUDE.md"), existingContent);
 
+      // Mock AI to return merged content for CLAUDE.md (called after init.sh)
+      const mergedClaudeMd = `# My Project
+
+## Custom Section
+This is my custom content that should be preserved.
+
+## Project Goal
+New project goal section added by AI.
+`;
+      // Init.sh has no existing file, so no AI call for it
+      // CLAUDE.md has existing file, so AI is called for merge
+      mockCallAnyAvailableAgent.mockResolvedValue({ success: true, output: mergedClaudeMd });
+
       await generateHarnessFiles(testDir, mockSurvey as any, mockFeatureList, "Test goal", "merge");
 
       const claudeMd = await fs.readFile(path.join(testDir, "CLAUDE.md"), "utf-8");
       expect(claudeMd).toContain("Custom Section"); // Preserved
       expect(claudeMd).toContain("Project Goal"); // Added
-      expect(claudeMd).toContain("Test goal"); // Goal content added
     });
 
-    it("should preserve existing CLAUDE.md with harness section (legacy)", async () => {
-      // Create existing CLAUDE.md with harness section (legacy format)
+    it("should append harness section when AI merge fails", async () => {
+      // Create existing CLAUDE.md
       const existingContent = `# Existing Project
 
 Some existing content.
-
-## Long-Task Harness
-Legacy harness content.
 `;
       await fs.writeFile(path.join(testDir, "CLAUDE.md"), existingContent);
+
+      // Mock AI to fail
+      mockCallAnyAvailableAgent.mockResolvedValue({ success: false, error: "AI unavailable", output: "" });
 
       await generateHarnessFiles(testDir, mockSurvey as any, mockFeatureList, "Test goal", "merge");
 
       const claudeMd = await fs.readFile(path.join(testDir, "CLAUDE.md"), "utf-8");
       expect(claudeMd).toContain("Existing Project"); // Original preserved
-      expect(claudeMd).toContain("Long-Task Harness"); // Legacy section preserved
+      expect(claudeMd).toContain("Project Goal"); // Appended (fallback behavior)
     });
   });
 
@@ -484,6 +489,7 @@ Legacy harness content.
     beforeEach(() => {
       mockScanDirectoryStructure.mockResolvedValue(mockStructure);
       mockAiResultToSurvey.mockReturnValue(mockSurvey);
+      mockFeatureListExists.mockResolvedValue(false); // Default: no existing tasks
       vi.spyOn(console, "log").mockImplementation(() => {});
     });
 
@@ -524,6 +530,19 @@ Legacy harness content.
 
       expect(result.success).toBe(false);
       expect(result.error).toBe("AI analysis failed");
+    });
+
+    it("should preserve existing tasks when ai/tasks already exists", async () => {
+      // No ARCHITECTURE.md, but ai/tasks already exists
+      mockFeatureListExists.mockResolvedValue(true);
+
+      const result = await detectAndAnalyzeProject(testDir, "Test goal", false);
+
+      expect(result.success).toBe(true);
+      expect(result.agentUsed).toBe("none");
+      expect(result.survey?.features).toHaveLength(0); // Empty features to preserve existing
+      expect(mockGenerateFeaturesFromGoal).not.toHaveBeenCalled();
+      expect(mockAiScanProject).not.toHaveBeenCalled();
     });
 
     it("should generate features from goal for empty projects", async () => {

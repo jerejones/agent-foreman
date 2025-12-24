@@ -1,65 +1,28 @@
 /**
- * Core verification orchestration
+ * Core verification function
+ * Main orchestration of the verification process
  */
 
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
 import chalk from "chalk";
 
-import type { Feature, FeatureListMetadata } from "../types.js";
+import type { Feature } from "../types/index.js";
 import type {
-  AutomatedCheckResult,
-  VerificationResult,
   VerifyOptions,
-  VerificationMode,
+  VerificationResult,
+  AutomatedCheckResult,
   ExtendedCapabilities,
-} from "./verification-types.js";
-import {
-  getSelectiveTestCommand,
-  getE2ETagsForFeature,
-} from "../test-discovery.js";
+} from "./types/index.js";
+import { getSelectiveTestCommand, getE2ETagsForFeature, type TestDiscoveryResult } from "../testing/index.js";
 import { detectCapabilities } from "../capabilities/index.js";
 import { saveVerificationResult } from "../verification-store/index.js";
 import { createStepProgress } from "../progress.js";
+
 import { getGitDiffForFeature } from "./git-operations.js";
+import { determineVerificationMode } from "./mode-selection.js";
 import { runAutomatedChecks } from "./check-executor.js";
 import { analyzeWithAI } from "./ai-analysis.js";
-
-/**
- * Determine the verification mode for a feature based on its configuration
- * and project-wide TDD settings.
- *
- * TDD mode is activated when:
- * 1. Project metadata has tddMode: "strict", OR
- * 2. Feature has explicit test requirements (required: true)
- *
- * In TDD mode, verification requires tests to exist and pass.
- *
- * @param feature - The feature to check
- * @param metadata - Optional feature list metadata for project-wide settings
- * @returns 'tdd' if strict mode or tests required, otherwise 'ai'
- */
-export function determineVerificationMode(
-  feature: Feature,
-  metadata?: FeatureListMetadata
-): VerificationMode {
-  // Check project-wide strict TDD mode
-  if (metadata?.tddMode === "strict") {
-    return "tdd";
-  }
-
-  // Check if feature has TDD test requirements
-  const hasUnitTestRequirement = feature.testRequirements?.unit?.required === true;
-  const hasE2ETestRequirement = feature.testRequirements?.e2e?.required === true;
-
-  // Return 'tdd' if any test requirement is explicitly required
-  if (hasUnitTestRequirement || hasE2ETestRequirement) {
-    return "tdd";
-  }
-
-  // Default to AI-powered verification
-  return "ai";
-}
+import { shouldUseStrategyVerification } from "./strategy-conversion.js";
+import { verifyWithStrategies } from "./strategy-execution.js";
 
 /**
  * Verify a feature by running automated checks and AI analysis
@@ -85,6 +48,12 @@ export async function verifyFeature(
   const verificationMode = determineVerificationMode(feature);
   const modeColor = verificationMode === "tdd" ? chalk.cyan : chalk.blue;
   console.log(chalk.gray(`   Verification mode: ${modeColor(verificationMode.toUpperCase())}`));
+
+  // Check for strategy-based verification (UVS Phase 4)
+  // If feature has explicit strategies, use the new strategy framework
+  if (shouldUseStrategyVerification(feature)) {
+    return verifyWithStrategies(cwd, feature, options);
+  }
 
   // Show test mode if not default
   if (testMode !== "full") {
@@ -153,22 +122,9 @@ export async function verifyFeature(
   if (!skipChecks && capabilities) {
     // Capabilities already detected above via Promise.all
 
-    // Check if ai/init.sh exists for init script mode
-    const initScriptPath = path.join(cwd, "ai/init.sh");
-    let useInitScript = false;
-    try {
-      await fs.access(initScriptPath);
-      useInitScript = true;
-      if (verbose) {
-        console.log(chalk.gray(`   Found ai/init.sh - using init script mode`));
-      }
-    } catch {
-      // Init script doesn't exist, use direct command mode
-    }
-
     // Handle selective testing for quick mode
     let selectiveTestCommand: string | null = null;
-    let testDiscovery;
+    let testDiscovery: TestDiscoveryResult | undefined;
 
     if (testMode === "quick") {
       // Use explicit pattern or auto-discover
@@ -184,7 +140,7 @@ export async function verifyFeature(
       selectiveTestCommand = selectiveResult.command;
       testDiscovery = selectiveResult.discovery;
 
-      if (verbose && testDiscovery.source !== "none") {
+      if (verbose && testDiscovery && testDiscovery.source !== "none") {
         console.log(chalk.gray(`   Test discovery source: ${testDiscovery.source}`));
         if (testDiscovery.pattern) {
           console.log(chalk.gray(`   Test pattern: ${testDiscovery.pattern}`));
@@ -201,8 +157,6 @@ export async function verifyFeature(
       e2eInfo: capabilities.e2eInfo,
       e2eTags,
       e2eMode,
-      useInitScript,
-      initScriptPath,
     });
     const allPassed = automatedResults.every((r) => r.success);
     stepProgress.completeStep(allPassed);

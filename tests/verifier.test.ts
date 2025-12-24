@@ -60,7 +60,7 @@ vi.mock("../src/capabilities/index.js", () => ({
 }));
 
 // Mock verification-prompts
-vi.mock("../src/verifier/prompts.js", () => ({
+vi.mock("../src/verification-prompts.js", () => ({
   buildVerificationPrompt: vi.fn(),
   parseVerificationResponse: vi.fn(),
 }));
@@ -71,7 +71,7 @@ import { detectCapabilities } from "../src/capabilities/index.js";
 import {
   buildVerificationPrompt,
   parseVerificationResponse,
-} from "../src/verifier/prompts.js";
+} from "../src/verification-prompts.js";
 import {
   getGitDiffForFeature,
   runAutomatedChecks,
@@ -96,7 +96,7 @@ import type {
   VerificationResult,
   AutomatedCheckResult,
   TestMode,
-} from "../src/verifier/verification-types.js";
+} from "../src/verifier/types/index.js";
 
 const mockCallAgent = callAnyAvailableAgent as ReturnType<typeof vi.fn>;
 const mockSaveResult = saveVerificationResult as ReturnType<typeof vi.fn>;
@@ -385,8 +385,6 @@ describe("Verifier", () => {
 
       expect(results).toHaveLength(0);
     });
-
-    // Note: init-script mode tests removed - feature was removed in layered check update
   });
 
   describe("readRelatedFiles", () => {
@@ -922,39 +920,63 @@ describe("Verifier", () => {
       expect(output).toContain("PASSED");
     });
 
-    it("should format skipped checks with yellow SKIPPED status", () => {
-      const resultWithSkippedCheck: VerificationResult = {
+    it("should display strategy results with passing strategy", () => {
+      const resultWithStrategies: VerificationResult = {
         ...baseResult,
-        automatedChecks: [
-          { type: "test", success: true, output: "", duration: 1000 },
-          { type: "e2e", success: false, output: "", duration: 0, skipped: true, skipReason: "unit tests failed" },
+        strategyResults: [
+          { type: "test", required: true, success: true, output: "all passed", duration: 1500 },
         ],
       };
 
-      const output = formatVerificationResult(resultWithSkippedCheck);
+      const output = formatVerificationResult(resultWithStrategies);
 
+      expect(output).toContain("Strategy Results");
       expect(output).toContain("test");
-      expect(output).toContain("PASSED");
-      expect(output).toContain("e2e");
-      expect(output).toContain("SKIPPED");
-      expect(output).toContain("unit tests failed");
+      expect(output).toContain("passed");
+      expect(output).toContain("1.5s");
     });
 
-    it("should format skipped check without skip reason", () => {
-      const resultWithSkippedCheck: VerificationResult = {
+    it("should display optional failing strategy as skipped", () => {
+      const resultWithOptionalFail: VerificationResult = {
         ...baseResult,
-        automatedChecks: [
-          { type: "e2e", success: false, output: "", duration: 0, skipped: true },
+        strategyResults: [
+          { type: "test", required: false, success: false, output: "no tests found" },
         ],
       };
 
-      const output = formatVerificationResult(resultWithSkippedCheck);
+      const output = formatVerificationResult(resultWithOptionalFail);
 
-      expect(output).toContain("e2e");
-      expect(output).toContain("SKIPPED");
-      // Should not show undefined/null
-      expect(output).not.toContain("undefined");
-      expect(output).not.toContain("null");
+      expect(output).toContain("Strategy Results");
+      expect(output).toContain("test");
+      expect(output).toContain("skipped");
+      expect(output).toContain("optional");
+    });
+
+    it("should display required failing strategy as failed", () => {
+      const resultWithRequiredFail: VerificationResult = {
+        ...baseResult,
+        strategyResults: [
+          { type: "test", required: true, success: false, output: "tests failed", duration: 2000 },
+        ],
+      };
+
+      const output = formatVerificationResult(resultWithRequiredFail);
+
+      expect(output).toContain("Strategy Results");
+      expect(output).toContain("test");
+      expect(output).toContain("failed");
+      expect(output).toContain("2.0s");
+    });
+
+    it("should not display strategy results section when empty", () => {
+      const resultNoStrategies: VerificationResult = {
+        ...baseResult,
+        strategyResults: [],
+      };
+
+      const output = formatVerificationResult(resultNoStrategies);
+
+      expect(output).not.toContain("Strategy Results");
     });
   });
 
@@ -2876,6 +2898,73 @@ describe("Verifier", () => {
 
       // Should still complete without error
       expect(result).toBeDefined();
+    });
+  });
+
+  // ============================================================================
+  // runAutomatedChecks - Parallel Mode Tests
+  // ============================================================================
+
+  describe("runAutomatedChecks - Parallel Mode", () => {
+    it("should run checks in parallel when parallel option is true", async () => {
+      const commands: string[] = [];
+      setExecMock((cmd: string) => {
+        commands.push(cmd);
+        return { stdout: "success" };
+      });
+
+      const capabilities: VerificationCapabilities = {
+        hasTests: true,
+        testCommand: "npm test",
+        hasTypeCheck: true,
+        typeCheckCommand: "tsc --noEmit",
+        hasLint: true,
+        lintCommand: "eslint .",
+        hasBuild: false,
+        hasGit: true,
+      };
+
+      const options: AutomatedCheckOptions = {
+        parallel: true,
+        verbose: true,
+      };
+
+      const results = await runAutomatedChecks(testDir, capabilities, options);
+
+      expect(results.length).toBeGreaterThanOrEqual(1);
+      // All checks should complete
+      expect(results.every(r => r.type !== undefined)).toBe(true);
+    });
+
+    it("should run checks sequentially when parallel option is false", async () => {
+      let executionOrder: string[] = [];
+      setExecMock((cmd: string) => {
+        if (cmd === "npm test") {
+          executionOrder.push("test");
+        } else if (cmd === "tsc --noEmit") {
+          executionOrder.push("typecheck");
+        }
+        return { stdout: "success" };
+      });
+
+      const capabilities: VerificationCapabilities = {
+        hasTests: true,
+        testCommand: "npm test",
+        hasTypeCheck: true,
+        typeCheckCommand: "tsc --noEmit",
+        hasLint: false,
+        hasBuild: false,
+        hasGit: true,
+      };
+
+      const options: AutomatedCheckOptions = {
+        parallel: false,
+      };
+
+      await runAutomatedChecks(testDir, capabilities, options);
+
+      // Commands should have been executed
+      expect(executionOrder).toContain("test");
     });
   });
 });

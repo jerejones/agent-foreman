@@ -11,20 +11,21 @@ agent-foreman is a TypeScript CLI tool that manages long-running AI agent tasks 
 ## System Architecture
 
 ```text
-┌─────────────────────────────────────────────────────────┐
-│                     CLI Layer                            │
-│  Commands: analyze, init, next, status, done, etc.      │
-└───────────────────────┬─────────────────────────────────┘
-                        │
-┌───────────────────────▼─────────────────────────────────┐
-│                  Core Business Logic                     │
-│  feature-list, verifier, agents, ai-scanner              │
-└───────────────────────┬─────────────────────────────────┘
-                        │
-┌───────────────────────▼─────────────────────────────────┐
-│                Infrastructure Layer                      │
-│  git-utils, file-utils, progress-log, capability-cache   │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                           CLI Layer                                   │
+│  Core: analyze, init, next, check, done, status, impact, scan        │
+│  Utility: agents, upgrade, install, uninstall                        │
+└─────────────────────────────┬────────────────────────────────────────┘
+                              │
+┌─────────────────────────────▼────────────────────────────────────────┐
+│                      Core Business Logic                              │
+│  features/, verifier/, agents/, scanner/, capabilities/               │
+└─────────────────────────────┬────────────────────────────────────────┘
+                              │
+┌─────────────────────────────▼────────────────────────────────────────┐
+│                      Infrastructure Layer                             │
+│  git-utils, file-utils, progress-log, storage/, schemas/              │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -48,37 +49,41 @@ agent-foreman is a TypeScript CLI tool that manages long-running AI agent tasks 
 
 Main entry point implementing all CLI commands via yargs.
 
-### Feature Management
+### Task Management (`src/features/`)
 
 | Module | Purpose |
 |--------|---------|
-| `feature-list.ts` | CRUD operations for features, priority selection |
-| `schema.ts` | JSON Schema validation for feature_list.json |
+| `features/index.ts` | CRUD operations for tasks, priority selection |
+| `features/selection.ts` | Feature selection logic |
+| `features/mutations.ts` | Status updates and modifications |
+| `schemas/` | JSON Schema validation (feature-list, frontmatter, index) |
 | `impact-analyzer.ts` | Dependency graph analysis |
+| `storage/` | Markdown parsing/serialization for task files |
 
-### AI Integration
+### AI Integration (`src/agents/`)
 
 | Module | Purpose |
 |--------|---------|
-| `agents.ts` | Multi-agent abstraction (Claude, Gemini, Codex) |
-| `ai-scanner.ts` | Autonomous project exploration |
+| `agents/config.ts` | Agent configuration (Claude, Codex, Gemini) |
+| `agents/executor.ts` | Agent execution with retry logic |
+| `agents/detection.ts` | Agent availability detection |
+| `agents/orchestrator.ts` | Multi-agent orchestration |
+| `scanner/` | Autonomous project exploration |
 | `capabilities/ai-discovery.ts` | AI-based capability detection |
 
-### Verification System
+### Verification System (`src/verifier/`)
 
 | Module | Purpose |
 |--------|---------|
 | `verifier/core.ts` | Core verification orchestration |
-| `verifier/prompts.ts` | AI prompt construction |
-| `verifier/tdd.ts` | TDD verification mode |
-| `verifier/autonomous.ts` | Autonomous verification mode |
-| `verifier/ai-analysis.ts` | AI-powered analysis with retry logic |
+| `verifier/ai-analysis.ts` | AI analysis with retry logic |
 | `verifier/check-executor.ts` | Automated check execution |
-| `verifier/git-operations.ts` | Git diff and file tracking |
-| `verification-store/` | Result persistence (per-feature directories) |
-| `capabilities/` | Two-tier capability detection with caching |
-| `test-discovery.ts` | Test file discovery and selective execution |
-| `tdd-guidance/` | TDD guidance and test skeleton generation |
+| `verification-prompts.ts` | AI prompt construction |
+| `verification-store/` | Result persistence (directory) |
+| `capabilities/` | Two-tier capability detection (cache + AI) |
+| `capabilities/cache.ts` | Disk cache with git-based staleness |
+| `testing/` | Test file discovery and selective execution |
+| `tdd-guidance/` | TDD guidance generation |
 
 ### Infrastructure
 
@@ -87,11 +92,7 @@ Main entry point implementing all CLI commands via yargs.
 | `git-utils.ts` | Git operations (diff, commit, status) |
 | `file-utils.ts` | Safe file operations with path validation |
 | `progress-log.ts` | Session handoff logging |
-| `progress.ts` | TTY progress indicators |
-| `timeout-config.ts` | Agent timeout and priority configuration |
-| `gitignore/` | .gitignore template generation |
-| `plugin-installer.ts` | Claude Code plugin installation |
-| `upgrade.ts` | Version upgrade management |
+| `progress/` | TTY progress indicators (spinner, step-progress) |
 
 ---
 
@@ -101,17 +102,16 @@ agent-foreman supports multiple AI CLI tools with automatic failover:
 
 | Agent | Priority | Command |
 |-------|----------|---------|
-| Claude | 1 (highest) | `claude --print --output-format text --permission-mode bypassPermissions -` |
+| Claude | 1 (highest) | `claude --print --output-format text --permission-mode bypassPermissions` |
 | Codex | 2 | `codex exec --skip-git-repo-check --full-auto -` |
 | Gemini | 3 | `gemini --output-format text --yolo` |
 
-**Note:** Priority can be customized via `AGENT_FOREMAN_AGENTS` environment variable (comma-separated list).
-
 **Selection Logic:**
 
-1. Check availability in priority order
+1. Check availability in priority order (Claude → Codex → Gemini)
 2. Use first available agent
 3. Fallback to next on failure
+4. Configurable via `AGENT_FOREMAN_AGENTS` environment variable
 
 ---
 
@@ -119,21 +119,26 @@ agent-foreman supports multiple AI CLI tools with automatic failover:
 
 ```text
 ┌──────────────────────────────────────────────────────┐
-│              Capability Detection Flow               │
+│              Capability Detection Flow                │
 ├──────────────────────────────────────────────────────┤
-│                                                      │
-│  1. Cache Check (Memory + Disk)                      │
-│     └─ Memory cache first (fastest)                  │
-│     └─ Then ai/capabilities.json                     │
-│     └─ Git-based staleness detection                 │
-│     └─ If valid and not stale → use cached           │
-│                    │                                 │
-│                    ▼ (cache miss or stale)           │
+│                                                       │
+│  0. Memory Cache (fastest)                           │
+│     └─ In-process cache with 1-minute TTL           │
+│     └─ If valid → use memory cached                 │
+│                    │                                  │
+│                    ▼ (memory miss)                   │
+│  1. Disk Cache Check                                 │
+│     └─ Read ai/capabilities.json                    │
+│     └─ Check staleness via git commit tracking      │
+│     └─ If valid and not stale → use cached          │
+│                    │                                  │
+│                    ▼ (cache miss or stale)          │
 │  2. AI Discovery                                     │
-│     └─ Spawn AI agent to analyze project             │
-│     └─ Parse JSON response                           │
-│     └─ Cache results (memory + disk)                 │
-│                                                      │
+│     └─ Spawn AI agent to analyze project            │
+│     └─ Parse JSON response                          │
+│     └─ Cache results to disk                        │
+│     └─ Update memory cache                          │
+│                                                       │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -142,31 +147,33 @@ agent-foreman supports multiple AI CLI tools with automatic failover:
 ## Verification Flow
 
 ```text
-agent-foreman done <feature_id>
+agent-foreman check <task_id>
+                │
+                ▼
+┌─────────────────────────────────────────────┐
+│  1. Get git diff + Detect capabilities       │
+│     (executed in PARALLEL for performance)   │
+└───────────────┬─────────────────────────────┘
                 │
                 ▼
 ┌─────────────────────────────────┐
-│  1. Get git diff + changed files │
-└───────────────┬─────────────────┘
-                │
-                ▼
-┌─────────────────────────────────┐
-│  2. Detect project capabilities  │
-│     (tests, typecheck, lint)     │
-└───────────────┬─────────────────┘
-                │
-                ▼
-┌─────────────────────────────────┐
-│  3. Run automated checks         │
+│  2. Run automated checks         │
 │     npm test, tsc, eslint, etc.  │
+│     (selective or full mode)     │
 └───────────────┬─────────────────┘
                 │
                 ▼
 ┌─────────────────────────────────┐
-│  4. AI Analysis                  │
-│     - Feature + acceptance       │
-│     - Git diff                   │
+│  3. AI Analysis                  │
+│     - Task + acceptance criteria │
+│     - Git diff + related files   │
 │     - Check results              │
+└───────────────┬─────────────────┘
+                │
+                ▼
+┌─────────────────────────────────┐
+│  4. Save verification result     │
+│     ai/verification/results.json │
 └───────────────┬─────────────────┘
                 │
                 ▼
@@ -174,20 +181,34 @@ agent-foreman done <feature_id>
 │  5. Return verdict               │
 │     pass | fail | needs_review   │
 └─────────────────────────────────┘
+
+agent-foreman done <task_id>
+                │
+                ▼
+┌─────────────────────────────────┐
+│  1. TDD Gate check (if strict)   │
+│  2. Run verification (optional)  │
+│  3. Set status based on verdict  │
+│     - pass → "passing"           │
+│     - needs_review → "needs_review" │
+│  4. Auto-commit changes          │
+│  5. Log to progress.log          │
+└─────────────────────────────────┘
 ```
 
 ---
 
 ## Data Persistence
 
-### Feature List (`ai/feature_list.json`)
+### Task Storage (`ai/tasks/`)
 
-JSON file validated against JSON Schema. Supports:
+Modular markdown-based storage with `index.json` and `{module}/{id}.md` files. Supports:
 
 - Full CRUD operations
 - Status transitions
 - Dependency tracking
 - Verification summaries
+- Custom file paths via `filePath` field (for non-standard filenames)
 
 ### Progress Log (`ai/progress.log`)
 
@@ -201,23 +222,14 @@ TIMESTAMP TYPE key=value key=value summary="..."
 
 Cached capability detection results with:
 
-- Git commit tracking for staleness
-- 24-hour TTL
-- Forced refresh option
+- Git commit tracking for staleness (no time-based TTL)
+- Memory cache with 1-minute TTL for in-process reuse
+- Forced refresh option (`--force` flag)
+- Tracked config files for granular invalidation
 
-### Verification Results (`ai/verification/`)
+### Verification Results (`ai/verification/results.json`)
 
-Per-feature verification results stored in directories:
-
-```text
-ai/verification/
-├── index.json                 # Index of all results
-└── {featureId}/
-    ├── 001.json               # Verification metadata
-    └── 001.md                 # Verification report
-```
-
-Legacy format (`ai/verification/results.json`) is auto-migrated to new format.
+Historical verification results per task.
 
 ---
 
@@ -227,26 +239,30 @@ Legacy format (`ai/verification/results.json`) is auto-migrated to new format.
 
 AI operations use exponential backoff:
 
-- Initial: 2 seconds
-- Factor: 2x
+- Initial: 1 second (`baseDelayMs: 1000`)
+- Factor: 2x exponential
 - Max retries: 3
-- Max delay: 8 seconds
+- Max delay: 10 seconds
+- Jitter: ±10% to prevent thundering herd
 
 ### Transient Error Detection
 
-Patterns indicating retry-able failures:
+Patterns indicating retry-able failures (19+ patterns):
 
-- "timeout"
-- "rate limit"
-- "connection"
-- "ECONNRESET"
+- Timeout: `timeout`, `timed out`, `ETIMEDOUT`
+- Network: `ECONNRESET`, `ECONNREFUSED`, `ENETUNREACH`, `socket hang up`
+- Connection: `connection reset`, `connection refused`, `connection closed`
+- Rate limiting: `rate limit`, `too many requests`, `429`
+- Server errors: `502`, `503`, `504`
+- Capacity: `overloaded`, `capacity`, `temporarily unavailable`
 
 ### Graceful Degradation
 
 Graceful degradation strategies:
 
 - AI agent failover (Claude → Codex → Gemini)
-- Default capability profile as last resort
+- Direct command execution fallback when AI unavailable
+- Minimal capability profile as last resort
 
 ---
 
@@ -283,16 +299,13 @@ agent-foreman integrates with Claude Code as a plugin:
 
 ```text
 plugins/agent-foreman/
-├── .claude-plugin/
-│   └── plugin.json         # Plugin metadata
-├── agents/
-│   └── foreman.md          # Agent definition
-├── skills/                  # 4 skills
+├── agents/foreman.md      # Agent definition
+├── skills/                 # 4 skills
 │   ├── project-analyze/
 │   ├── init-harness/
 │   ├── feature-next/
 │   └── feature-run/
-└── commands/                # 5 slash commands
+└── commands/               # 5 slash commands
     ├── analyze.md
     ├── init.md
     ├── next.md

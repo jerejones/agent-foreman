@@ -1,26 +1,19 @@
 /**
- * Migration operations for verification store
+ * Migration Operations for verification store
  */
-
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import {
+  generateVerificationReport,
+} from "../verification-report.js";
 import {
   VERIFICATION_STORE_DIR,
   VERIFICATION_STORE_PATH,
   VERIFICATION_INDEX_PATH,
 } from "./constants.js";
-import {
-  ensureVerificationDir,
-  loadVerificationStore,
-} from "./legacy-store.js";
-import {
-  createEmptyIndex,
-  saveIndex,
-  ensureFeatureDir,
-  formatRunNumber,
-  toMetadata,
-} from "./index-operations.js";
-import { generateVerificationReport } from "../verifier/report.js";
+import { loadVerificationStore } from "./legacy-store.js";
+import { createEmptyIndex } from "./index-operations.js";
+import { ensureFeatureDir, formatRunNumber, toMetadata, saveIndex } from "./helpers.js";
 
 /**
  * Check if migration is needed

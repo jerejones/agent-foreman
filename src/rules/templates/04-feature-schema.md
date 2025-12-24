@@ -1,51 +1,91 @@
-# Feature JSON Schema
+# Modular Task/Feature Storage
 
-**IMPORTANT**: When adding or modifying features in `ai/feature_list.json`, use this exact schema.
+Agent-foreman uses a modular markdown-based storage system where each task/feature is stored in its own file.
 
-**Note**: `priority` uses lower number = higher priority (1 is highest, 10 is lower).
+## Directory Structure
+
+```
+ai/tasks/
+├── index.json              # Lightweight index for quick lookups
+├── auth/                   # Module directory
+│   ├── login.md           # Task: auth.login
+│   └── logout.md          # Task: auth.logout
+├── chat/
+│   └── message.edit.md    # Task: chat.message.edit
+└── ...
+```
+
+## Index Format (`ai/tasks/index.json`)
 
 ```json
 {
-  "features": [
-    {
-      "id": "module.feature.action",
-      "description": "Human-readable description of the feature",
-      "module": "parent-module-name",
-      "priority": 1,
-      "status": "failing",
-      "acceptance": [
-        "First acceptance criterion",
-        "Second acceptance criterion"
-      ],
-      "dependsOn": ["other.feature.id"],
-      "supersedes": [],
-      "tags": ["optional-tag"],
-      "version": 1,
-      "origin": "manual",
-      "notes": "",
-      "testRequirements": {
-        "unit": { "required": false, "pattern": "tests/module/**/*.test.ts" }
-      }
-    }
-  ],
+  "version": "2.0.0",
+  "updatedAt": "2024-01-15T10:00:00Z",
   "metadata": {
     "projectGoal": "Project goal description",
-    "createdAt": "2024-01-01T00:00:00.000Z",
-    "updatedAt": "2024-01-01T00:00:00.000Z",
-    "version": "1.0.0"
+    "createdAt": "2024-01-15T10:00:00Z",
+    "updatedAt": "2024-01-15T10:00:00Z",
+    "version": "1.0.0",
+    "tddMode": "recommended"
+  },
+  "features": {
+    "auth.login": {
+      "status": "passing",
+      "priority": 1,
+      "module": "auth",
+      "description": "User can log in"
+    },
+    "core.project-init": {
+      "status": "passing",
+      "priority": 1,
+      "module": "core",
+      "description": "Initialize project structure",
+      "filePath": "core/01-project-init.md"
+    }
   }
 }
 ```
 
-**Required fields**: `id`, `description`, `module`, `priority`, `status`, `acceptance`, `version`, `origin`
+**Index Entry Fields**:
+- `status` (required): Current task status
+- `priority` (required): Priority number (1 = highest)
+- `module` (required): Parent module name
+- `description` (required): Human-readable description
+- `filePath` (optional): Explicit file path when filename doesn't follow ID convention
 
-**Auto-generated fields**: `testRequirements` (auto-generated during init with pattern `tests/{module}/**/*.test.*`)
+**Note**: By default, file paths are derived from task IDs (e.g., `auth.login` → `auth/login.md`). Use `filePath` when the actual filename differs (e.g., numbered prefixes like `01-project-init.md`).
 
-**Optional fields**: `testRequirements` (can be overridden), `e2eTags` (Playwright tags for E2E filtering)
+## Task/Feature Markdown Format
 
-## Feature ID Convention
+Each task/feature is stored as a markdown file with YAML frontmatter:
 
-Feature IDs use dot notation: `module.submodule.action`
+**Priority**: Determines `agent-foreman next` selection order. Lower number = selected first.
+
+```yaml
+---
+id: module.task-name
+module: module-name
+priority: N  # Lower number = higher priority (1 is highest)
+status: failing
+version: 1
+origin: manual
+dependsOn: []
+supersedes: []
+tags:
+  - tag-name
+---
+# Human-readable description
+
+## Acceptance Criteria
+
+1. First acceptance criterion
+2. Second acceptance criterion
+3. Third acceptance criterion
+```
+
+## Task/Feature ID Convention
+
+Task/Feature IDs use dot notation: `module.submodule.action`
 
 Examples:
 - `auth.login`
@@ -59,29 +99,44 @@ Write criteria as testable statements:
 - "API returns 201 status with created resource"
 - "Error message displays when validation fails"
 
-## testRequirements Structure
+## Field Reference
 
-```json
-"testRequirements": {
-  "unit": {
-    "required": false,
-    "pattern": "tests/auth/**/*.test.ts",
-    "cases": ["should login", "should logout"]
-  },
-  "e2e": {
-    "required": false,
-    "pattern": "e2e/auth/**/*.spec.ts",
-    "tags": ["@auth"],
-    "scenarios": ["user can login"]
-  }
-}
-```
+### Required Frontmatter Fields
 
-- `required: true` - Feature cannot complete without matching test files (TDD enforcement)
-- `pattern` - Glob pattern for selective test execution in quick mode
-- `cases`/`scenarios` - Expected test names (optional, for documentation)
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique task identifier (e.g., `auth.login`) |
+| `module` | string | Parent module name |
+| `priority` | integer | Priority level (lower = higher priority, 0 is highest) |
+| `status` | string | Current task status |
+| `version` | integer | Version number (starts at 1) |
+| `origin` | string | How this task was created |
 
-**Status values**: `failing` | `passing` | `blocked` | `needs_review` | `failed` | `deprecated`
+### Markdown Content (Not Frontmatter)
 
-**Origin values**: `init-auto` | `init-from-routes` | `init-from-tests` | `manual` | `replan`
+| Content | Location | Description |
+|---------|----------|-------------|
+| Description | H1 heading (`# ...`) | Human-readable task description |
+| Acceptance Criteria | Numbered list under `## Acceptance Criteria` | Testable success conditions |
+| Notes | Text under `## Notes` | Additional context |
 
+### Optional Frontmatter Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `dependsOn` | string[] | Task IDs this task depends on |
+| `supersedes` | string[] | Task IDs this task replaces |
+| `tags` | string[] | Categorization tags |
+| `testRequirements` | object | Test requirements for TDD workflow |
+| `e2eTags` | string[] | Playwright tags for E2E filtering |
+| `verification` | object | Last verification result |
+| `taskType` | string | Task type: `code`, `ops`, `data`, `infra`, `manual` |
+| `verificationStrategies` | array | UVS verification strategies |
+
+### Status Values
+
+`failing` | `passing` | `blocked` | `needs_review` | `failed` | `deprecated`
+
+### Origin Values
+
+`init-auto` | `init-from-routes` | `init-from-tests` | `manual` | `replan`

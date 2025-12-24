@@ -1,245 +1,303 @@
 #!/usr/bin/env bun
 /**
- * Embed Assets Script
+ * Asset embedding script for binary builds
  *
- * Reads gitignore templates and plugins, then generates TypeScript files
- * with embedded content for use in compiled binaries.
+ * This script reads gitignore templates, plugins, and version info
+ * and generates a TypeScript file with embedded assets for standalone builds.
  *
  * Usage: bun scripts/embed-assets.ts
+ *        npx tsx scripts/embed-assets.ts
  */
 
-import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from "node:fs";
-import { join, relative } from "node:path";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT_DIR = join(import.meta.dirname, "..");
-const TEMPLATES_DIR = join(ROOT_DIR, "src/gitignore/templates");
-const RULES_DIR = join(ROOT_DIR, "src/rules/templates");
-const PLUGINS_DIR = join(ROOT_DIR, "plugins");
-const GENERATED_TEMPLATES_FILE = join(ROOT_DIR, "src/gitignore/embedded-templates.generated.ts");
-const GENERATED_RULES_FILE = join(ROOT_DIR, "src/rules/embedded-rules.generated.ts");
-const GENERATED_PLUGINS_FILE = join(ROOT_DIR, "src/plugins-bundle.generated.ts");
-const GENERATED_VERSION_FILE = join(ROOT_DIR, "src/version.generated.ts");
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const ROOT_DIR = path.resolve(__dirname, "..");
+
+interface EmbeddedAsset {
+  name: string;
+  path: string;
+  content: string;
+  size: number;
+}
+
+interface EmbeddedManifest {
+  version: string;
+  generatedAt: string;
+  gitignoreTemplates: EmbeddedAsset[];
+  ruleTemplates: EmbeddedAsset[];
+  plugins: EmbeddedAsset[];
+}
 
 /**
- * Read all files in a directory recursively
+ * Read all gitignore templates
  */
-function readDirRecursive(dir: string, basePath: string = ""): Map<string, string> {
-  const files = new Map<string, string>();
+function readGitignoreTemplates(): EmbeddedAsset[] {
+  const templatesDir = path.join(ROOT_DIR, "src/gitignore/templates");
+  const assets: EmbeddedAsset[] = [];
 
-  if (!existsSync(dir)) {
-    return files;
+  if (!fs.existsSync(templatesDir)) {
+    console.warn("⚠ Gitignore templates directory not found:", templatesDir);
+    return assets;
   }
 
-  for (const entry of readdirSync(dir)) {
-    const fullPath = join(dir, entry);
-    const relativePath = basePath ? `${basePath}/${entry}` : entry;
-    const stat = statSync(fullPath);
+  const files = fs.readdirSync(templatesDir).filter((f) => f.endsWith(".gitignore"));
 
-    if (stat.isDirectory()) {
-      const subFiles = readDirRecursive(fullPath, relativePath);
-      for (const [path, content] of subFiles) {
-        files.set(path, content);
+  for (const file of files) {
+    const filePath = path.join(templatesDir, file);
+    const content = fs.readFileSync(filePath, "utf-8");
+    const name = file.replace(".gitignore", "");
+
+    assets.push({
+      name,
+      path: `gitignore/templates/${file}`,
+      content,
+      size: content.length,
+    });
+  }
+
+  return assets;
+}
+
+/**
+ * Read all rule templates
+ */
+function readRuleTemplates(): EmbeddedAsset[] {
+  const templatesDir = path.join(ROOT_DIR, "src/rules/templates");
+  const assets: EmbeddedAsset[] = [];
+
+  if (!fs.existsSync(templatesDir)) {
+    console.warn("⚠ Rule templates directory not found:", templatesDir);
+    return assets;
+  }
+
+  const files = fs.readdirSync(templatesDir).filter((f) => f.endsWith(".md"));
+
+  for (const file of files) {
+    const filePath = path.join(templatesDir, file);
+    const content = fs.readFileSync(filePath, "utf-8");
+    const name = file.replace(".md", "");
+
+    assets.push({
+      name,
+      path: `rules/templates/${file}`,
+      content,
+      size: content.length,
+    });
+  }
+
+  return assets;
+}
+
+/**
+ * Read plugin files for embedding
+ */
+function readPluginFiles(): EmbeddedAsset[] {
+  const pluginsDir = path.join(ROOT_DIR, "plugins");
+  const assets: EmbeddedAsset[] = [];
+
+  if (!fs.existsSync(pluginsDir)) {
+    console.warn("⚠ Plugins directory not found:", pluginsDir);
+    return assets;
+  }
+
+  // Walk the plugins directory recursively
+  function walkDir(dir: string, basePath: string = ""): void {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      const relativePath = path.join(basePath, entry.name);
+
+      if (entry.isDirectory()) {
+        walkDir(fullPath, relativePath);
+      } else if (entry.isFile()) {
+        // Only embed text files (md, json, txt)
+        const ext = path.extname(entry.name).toLowerCase();
+        if ([".md", ".json", ".txt", ".yaml", ".yml"].includes(ext)) {
+          const content = fs.readFileSync(fullPath, "utf-8");
+          assets.push({
+            name: relativePath.replace(/\\/g, "/"), // Normalize path separators
+            path: `plugins/${relativePath.replace(/\\/g, "/")}`,
+            content,
+            size: content.length,
+          });
+        }
       }
-    } else if (stat.isFile()) {
-      files.set(relativePath, readFileSync(fullPath, "utf-8"));
     }
   }
 
-  return files;
+  walkDir(pluginsDir);
+  return assets;
 }
 
 /**
- * Escape string for use in TypeScript template literal
+ * Read package version
  */
-function escapeForTemplateLiteral(str: string): string {
-  return str
-    .replace(/\\/g, "\\\\")
-    .replace(/`/g, "\\`")
-    .replace(/\$\{/g, "\\${");
+function readVersion(): string {
+  const packageJsonPath = path.join(ROOT_DIR, "package.json");
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
+  return packageJson.version;
 }
 
 /**
- * Generate embedded templates TypeScript file
+ * Generate TypeScript code for embedded assets
  */
-function generateEmbeddedTemplates(): void {
-  console.log("Embedding gitignore templates...");
+function generateEmbeddedCode(manifest: EmbeddedManifest): string {
+  const lines: string[] = [];
 
-  const templates = new Map<string, string>();
+  lines.push("/**");
+  lines.push(" * Auto-generated embedded assets for binary builds");
+  lines.push(` * Generated at: ${manifest.generatedAt}`);
+  lines.push(` * Version: ${manifest.version}`);
+  lines.push(" *");
+  lines.push(" * DO NOT EDIT - This file is auto-generated by scripts/embed-assets.ts");
+  lines.push(" */");
+  lines.push("");
+  lines.push("/** Embedded version from package.json */");
+  lines.push(`export const EMBEDDED_VERSION = "${manifest.version}";`);
+  lines.push("");
+  lines.push("/** Generation timestamp */");
+  lines.push(`export const EMBEDDED_GENERATED_AT = "${manifest.generatedAt}";`);
+  lines.push("");
 
-  if (!existsSync(TEMPLATES_DIR)) {
-    console.warn(`Templates directory not found: ${TEMPLATES_DIR}`);
-  } else {
-    for (const file of readdirSync(TEMPLATES_DIR)) {
-      if (file.endsWith(".gitignore")) {
-        const name = file.replace(".gitignore", "");
-        const content = readFileSync(join(TEMPLATES_DIR, file), "utf-8");
-        templates.set(name, content);
-        console.log(`  - ${name}`);
-      }
-    }
+  // Generate gitignore templates map
+  lines.push("/** Embedded gitignore templates */");
+  lines.push("export const EMBEDDED_GITIGNORE_TEMPLATES: Record<string, string> = {");
+  for (const template of manifest.gitignoreTemplates) {
+    const escaped = JSON.stringify(template.content);
+    lines.push(`  ${JSON.stringify(template.name)}: ${escaped},`);
   }
+  lines.push("};");
+  lines.push("");
 
-  const templateEntries = Array.from(templates.entries())
-    .map(([name, content]) => `  "${name}": \`${escapeForTemplateLiteral(content)}\``)
-    .join(",\n");
-
-  const output = `/**
- * AUTO-GENERATED FILE - DO NOT EDIT
- * Generated by: bun scripts/embed-assets.ts
- * Generated at: ${new Date().toISOString()}
- *
- * Embedded gitignore templates for use in compiled binaries.
- */
-
-export const EMBEDDED_TEMPLATES: Record<string, string> = {
-${templateEntries}
-};
-
-export const EMBEDDED_TEMPLATE_NAMES = Object.keys(EMBEDDED_TEMPLATES);
-`;
-
-  writeFileSync(GENERATED_TEMPLATES_FILE, output, "utf-8");
-  console.log(`Generated: ${relative(ROOT_DIR, GENERATED_TEMPLATES_FILE)}`);
-}
-
-/**
- * Generate embedded rules TypeScript file
- */
-function generateEmbeddedRules(): void {
-  console.log("\nEmbedding rules templates...");
-
-  const rules = new Map<string, string>();
-
-  if (!existsSync(RULES_DIR)) {
-    console.warn(`Rules directory not found: ${RULES_DIR}`);
-  } else {
-    for (const file of readdirSync(RULES_DIR)) {
-      if (file.endsWith(".md")) {
-        const name = file.replace(".md", "");
-        const content = readFileSync(join(RULES_DIR, file), "utf-8");
-        rules.set(name, content);
-        console.log(`  - ${name}`);
-      }
-    }
+  // Generate rule templates map
+  lines.push("/** Embedded rule templates */");
+  lines.push("export const EMBEDDED_RULES: Record<string, string> = {");
+  for (const rule of manifest.ruleTemplates) {
+    const escaped = JSON.stringify(rule.content);
+    lines.push(`  ${JSON.stringify(rule.name)}: ${escaped},`);
   }
+  lines.push("};");
+  lines.push("");
 
-  const ruleEntries = Array.from(rules.entries())
-    .map(([name, content]) => `  "${name}": \`${escapeForTemplateLiteral(content)}\``)
-    .join(",\n");
+  // Generate plugins map
+  lines.push("/** Embedded plugin files */");
+  lines.push("export const EMBEDDED_PLUGINS: Record<string, string> = {");
+  for (const plugin of manifest.plugins) {
+    const escaped = JSON.stringify(plugin.content);
+    lines.push(`  ${JSON.stringify(plugin.name)}: ${escaped},`);
+  }
+  lines.push("};");
+  lines.push("");
 
-  const output = `/**
- * AUTO-GENERATED FILE - DO NOT EDIT
- * Generated by: bun scripts/embed-assets.ts
- * Generated at: ${new Date().toISOString()}
- *
- * Embedded rule templates for use in compiled binaries.
- */
+  // Helper functions
+  lines.push("/**");
+  lines.push(" * Get embedded gitignore template by name");
+  lines.push(" */");
+  lines.push("export function getEmbeddedGitignoreTemplate(name: string): string | null {");
+  lines.push("  return EMBEDDED_GITIGNORE_TEMPLATES[name] ?? null;");
+  lines.push("}");
+  lines.push("");
 
-export const EMBEDDED_RULES: Record<string, string> = {
-${ruleEntries}
-};
+  lines.push("/**");
+  lines.push(" * Get embedded plugin file by path");
+  lines.push(" */");
+  lines.push("export function getEmbeddedPluginFile(path: string): string | null {");
+  lines.push("  return EMBEDDED_PLUGINS[path] ?? null;");
+  lines.push("}");
+  lines.push("");
 
-export const EMBEDDED_RULE_NAMES = Object.keys(EMBEDDED_RULES);
-`;
+  lines.push("/**");
+  lines.push(" * List all embedded gitignore template names");
+  lines.push(" */");
+  lines.push("export function listEmbeddedGitignoreTemplates(): string[] {");
+  lines.push("  return Object.keys(EMBEDDED_GITIGNORE_TEMPLATES);");
+  lines.push("}");
+  lines.push("");
 
-  writeFileSync(GENERATED_RULES_FILE, output, "utf-8");
-  console.log(`Generated: ${relative(ROOT_DIR, GENERATED_RULES_FILE)}`);
-}
+  lines.push("/**");
+  lines.push(" * List all embedded plugin file paths");
+  lines.push(" */");
+  lines.push("export function listEmbeddedPluginFiles(): string[] {");
+  lines.push("  return Object.keys(EMBEDDED_PLUGINS);");
+  lines.push("}");
+  lines.push("");
 
-/**
- * Generate embedded plugins TypeScript file
- */
-function generateEmbeddedPlugins(): void {
-  console.log("\nEmbedding plugins...");
+  lines.push("/**");
+  lines.push(" * Get embedded rule template by name");
+  lines.push(" */");
+  lines.push("export function getEmbeddedRuleTemplate(name: string): string | null {");
+  lines.push("  return EMBEDDED_RULES[name] ?? null;");
+  lines.push("}");
+  lines.push("");
 
-  const files = readDirRecursive(PLUGINS_DIR);
-  console.log(`  Found ${files.size} files`);
+  lines.push("/**");
+  lines.push(" * List all embedded rule template names");
+  lines.push(" */");
+  lines.push("export function listEmbeddedRuleTemplates(): string[] {");
+  lines.push("  return Object.keys(EMBEDDED_RULES);");
+  lines.push("}");
+  lines.push("");
 
-  const fileEntries = Array.from(files.entries())
-    .map(([path, content]) => `  "${path}": \`${escapeForTemplateLiteral(content)}\``)
-    .join(",\n");
-
-  // Read version from package.json
-  const packageJson = JSON.parse(readFileSync(join(ROOT_DIR, "package.json"), "utf-8"));
-  const version = packageJson.version;
-
-  const output = `/**
- * AUTO-GENERATED FILE - DO NOT EDIT
- * Generated by: bun scripts/embed-assets.ts
- * Generated at: ${new Date().toISOString()}
- *
- * Embedded plugin files for auto-installation.
- */
-
-/**
- * Current version of the embedded plugins
- */
-export const EMBEDDED_PLUGINS_VERSION = "${version}";
-
-/**
- * Map of relative file paths to their content
- * Keys are relative paths from the plugins/ directory
- */
-export const EMBEDDED_PLUGINS: Record<string, string> = {
-${fileEntries}
-};
-
-/**
- * Get all plugin file paths
- */
-export function getEmbeddedPluginPaths(): string[] {
-  return Object.keys(EMBEDDED_PLUGINS);
-}
-
-/**
- * Get plugin file content by path
- */
-export function getEmbeddedPluginContent(path: string): string | undefined {
-  return EMBEDDED_PLUGINS[path];
-}
-`;
-
-  writeFileSync(GENERATED_PLUGINS_FILE, output, "utf-8");
-  console.log(`Generated: ${relative(ROOT_DIR, GENERATED_PLUGINS_FILE)}`);
-}
-
-/**
- * Generate embedded version TypeScript file
- */
-function generateEmbeddedVersion(): void {
-  console.log("\nEmbedding version...");
-
-  const packageJson = JSON.parse(readFileSync(join(ROOT_DIR, "package.json"), "utf-8"));
-  const version = packageJson.version;
-
-  const output = `/**
- * AUTO-GENERATED FILE - DO NOT EDIT
- * Generated by: bun scripts/embed-assets.ts
- * Generated at: ${new Date().toISOString()}
- *
- * Embedded version for use in compiled binaries.
- */
-
-export const EMBEDDED_VERSION = "${version}";
-`;
-
-  writeFileSync(GENERATED_VERSION_FILE, output, "utf-8");
-  console.log(`  Version: ${version}`);
-  console.log(`Generated: ${relative(ROOT_DIR, GENERATED_VERSION_FILE)}`);
+  return lines.join("\n");
 }
 
 /**
  * Main entry point
  */
-function main(): void {
-  console.log("=== Embedding Assets ===\n");
+async function main(): Promise<void> {
+  console.log("🔧 Embedding assets for binary build...\n");
 
-  generateEmbeddedTemplates();
-  generateEmbeddedRules();
-  generateEmbeddedPlugins();
-  generateEmbeddedVersion();
+  // Read assets
+  const version = readVersion();
+  console.log(`📦 Version: ${version}`);
 
-  console.log("\n=== Done ===");
+  const gitignoreTemplates = readGitignoreTemplates();
+  console.log(`📄 Gitignore templates: ${gitignoreTemplates.length}`);
+  for (const t of gitignoreTemplates) {
+    console.log(`   - ${t.name} (${t.size} bytes)`);
+  }
+
+  const ruleTemplates = readRuleTemplates();
+  console.log(`📋 Rule templates: ${ruleTemplates.length}`);
+  for (const r of ruleTemplates) {
+    console.log(`   - ${r.name} (${r.size} bytes)`);
+  }
+
+  const plugins = readPluginFiles();
+  console.log(`🔌 Plugin files: ${plugins.length}`);
+
+  // Create manifest
+  const manifest: EmbeddedManifest = {
+    version,
+    generatedAt: new Date().toISOString(),
+    gitignoreTemplates,
+    ruleTemplates,
+    plugins,
+  };
+
+  // Generate code
+  const code = generateEmbeddedCode(manifest);
+
+  // Write output
+  const outputPath = path.join(ROOT_DIR, "src/embedded-assets.generated.ts");
+  fs.writeFileSync(outputPath, code);
+  console.log(`\n✅ Generated: ${outputPath}`);
+  console.log(`   Total size: ${code.length} bytes`);
+
+  // Calculate total embedded content size
+  const totalContentSize =
+    gitignoreTemplates.reduce((sum, t) => sum + t.size, 0) +
+    ruleTemplates.reduce((sum, r) => sum + r.size, 0) +
+    plugins.reduce((sum, p) => sum + p.size, 0);
+  console.log(`   Embedded content: ${totalContentSize} bytes`);
 }
 
-main();
+main().catch((err) => {
+  console.error("Error:", err);
+  process.exit(1);
+});

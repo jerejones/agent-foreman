@@ -1,10 +1,8 @@
 # impact Command
 
-Analyze impact of changes to a feature on other features.
+Analyze the impact of changes to a task/feature on other tasks.
 
-> 分析对功能的更改对其他功能的影响。
-
-## Synopsis
+## Command Syntax
 
 ```bash
 agent-foreman impact <feature_id>
@@ -12,322 +10,260 @@ agent-foreman impact <feature_id>
 
 ## Description
 
-The `impact` command analyzes the dependency graph to identify features that may be affected by changes to a specific feature. It helps developers understand the ripple effects of modifications and plan testing accordingly.
-
-> `impact` 命令分析依赖关系图，识别可能受特定功能更改影响的功能。它帮助开发者理解修改的连锁反应并相应地规划测试。
+The `impact` command analyzes how changes to a specific task might affect other tasks in the project. It identifies directly dependent tasks and tasks in the same module that may need review.
 
 ## Arguments
 
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `feature_id` | Yes | The feature to analyze impact for |
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `feature_id` | string | Yes | Task ID to analyze impact for |
 
 ## Execution Flow
 
 ```mermaid
 flowchart TD
-    Start([Start]) --> GetCWD[Get Current Working Directory]
-    GetCWD --> LoadFeatures[loadFeatureList]
+    A[Start: runImpact] --> B[Load Feature List]
+    B --> C{Feature List Exists?}
+    C -->|No| D[Exit: No task list]
+    C -->|Yes| E[Find Feature by ID]
 
-    LoadFeatures --> CheckLoaded{Loaded?}
-    CheckLoaded -->|No| ShowError[Show Error Message]
-    ShowError --> End([End])
+    E --> F{Feature Found?}
+    F -->|No| G[Exit: Task not found]
+    F -->|Yes| H[Analyze Dependencies]
 
-    CheckLoaded -->|Yes| FindFeature[findFeatureById]
-    FindFeature --> CheckFound{Found?}
-    CheckFound -->|No| NotFoundError[Show Not Found Error]
-    NotFoundError --> End
+    H --> I[Find Dependent Tasks]
+    H --> J[Find Same-Module Tasks]
 
-    CheckFound -->|Yes| AnalyzeDeps
+    I --> K[dependents array]
+    J --> L[sameModule array]
 
-    subgraph Analysis["Impact Analysis"]
-        AnalyzeDeps[Find Dependent Features] --> FilterDeps[Filter by dependsOn]
-        FilterDeps --> AnalyzeModule[Find Same Module Features]
-        AnalyzeModule --> FilterModule[Filter by Module]
-    end
+    K --> M[Display Impact Analysis]
+    L --> M
 
-    FilterModule --> DisplayResults
+    M --> N{Has Affected Tasks?}
+    N -->|Yes| O[Display Recommendations]
+    N -->|No| P[Display: No affected tasks]
 
-    subgraph Display["Display Results"]
-        DisplayResults[Display Header] --> ShowDeps{Has Dependents?}
-        ShowDeps -->|Yes| ListDeps[List Dependent Features]
-        ShowDeps -->|No| SkipDeps[Skip Section]
-
-        ListDeps --> ShowModule{Has Same Module?}
-        SkipDeps --> ShowModule
-
-        ShowModule -->|Yes| ListModule[List Same Module Features]
-        ShowModule -->|No| ShowNone[Show No Impact]
-
-        ListModule --> ShowRecs
-        ShowNone --> ShowRecs
-    end
-
-    ShowRecs{Has Dependents?} -->|Yes| DisplayRecs[Display Recommendations]
-    ShowRecs -->|No| End
-    DisplayRecs --> End
+    O --> Q[End]
+    P --> Q
 ```
-
-## Impact Detection Logic
-
-```mermaid
-flowchart LR
-    subgraph Target["Target Feature"]
-        TargetF[auth.login]
-    end
-
-    subgraph Analysis["Impact Analysis"]
-        direction TB
-        DepsCheck[Check dependsOn<br/>Arrays]
-        ModuleCheck[Check Same<br/>Module]
-    end
-
-    subgraph Affected["Affected Features"]
-        Direct[Directly Affected<br/>dependsOn: auth.login]
-        SameModule[Same Module<br/>module: auth]
-    end
-
-    TargetF --> DepsCheck
-    TargetF --> ModuleCheck
-
-    DepsCheck --> Direct
-    ModuleCheck --> SameModule
-
-    style Direct fill:#ff6666
-    style SameModule fill:#ffcc00
-```
-
-### Directly Affected Features
-Features that explicitly declare `dependsOn` containing the target feature ID. These are high-priority for review.
-
-### Same Module Features
-Features in the same module that might share code or state. These are recommended for review.
-
-## Detailed Step-by-Step Flow
-
-### 1. Load Feature List
-- Load `ai/feature_list.json`
-- Exit with error if not found
-
-### 2. Find Target Feature
-- Search for feature by ID
-- Exit with error if not found
-
-### 3. Analyze Dependencies
-
-**Direct Dependencies:**
-```javascript
-// Find features where dependsOn includes target
-const dependents = features.filter(f =>
-  f.dependsOn.includes(featureId)
-);
-```
-
-**Same Module:**
-```javascript
-// Find features in same module (excluding deprecated)
-const sameModule = features.filter(f =>
-  f.module === feature.module &&
-  f.id !== featureId &&
-  f.status !== 'deprecated'
-);
-```
-
-### 4. Display Results
-- Show directly affected features with their status
-- Show same-module features (limit to 10, show count for more)
-- If no impact, show "No other features appear to be affected"
-
-### 5. Recommendations
-If there are dependents:
-1. Review and test dependent features
-2. Mark uncertain features as `needs_review`
-3. Update feature notes with impact details
 
 ## Data Flow Diagram
 
 ```mermaid
-flowchart LR
+graph TB
     subgraph Input
-        FeatureList[ai/feature_list.json]
-        FeatureID[Feature ID]
+        A1[feature_id]
+        A2[Working Directory]
     end
 
-    subgraph Processing
-        Lookup[Feature Lookup]
-        DepsAnalyzer[Dependency Analyzer]
-        ModuleAnalyzer[Module Analyzer]
+    subgraph DataLoad["Data Loading"]
+        B1[loadFeatureList]
+        B2[findFeatureById]
+    end
+
+    subgraph Analysis["Impact Analysis"]
+        C1[Find Dependents]
+        C2[Find Same Module]
+        C3[Filter Active Tasks]
+    end
+
+    subgraph DependentSearch["Dependent Task Search"]
+        D1[Iterate All Features]
+        D2[Check dependsOn Array]
+        D3[Match feature_id]
+    end
+
+    subgraph ModuleSearch["Same Module Search"]
+        E1[Get Feature Module]
+        E2[Filter by Module]
+        E3[Exclude Current Feature]
+        E4[Exclude Deprecated]
     end
 
     subgraph Output
-        DirectList[Direct Dependencies]
-        ModuleList[Same Module List]
-        Recommendations[Recommendations]
+        F1[Directly Affected Tasks]
+        F2[Same-Module Tasks]
+        F3[Recommendations]
     end
 
-    FeatureList --> Lookup
-    FeatureID --> Lookup
+    A1 --> B1
+    A2 --> B1
+    B1 --> B2
 
-    Lookup --> DepsAnalyzer
-    Lookup --> ModuleAnalyzer
+    B2 --> C1
+    B2 --> C2
 
-    DepsAnalyzer --> DirectList
-    ModuleAnalyzer --> ModuleList
-    DirectList --> Recommendations
+    C1 --> D1
+    D1 --> D2
+    D2 --> D3
+    D3 --> F1
+
+    C2 --> E1
+    E1 --> E2
+    E2 --> E3
+    E3 --> E4
+    E4 --> F2
+
+    F1 --> F3
+    F2 --> F3
 ```
 
-## Dependency Graph Visualization
+## Key Functions
+
+### `runImpact(featureId)`
+
+**Location**: `src/commands/impact.ts:12`
+
+Main entry point for the impact command.
+
+**Process**:
+1. Loads the feature list
+2. Finds the specified feature
+3. Identifies all features that depend on this one
+4. Identifies all features in the same module
+5. Displays impact analysis with recommendations
+
+## Dependency Analysis
+
+The command identifies two types of related tasks:
+
+### Directly Affected Tasks
+
+Tasks that explicitly list the analyzed feature in their `dependsOn` array.
 
 ```mermaid
-graph TD
-    subgraph Module_Auth["auth Module"]
-        Login[auth.login]
-        Register[auth.register]
-        Logout[auth.logout]
-        Session[auth.session]
+graph LR
+    A[auth.login] --> B[dashboard.home]
+    A --> C[profile.settings]
+    A --> D[admin.users]
+
+    style A fill:#f9f,stroke:#333
+    style B fill:#bbf,stroke:#333
+    style C fill:#bbf,stroke:#333
+    style D fill:#bbf,stroke:#333
+```
+
+**Example**: If `auth.login` is modified, any task with `dependsOn: ["auth.login"]` is directly affected.
+
+### Same-Module Tasks
+
+Tasks in the same module that might be affected by shared code or patterns.
+
+```mermaid
+graph TB
+    subgraph AuthModule["Module: auth"]
+        A[auth.login]
+        B[auth.logout]
+        C[auth.register]
+        D[auth.password-reset]
     end
 
-    subgraph Module_API["api Module"]
-        Users[api.users]
-        Tasks[api.tasks]
-    end
+    A -.->|same module| B
+    A -.->|same module| C
+    A -.->|same module| D
 
-    Register -->|dependsOn| Login
-    Logout -->|dependsOn| Session
-    Users -->|dependsOn| Login
-    Tasks -->|dependsOn| Login
-
-    style Login fill:#ff6666
+    style A fill:#f9f,stroke:#333
 ```
 
-When analyzing impact for `auth.login`:
-- **Directly Affected**: `auth.register`, `api.users`, `api.tasks`
-- **Same Module**: `auth.logout`, `auth.session`
+## Output Example
 
-## Dependencies
-
-### Internal Modules
-- `src/feature-list.ts` - Feature operations
-  - `loadFeatureList()` - Load feature data
-  - `findFeatureById()` - Find specific feature
-
-### External Dependencies
-- `chalk` - Console output styling
-
-## Files Read
-
-| File | Purpose |
-|------|---------|
-| `ai/feature_list.json` | Feature dependency graph |
-
-## Files Written
-
-None - this is a read-only analysis command.
-
-## Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | Success (always) |
-
-## Examples
-
-### Basic Impact Analysis
-```bash
-# Analyze impact for auth.login feature
-agent-foreman impact auth.login
-```
-
-### Chain Analysis
-```bash
-# Check multiple features
-agent-foreman impact auth.login
-agent-foreman impact auth.session
-```
-
-## Console Output Example
-
-### With Dependencies
 ```
 🔍 Impact Analysis: auth.login
 
-   ⚠ Directly Affected Features:
-   → auth.register (failing) - depends on this feature
-   → api.users.create (passing) - depends on this feature
-   → api.tasks.list (failing) - depends on this feature
+   ⚠ Directly Affected Tasks:
+   → dashboard.home (failing) - depends on this task
+   → profile.settings (passing) - depends on this task
+   → admin.users (needs_review) - depends on this task
 
    📁 Same Module (review recommended):
    → auth.logout (passing)
-   → auth.session (failing)
-   → auth.refresh-token (failing)
+   → auth.register (failing)
+   → auth.password-reset (blocked)
+   → auth.session-refresh (failing)
+   ... and 2 more
 
-   Recommendations:
-   1. Review and test dependent features
-   2. Mark uncertain features as 'needs_review'
-   3. Update feature notes with impact details
+   💡 Recommendations:
+   1. Review and test dependent tasks (highest priority)
+   2. Mark uncertain dependent tasks as 'needs_review'
+   3. Consider reviewing same-module tasks for side effects
+   4. Update task notes with impact details
+   5. Run 'agent-foreman check <task_id>' to verify affected tasks
 ```
 
-### No Dependencies
-```
-🔍 Impact Analysis: api.health
+## Recommendations Logic
 
-   ✓ No other features appear to be affected
-```
+Recommendations are generated based on findings:
 
-### Large Module
-```
-🔍 Impact Analysis: ui.button
-
-   📁 Same Module (review recommended):
-   → ui.input (passing)
-   → ui.select (passing)
-   → ui.modal (failing)
-   → ui.toast (passing)
-   → ui.card (passing)
-   → ui.tabs (failing)
-   → ui.form (passing)
-   → ui.table (passing)
-   → ui.pagination (failing)
-   → ui.dropdown (passing)
-   ... and 5 more
-```
+| Condition | Recommendation |
+|-----------|----------------|
+| Has dependents | Review and test dependent tasks (highest priority) |
+| Has dependents | Mark uncertain dependent tasks as 'needs_review' |
+| Has same-module | Consider reviewing same-module tasks for side effects |
+| Any affected | Update task notes with impact details |
+| Any affected | Run `agent-foreman check` to verify affected tasks |
 
 ## Use Cases
 
-### Before Major Refactoring
+### Before Making Changes
+
 ```bash
-# Check what might break
-agent-foreman impact core.database
+# Check what might be affected before modifying
+agent-foreman impact auth.login
 ```
 
-### After Bug Fix
+### After Completing a Task
+
 ```bash
-# Verify dependent features still work
-agent-foreman impact auth.validation
-# Then run tests on affected features
+# Identify tasks that might need review
+agent-foreman done auth.login
+agent-foreman impact auth.login
+# Review/update dependent tasks
 ```
 
-### Planning Session Reviews
+### During Refactoring
+
 ```bash
-# Identify features to mark as needs_review
-agent-foreman impact api.response-format
-# Update their status
-# features with dependsOn should be marked needs_review
+# Understand full impact of refactoring
+agent-foreman impact core.utils
 ```
 
-## Workflow Integration
+## Integration with Other Commands
+
+### Workflow Example
 
 ```mermaid
-flowchart LR
-    Change[Make Change] --> Impact[agent-foreman impact]
-    Impact --> Review[Review Affected]
-    Review --> Mark[Mark needs_review]
-    Mark --> Test[Run Tests]
-    Test --> Done[agent-foreman done]
+flowchart TD
+    A[Complete Task] --> B[Run Impact Analysis]
+    B --> C{Has Affected Tasks?}
+    C -->|Yes| D[Mark as needs_review]
+    C -->|No| E[Continue to Next Task]
+
+    D --> F[For Each Affected]
+    F --> G[agent-foreman check]
+    G --> H{Passes?}
+    H -->|Yes| I[Mark as passing]
+    H -->|No| J[Fix Issues]
+    J --> G
+    I --> E
 ```
+
+## Limitations
+
+1. **Static Analysis Only**: Does not analyze actual code dependencies
+2. **Explicit Dependencies**: Only finds tasks with `dependsOn` declarations
+3. **Module Heuristic**: Same-module analysis is a heuristic, not guarantee
+4. **No Transitive Dependencies**: Does not trace chains of dependencies
+
+## Best Practices
+
+1. **Declare Dependencies**: Use `dependsOn` in feature definitions
+2. **Module Organization**: Group related features in modules
+3. **Regular Impact Checks**: Run after significant changes
+4. **Update Status**: Mark affected tasks as `needs_review`
 
 ## Related Commands
 
-- `agent-foreman status` - View overall status
-- `agent-foreman next` - Get next feature
-- `agent-foreman check` - Verify feature implementation
+- [`check`](./check.md) - Verify affected tasks
+- [`done`](./done.md) - Complete tasks
+- [`status`](./status.md) - View all task statuses

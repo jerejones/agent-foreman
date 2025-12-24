@@ -2,9 +2,7 @@
 
 Install the agent-foreman Claude Code plugin.
 
-> 安装 agent-foreman Claude Code 插件。
-
-## Synopsis
+## Command Syntax
 
 ```bash
 agent-foreman install [options]
@@ -12,224 +10,243 @@ agent-foreman install [options]
 
 ## Description
 
-The `install` command installs and enables the agent-foreman plugin for Claude Code. This plugin provides slash commands and skills that integrate agent-foreman workflows directly into Claude Code.
-
-> `install` 命令安装并启用 Claude Code 的 agent-foreman 插件。此插件提供斜杠命令和技能，将 agent-foreman 工作流直接集成到 Claude Code 中。
+The `install` command installs the agent-foreman plugin for Claude Code, enabling slash commands and skills integration. It registers the marketplace, installs plugin files, and enables the plugin in Claude Code settings.
 
 ## Options
 
-| Option | Alias | Default | Description |
-|--------|-------|---------|-------------|
-| `--force` | `-f` | `false` | Force reinstall even if already installed |
+| Option | Alias | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--force` | `-f` | boolean | `false` | Force reinstall even if already installed |
 
 ## Execution Flow
 
 ```mermaid
 flowchart TD
-    Start([Start]) --> GetInfo[getPluginInstallInfo]
+    A[Start: runInstall] --> B[getPluginInstallInfo]
+    B --> C[Display Current Status]
 
-    subgraph Status["Check Current Status"]
-        GetInfo --> ShowStatus[Display Current Status]
-        ShowStatus --> CheckEmbedded{Embedded Plugins<br/>Available?}
-    end
+    C --> D{Embedded Plugins Available?}
+    D -->|No| E[Display: No embedded plugins]
+    E --> F[Show Build Instructions]
+    F --> G[End: Early Exit]
 
-    CheckEmbedded -->|No| DevMode[Show Dev Mode Instructions]
-    DevMode --> End([End])
+    D -->|Yes| H{Already Installed?}
+    H -->|Yes| I{--force flag?}
+    I -->|No| J[Display: Already installed]
+    J --> G
+    I -->|Yes| K[Continue Install]
+    H -->|No| K
 
-    CheckEmbedded -->|Yes| CheckInstalled{Already Installed<br/>& Enabled?}
+    K --> L[fullInstall]
+    L --> M[Install Marketplace Files]
+    M --> N[Register in known_marketplaces.json]
+    N --> O[Install Plugin to Cache]
+    O --> P[Enable in settings.json]
 
-    CheckInstalled -->|Yes, not forced| AlreadyInstalled[Show Already Installed]
-    AlreadyInstalled --> End
-
-    CheckInstalled -->|No or forced| RunInstall
-
-    subgraph InstallPhase["Installation Process"]
-        RunInstall[fullInstall] --> Step1[Install Marketplace Files]
-        Step1 --> Step2[Register in known_marketplaces.json]
-        Step2 --> Step3[Install Plugin to Cache]
-        Step3 --> Step4[Enable in settings.json]
-    end
-
-    Step4 --> Success[Show Success]
-    Success --> Restart[Prompt: Restart Claude Code]
-    Restart --> End
-
-    style DevMode fill:#ffcc00
-    style AlreadyInstalled fill:#00cc00
-    style Success fill:#00cc00
+    P --> Q{Install Success?}
+    Q -->|No| R[Display Error]
+    R --> S[Exit with Error]
+    Q -->|Yes| T[Display Success]
+    T --> U[List Completed Steps]
+    U --> V[Display: Restart Claude Code]
+    V --> W[End]
 ```
-
-## Installation Steps Detail
-
-```mermaid
-flowchart TD
-    subgraph Step1["Step 1: Install Marketplace Files"]
-        S1A[Copy marketplace.json] --> S1B[Copy plugin.json]
-        S1B --> S1C[Copy slash commands]
-        S1C --> S1D[Copy skills]
-    end
-
-    subgraph Step2["Step 2: Register Marketplace"]
-        S2A[Read known_marketplaces.json] --> S2B[Add agent-foreman entry]
-        S2B --> S2C[Write known_marketplaces.json]
-    end
-
-    subgraph Step3["Step 3: Install Plugin"]
-        S3A[Read installed_plugins_v2.json] --> S3B[Add plugin entry]
-        S3B --> S3C[Copy plugin files to cache]
-        S3C --> S3D[Write installed_plugins_v2.json]
-    end
-
-    subgraph Step4["Step 4: Enable Plugin"]
-        S4A[Read settings.json] --> S4B[Add to enabledPlugins]
-        S4B --> S4C[Write settings.json]
-    end
-
-    Step1 --> Step2
-    Step2 --> Step3
-    Step3 --> Step4
-```
-
-## Claude Code Plugin Architecture
-
-```mermaid
-flowchart LR
-    subgraph ClaudeCode["Claude Code"]
-        Settings[settings.json]
-        KnownMP[known_marketplaces.json]
-        Installed[installed_plugins_v2.json]
-        Cache[Plugin Cache]
-    end
-
-    subgraph Plugin["agent-foreman Plugin"]
-        Marketplace[marketplace.json]
-        PluginJSON[plugin.json]
-        Slashes[Slash Commands]
-        Skills[Skills]
-    end
-
-    Marketplace --> KnownMP
-    PluginJSON --> Installed
-    PluginJSON --> Cache
-    Slashes --> Cache
-    Skills --> Cache
-    Installed --> Settings
-```
-
-## Plugin Components
-
-### Slash Commands
-
-| Command | Description |
-|---------|-------------|
-| `/agent-foreman:init` | Initialize harness |
-| `/agent-foreman:next` | Get next feature |
-| `/agent-foreman:status` | View project status |
-| `/agent-foreman:analyze` | Analyze project |
-| `/agent-foreman:run` | Run tasks |
-
-### Skills
-
-| Skill | Description |
-|-------|-------------|
-| `init-harness` | Initialize long-task harness |
-| `feature-next` | Work on next priority task |
-| `feature-run` | Run tasks automatically |
-| `project-analyze` | Analyze project structure |
 
 ## Data Flow Diagram
 
 ```mermaid
-flowchart LR
+graph TB
     subgraph Input
-        Embedded[Embedded Plugin Files]
-        ClaudeConfig[Claude Code Config Dir]
+        A1[CLI Options]
+        A2[Embedded Plugin Data]
     end
 
-    subgraph Processing
-        Installer[Plugin Installer]
-        Validator[Status Validator]
+    subgraph StatusCheck["Status Check"]
+        B1[getPluginInstallInfo]
+        B2[Check Marketplace Registration]
+        B3[Check Plugin Installation]
+        B4[Check Plugin Enabled]
+    end
+
+    subgraph Installation["Installation Process"]
+        C1[fullInstall]
+        C2[Install Marketplace Files]
+        C3[Register Marketplace]
+        C4[Install Plugin Files]
+        C5[Enable Plugin]
+    end
+
+    subgraph ClaudeCode["Claude Code Files"]
+        D1[~/.claude/known_marketplaces.json]
+        D2[~/.claude/cache/plugins/]
+        D3[~/.claude/installed_plugins_v2.json]
+        D4[~/.claude/settings.json]
     end
 
     subgraph Output
-        Marketplace[Marketplace Registration]
-        PluginCache[Plugin Cache Files]
-        Settings[Enabled in Settings]
+        E1[Success Message]
+        E2[Restart Reminder]
     end
 
-    Embedded --> Installer
-    ClaudeConfig --> Validator
-    Validator --> Installer
+    A1 --> B1
+    A2 --> C1
 
-    Installer --> Marketplace
-    Installer --> PluginCache
-    Installer --> Settings
+    B1 --> B2
+    B1 --> B3
+    B1 --> B4
+
+    B2 --> C1
+    B3 --> C1
+    B4 --> C1
+
+    C1 --> C2
+    C2 --> C3
+    C3 --> C4
+    C4 --> C5
+
+    C2 --> D1
+    C3 --> D1
+    C4 --> D2
+    C4 --> D3
+    C5 --> D4
+
+    C5 --> E1
+    E1 --> E2
 ```
 
-## Dependencies
+## Installation Steps
 
-### Internal Modules
+### 1. Marketplace Files Installation
 
-- `src/plugin-installer.ts` - Plugin installation logic
-  - `fullInstall()` - Complete installation
-  - `hasEmbeddedPlugins()` - Check for embedded plugins
-  - `getPluginInstallInfo()` - Get installation status
+Copies plugin marketplace files to Claude Code's known marketplace location.
 
-### External Dependencies
-
-- Claude Code installation (for plugin support)
-
-## Files Read
-
-| File | Purpose |
-|------|---------|
-| `~/.claude-code/known_marketplaces.json` | Existing marketplaces |
-| `~/.claude-code/installed_plugins_v2.json` | Existing plugins |
-| `~/.claude-code/settings.json` | Current settings |
-
-## Files Written
-
-| File | Purpose |
-|------|---------|
-| `~/.claude-code/known_marketplaces.json` | Register marketplace |
-| `~/.claude-code/installed_plugins_v2.json` | Register plugin |
-| `~/.claude-code/settings.json` | Enable plugin |
-| `~/.claude-code/cache/plugins/...` | Plugin files |
-| `~/.claude-code/marketplaces/...` | Marketplace files |
-
-## Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | Success (or already installed) |
-| 1 | Installation failed |
-
-## Examples
-
-### Basic Installation
-
-```bash
-# Install the plugin
-agent-foreman install
+```
+~/.claude/marketplaces/agent-foreman/
+├── marketplace.json
+├── plugin.json
+└── README.md
 ```
 
-### Force Reinstall
+### 2. Marketplace Registration
 
-```bash
-# Reinstall even if already installed
-agent-foreman install --force
+Adds entry to `~/.claude/known_marketplaces.json`:
+
+```json
+{
+  "marketplaces": [
+    {
+      "name": "agent-foreman",
+      "url": "file:///path/to/marketplace"
+    }
+  ]
+}
 ```
 
-## Console Output Example
+### 3. Plugin Installation
 
-### New Installation
+Copies plugin files to cache:
+
+```
+~/.claude/cache/plugins/agent-foreman@agent-foreman-plugins/
+├── plugin.json
+├── commands/
+├── skills/
+└── ...
+```
+
+Updates `~/.claude/installed_plugins_v2.json`:
+
+```json
+{
+  "plugins": [
+    {
+      "id": "agent-foreman:agent-foreman",
+      "version": "0.1.91",
+      "enabled": true
+    }
+  ]
+}
+```
+
+### 4. Plugin Enablement
+
+Updates `~/.claude/settings.json`:
+
+```json
+{
+  "enabledPlugins": [
+    "agent-foreman:agent-foreman"
+  ]
+}
+```
+
+## Key Functions
+
+### `runInstall(force)`
+
+**Location**: `src/commands/install.ts:17`
+
+Main entry point for the install command.
+
+### `getPluginInstallInfo()`
+
+**Location**: `src/plugin-installer.ts`
+
+Gets current installation status.
+
+**Returns**:
+```typescript
+interface PluginInstallInfo {
+  bundledVersion: string;
+  installedVersion: string | null;
+  isMarketplaceRegistered: boolean;
+  isPluginInstalled: boolean;
+  isPluginEnabled: boolean;
+}
+```
+
+### `hasEmbeddedPlugins()`
+
+**Location**: `src/plugin-installer.ts`
+
+Checks if embedded plugins are available.
+
+**Returns**: `boolean`
+
+### `fullInstall()`
+
+**Location**: `src/plugin-installer.ts`
+
+Performs complete installation process.
+
+## Output Example
 
 ```
 Agent Foreman Plugin Installer
 ────────────────────────────────────────
 
 Plugin Status:
-  Version:     0.1.100
+  Version:     0.1.91
+  Marketplace: ✓ registered
+  Plugin:      ✓ installed (0.1.91)
+  Enabled:     ✓ yes
+
+✓ Plugin is already installed and enabled
+  Use --force to reinstall
+
+To manage the plugin:
+  /plugin                    # Browse plugins
+  agent-foreman uninstall    # Remove plugin
+```
+
+### Fresh Installation
+
+```
+Agent Foreman Plugin Installer
+────────────────────────────────────────
+
+Plugin Status:
+  Version:     0.1.91
   Marketplace: not registered
   Plugin:      not installed
   Enabled:     no
@@ -247,77 +264,74 @@ Steps completed:
 ⚡ Restart Claude Code to use the plugin
 ```
 
-### Already Installed
+### No Embedded Plugins
 
 ```
 Agent Foreman Plugin Installer
 ────────────────────────────────────────
 
 Plugin Status:
-  Version:     0.1.100
-  Marketplace: ✓ registered
-  Plugin:      ✓ installed (0.1.100)
-  Enabled:     ✓ yes
-
-✓ Plugin is already installed and enabled
-  Use --force to reinstall
-
-To manage the plugin:
-  /plugin                    # Browse plugins
-  agent-foreman uninstall    # Remove plugin
-```
-
-### Development Mode
-
-```
-Agent Foreman Plugin Installer
-────────────────────────────────────────
-
-Plugin Status:
-  Version:     0.1.100
+  Version:     0.1.91
   Marketplace: not registered
   Plugin:      not installed
   Enabled:     no
 
-⚠ Running in development mode (no embedded plugins)
-  Plugins are loaded directly from source in development.
+⚠ No embedded plugins available
+  Plugin install requires embedded plugins from a build process.
+  For development, plugins are loaded directly from source.
 
 To build with embedded plugins:
-  npm run build        # Build npm package
-  npm run build:bin    # Build standalone binary
+  npm run build          # Build npm package with plugins
+  npm run build:bin      # Build standalone binary with plugins
 
 Or install from GitHub:
   /plugin marketplace add mylukin/agent-foreman
-  /plugin install agent-foreman
+  /plugin install agent-foreman:agent-foreman
 ```
 
-## Plugin File Structure
+## Examples
 
+### Basic Installation
+
+```bash
+# Install the plugin
+agent-foreman install
 ```
-~/.claude-code/
-├── known_marketplaces.json      # Marketplace registry
-├── installed_plugins_v2.json    # Plugin registry
-├── settings.json                # Plugin enabled here
-├── cache/
-│   └── plugins/
-│       └── agent-foreman/
-│           ├── plugin.json
-│           ├── commands/
-│           │   ├── init.md
-│           │   ├── next.md
-│           │   └── ...
-│           └── skills/
-│               ├── init-harness.md
-│               └── ...
-└── marketplaces/
-    └── agent-foreman/
-        ├── marketplace.json
-        └── plugins/
-            └── agent-foreman/
-                └── plugin.json
+
+### Force Reinstall
+
+```bash
+# Reinstall even if already installed
+agent-foreman install --force
 ```
+
+## Plugin Features
+
+After installation, the plugin provides:
+
+### Slash Commands
+
+- `/agent-foreman:init` - Initialize harness
+- `/agent-foreman:next` - Get next task
+- `/agent-foreman:status` - View status
+- `/agent-foreman:run` - Run tasks
+- `/agent-foreman:analyze` - Analyze project
+
+### Skills
+
+- `agent-foreman:init-harness` - Initialize harness skill
+- `agent-foreman:project-analyze` - Project analysis skill
+- `agent-foreman:feature-next` - Next task skill
+- `agent-foreman:feature-run` - Run tasks skill
+
+## Error Handling
+
+| Error | Cause | Resolution |
+|-------|-------|------------|
+| "No embedded plugins" | Dev mode or incomplete build | Run `npm run build` |
+| "Failed to install" | Permission or file issue | Check Claude Code directory permissions |
 
 ## Related Commands
 
-- `agent-foreman uninstall` - Remove the plugin
-- `/plugin` - Claude Code plugin browser
+- [`uninstall`](./uninstall.md) - Remove the plugin
+- [`upgrade`](./upgrade.md) - Update to latest version

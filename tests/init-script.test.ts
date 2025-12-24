@@ -1,10 +1,15 @@
 /**
  * Tests for src/init-script.ts - Bootstrap script generation
+ *
+ * Note: The check() function now delegates to agent-foreman check
+ * instead of running tests/lint/build directly. This is the new architecture
+ * where init.sh is a thin wrapper and all verification logic is centralized
+ * in agent-foreman check.
  */
 import { describe, it, expect } from "vitest";
 import { generateInitScript, generateMinimalInitScript, generateInitScriptFromCapabilities, generateInitScriptWithTypeCheck } from "../src/init-script.js";
 import type { ProjectCommands } from "../src/types.js";
-import type { ExtendedCapabilities } from "../src/verifier/verification-types.js";
+import type { ExtendedCapabilities } from "../src/verifier/types/index.js";
 
 describe("Init Script", () => {
   describe("generateInitScript", () => {
@@ -24,12 +29,11 @@ describe("Init Script", () => {
       expect(script).toContain("# ai/init.sh - Bootstrap script for agent-foreman harness");
       expect(script).toContain("set -euo pipefail");
 
-      // Should include configured commands
+      // Should include configured commands for bootstrap, dev, and build
       expect(script).toContain("npm install");
       expect(script).toContain("npm run dev");
-      expect(script).toContain("npm test");
       expect(script).toContain("npm run build");
-      expect(script).toContain("npm run lint");
+      // Note: test and lint are now handled by agent-foreman check delegation
     });
 
     it("should generate script with only install command", () => {
@@ -41,19 +45,7 @@ describe("Init Script", () => {
 
       expect(script).toContain("yarn install");
       expect(script).toContain("No dev command configured");
-      expect(script).toContain("No test command configured");
       expect(script).toContain("No build command configured");
-    });
-
-    it("should generate script with only test command", () => {
-      const commands: ProjectCommands = {
-        test: "jest",
-      };
-
-      const script = generateInitScript(commands);
-
-      expect(script).toContain("jest");
-      expect(script).toContain("No install command configured");
     });
 
     it("should include all required shell functions", () => {
@@ -107,7 +99,7 @@ describe("Init Script", () => {
       expect(script).toContain('select(.status == "needs_review")');
     });
 
-    it("should include check function with exit code tracking", () => {
+    it("should include check function that delegates to agent-foreman", () => {
       const commands: ProjectCommands = {
         test: "npm test",
         lint: "npm run lint",
@@ -115,23 +107,10 @@ describe("Init Script", () => {
       };
       const script = generateInitScript(commands);
 
-      expect(script).toContain("local exit_code=0");
-      expect(script).toContain("local e2e_exit_code=0");
-      // Return combined exit code for unit tests + E2E tests
-      expect(script).toContain("return $(( exit_code + e2e_exit_code ))");
-      // Separate failure messages for unit and E2E tests
-      expect(script).toContain("Unit tests/checks failed");
-      expect(script).toContain("E2E tests failed");
-      expect(script).toContain("All checks passed!");
-    });
-
-    it("should include TypeScript check in check function", () => {
-      const commands: ProjectCommands = {};
-      const script = generateInitScript(commands);
-
-      expect(script).toContain('if [ -f "tsconfig.json" ]');
-      expect(script).toContain("npx tsc --noEmit");
-      expect(script).toContain("Type check failed");
+      // New delegation behavior
+      expect(script).toContain("agent-foreman check");
+      expect(script).toContain("Running verification via agent-foreman");
+      expect(script).toContain("agent-foreman not found");
     });
 
     it("should include progress log in status function", () => {
@@ -150,7 +129,6 @@ describe("Init Script", () => {
       expect(script).toContain("#!/usr/bin/env bash");
       expect(script).toContain("No install command configured");
       expect(script).toContain("No dev command configured");
-      expect(script).toContain("No test command configured");
       expect(script).toContain("No build command configured");
     });
 
@@ -221,13 +199,13 @@ describe("Init Script", () => {
       expect(script).toContain("NC=");
     });
 
-    it("should include check function with TypeScript check", () => {
+    it("should include check function that delegates to agent-foreman", () => {
       const script = generateMinimalInitScript();
 
-      expect(script).toContain("local exit_code=0");
-      expect(script).toContain('if [ -f "tsconfig.json" ]');
-      expect(script).toContain("npx tsc --noEmit");
-      expect(script).toContain("Configure test/lint/build commands for full verification");
+      // New delegation behavior
+      expect(script).toContain("agent-foreman check");
+      expect(script).toContain("Running verification via agent-foreman");
+      expect(script).toContain("agent-foreman not found");
     });
 
     it("should include status function with jq conditional", () => {
@@ -247,8 +225,10 @@ describe("Init Script", () => {
       expect(script).toContain("dev");
       expect(script).toContain("Start development server");
       expect(script).toContain("check");
-      expect(script).toContain("--quick");
-      expect(script).toContain("Run all checks");
+      // New help text for check command
+      expect(script).toContain("Run verification (delegates to agent-foreman check)");
+      expect(script).toContain("--ai");
+      expect(script).toContain("--full");
       expect(script).toContain("build");
       expect(script).toContain("Build for production");
       expect(script).toContain("status");
@@ -277,9 +257,8 @@ describe("Init Script", () => {
       expect(minimalScript).toContain("# TODO:");
       expect(fullScript).not.toContain("# TODO:");
 
-      // Full script should have actual commands
+      // Full script should have actual install command
       expect(fullScript).toContain("npm install");
-      expect(fullScript).toContain("npm test");
     });
 
     it("should have same structure for both scripts", () => {
@@ -325,10 +304,10 @@ describe("Init Script", () => {
       const script = generateInitScriptFromCapabilities(baseCapabilities);
 
       expect(script).toContain("#!/usr/bin/env bash");
-      expect(script).toContain("pnpm test");
-      expect(script).toContain("pnpm lint");
+      // Build command is still used in the build() function
       expect(script).toContain("pnpm build");
-      expect(script).toContain("pnpm tsc --noEmit");
+      // Check function delegates to agent-foreman
+      expect(script).toContain("agent-foreman check");
     });
 
     it("should use fallback install command when not provided", () => {
@@ -404,31 +383,20 @@ describe("Init Script", () => {
       const script = generateInitScriptFromCapabilities(minimalCaps);
 
       expect(script).toContain("#!/usr/bin/env bash");
-      expect(script).toContain("No test command configured");
       expect(script).toContain("No build command configured");
+      // Check delegates to agent-foreman regardless of capabilities
+      expect(script).toContain("agent-foreman check");
     });
 
-    it("should include explicit typecheck command when provided", () => {
+    it("should delegate to agent-foreman check regardless of typecheck command", () => {
       const caps: ExtendedCapabilities = {
         ...baseCapabilities,
         typeCheckCommand: "mypy --strict src/",
       };
 
       const script = generateInitScriptFromCapabilities(caps);
-      expect(script).toContain("mypy --strict src/");
-      // Should NOT contain fallback tsconfig detection for typecheck
-      expect(script).not.toContain('if [ -f "tsconfig.json" ]');
-    });
-
-    it("should fallback to tsconfig detection when no typecheck command", () => {
-      const caps: ExtendedCapabilities = {
-        ...baseCapabilities,
-        typeCheckCommand: undefined,
-      };
-
-      const script = generateInitScriptFromCapabilities(caps);
-      expect(script).toContain('if [ -f "tsconfig.json" ]');
-      expect(script).toContain("npx tsc --noEmit");
+      // Check function delegates - doesn't run typecheck directly
+      expect(script).toContain("agent-foreman check");
     });
   });
 
@@ -441,19 +409,12 @@ describe("Init Script", () => {
       lint: "npm run lint",
     };
 
-    it("should include explicit typecheck command when provided", () => {
+    it("should delegate to agent-foreman check regardless of typecheck command", () => {
       const script = generateInitScriptWithTypeCheck(commands, "tsc --noEmit --strict");
 
-      expect(script).toContain("tsc --noEmit --strict");
-      // Should NOT contain fallback tsconfig detection
-      expect(script).not.toContain('if [ -f "tsconfig.json" ]');
-    });
-
-    it("should include tsconfig fallback when no typecheck command", () => {
-      const script = generateInitScriptWithTypeCheck(commands);
-
-      expect(script).toContain('if [ -f "tsconfig.json" ]');
-      expect(script).toContain("npx tsc --noEmit");
+      // Check function delegates to agent-foreman
+      expect(script).toContain("agent-foreman check");
+      expect(script).toContain("Running verification via agent-foreman");
     });
 
     it("should include all required functions", () => {
@@ -467,83 +428,12 @@ describe("Init Script", () => {
       expect(script).toContain("show_help()");
     });
 
-    it("should include quick mode handling", () => {
+    it("should include help with --ai and --full flags", () => {
       const script = generateInitScriptWithTypeCheck(commands);
 
-      expect(script).toContain("--quick");
-      expect(script).toContain("quick_mode=false");
-      expect(script).toContain("Quick mode: skipping type check, lint, and build");
-    });
-
-    it("should handle Python typecheck (mypy)", () => {
-      const pythonCommands: ProjectCommands = {
-        install: "pip install -r requirements.txt",
-        test: "pytest",
-      };
-
-      const script = generateInitScriptWithTypeCheck(pythonCommands, "mypy src/");
-
-      expect(script).toContain("mypy src/");
-      expect(script).toContain("Running type check...");
-    });
-
-    it("should include E2E test section when e2eCommands provided", () => {
-      const e2eCommands = {
-        command: "npx playwright test",
-        grepTemplate: "npx playwright test --grep {tags}",
-      };
-
-      const script = generateInitScriptWithTypeCheck(commands, undefined, e2eCommands);
-
-      // Should include E2E mode handling
-      expect(script).toContain("e2e_exit_code=0");
-      expect(script).toContain("skip_e2e=false");
-      expect(script).toContain("full_mode=false");
-      expect(script).toContain("e2e_tags=");
-      expect(script).toContain("E2E_TAGS:-");
-
-      // Should include E2E execution branches
-      expect(script).toContain('if [ "$skip_e2e" = true ]');
-      expect(script).toContain("E2E tests: skipped (--skip-e2e)");
-      expect(script).toContain('elif [ "$full_mode" = true ]');
-      expect(script).toContain("Running E2E tests (full)...");
-      expect(script).toContain('elif [ -n "$e2e_tags" ]');
-      expect(script).toContain("Running E2E tests (tags:");
-      expect(script).toContain("Running E2E tests (@smoke)...");
-
-      // Should include E2E commands
-      expect(script).toContain("npx playwright test");
-      expect(script).toContain("npx playwright test --grep");
-      expect(script).toContain("@smoke");
-    });
-
-    it("should not include E2E section when no e2eCommands", () => {
-      const script = generateInitScriptWithTypeCheck(commands);
-
-      // Should have placeholder comment
-      expect(script).toContain("# No E2E tests configured");
-      // Should NOT have E2E execution branches
-      expect(script).not.toContain('if [ "$skip_e2e" = true ]');
-      expect(script).not.toContain("Running E2E tests (full)...");
-    });
-
-    it("should include --full and --skip-e2e flags in help", () => {
-      const script = generateInitScriptWithTypeCheck(commands);
-
+      expect(script).toContain("--ai");
       expect(script).toContain("--full");
-      expect(script).toContain("--skip-e2e");
-      expect(script).toContain("E2E_TAGS");
-      expect(script).toContain("Run all tests including full E2E suite");
-      expect(script).toContain("Skip E2E tests entirely");
-    });
-
-    it("should parse --full and --skip-e2e arguments", () => {
-      const script = generateInitScriptWithTypeCheck(commands);
-
-      expect(script).toContain("--full)");
-      expect(script).toContain("full_mode=true");
-      expect(script).toContain("--skip-e2e)");
-      expect(script).toContain("skip_e2e=true");
+      expect(script).toContain("--verbose");
     });
   });
 
@@ -565,7 +455,7 @@ describe("Init Script", () => {
       detectedAt: new Date().toISOString(),
     };
 
-    it("should include E2E section when e2eInfo is available", () => {
+    it("should delegate to agent-foreman check regardless of e2eInfo", () => {
       const capsWithE2E: ExtendedCapabilities = {
         ...baseCapabilities,
         e2eInfo: {
@@ -578,13 +468,12 @@ describe("Init Script", () => {
 
       const script = generateInitScriptFromCapabilities(capsWithE2E);
 
-      expect(script).toContain("npx playwright test");
-      expect(script).toContain("Running E2E tests (full)...");
-      expect(script).toContain("Running E2E tests (@smoke)...");
-      expect(script).toContain('if [ "$skip_e2e" = true ]');
+      // Check function delegates to agent-foreman - doesn't run E2E directly
+      expect(script).toContain("agent-foreman check");
+      expect(script).toContain("Running verification via agent-foreman");
     });
 
-    it("should not include E2E section when e2eInfo is not available", () => {
+    it("should still delegate to agent-foreman even when e2eInfo is not available", () => {
       const capsWithoutE2E: ExtendedCapabilities = {
         ...baseCapabilities,
         e2eInfo: {
@@ -594,25 +483,8 @@ describe("Init Script", () => {
 
       const script = generateInitScriptFromCapabilities(capsWithoutE2E);
 
-      expect(script).toContain("# No E2E tests configured");
-      expect(script).not.toContain("Running E2E tests (full)...");
-    });
-
-    it("should use custom grep template for E2E filtering", () => {
-      const capsWithCustomGrep: ExtendedCapabilities = {
-        ...baseCapabilities,
-        e2eInfo: {
-          available: true,
-          framework: "playwright",
-          command: "pnpm exec playwright test",
-          grepTemplate: "pnpm exec playwright test -g {tags}",
-        },
-      };
-
-      const script = generateInitScriptFromCapabilities(capsWithCustomGrep);
-
-      expect(script).toContain("pnpm exec playwright test");
-      expect(script).toContain("pnpm exec playwright test -g");
+      // Check function still delegates
+      expect(script).toContain("agent-foreman check");
     });
   });
 });

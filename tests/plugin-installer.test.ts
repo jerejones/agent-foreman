@@ -1,479 +1,455 @@
 /**
  * Tests for plugin-installer module
- * Tests the automatic plugin installation functionality for compiled binaries
+ *
+ * Tests the new marketplace registry-based plugin installation system
  */
+
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
+import { tmpdir } from "node:os";
+import {
+  isCompiledBinary,
+  isMarketplaceRegistered,
+  isPluginInstalled,
+  isPluginEnabled,
+  getPluginInstallInfo,
+  fullInstall,
+  fullUninstall,
+  checkAndInstallPlugins,
+} from "../src/plugin-installer.js";
 
-// ============================================================================
-// Test Setup
-// ============================================================================
+describe("plugin-installer", () => {
+  let originalHome: string | undefined;
+  let tempHome: string;
 
-let tempDir: string;
-let originalHome: string | undefined;
-let originalCI: string | undefined;
-let originalNoPluginUpdate: string | undefined;
+  beforeEach(() => {
+    // Create a temporary home directory for testing
+    tempHome = fs.mkdtempSync(path.join(tmpdir(), "plugin-test-home-"));
+    originalHome = process.env.HOME;
+    process.env.HOME = tempHome;
 
-function createTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "plugin-installer-test-"));
-}
-
-function cleanup(dir: string): void {
-  try {
-    fs.rmSync(dir, { recursive: true, force: true });
-  } catch {
-    // Ignore cleanup errors
-  }
-}
-
-beforeEach(() => {
-  tempDir = createTempDir();
-  originalHome = process.env.HOME;
-  originalCI = process.env.CI;
-  originalNoPluginUpdate = process.env.NO_PLUGIN_UPDATE;
-
-  // Set CI to prevent interactive prompts
-  process.env.CI = "true";
-});
-
-afterEach(() => {
-  cleanup(tempDir);
-  if (originalHome !== undefined) {
-    process.env.HOME = originalHome;
-  }
-  if (originalCI !== undefined) {
-    process.env.CI = originalCI;
-  } else {
-    delete process.env.CI;
-  }
-  if (originalNoPluginUpdate !== undefined) {
-    process.env.NO_PLUGIN_UPDATE = originalNoPluginUpdate;
-  } else {
-    delete process.env.NO_PLUGIN_UPDATE;
-  }
-  vi.restoreAllMocks();
-});
-
-// ============================================================================
-// Module Import Tests
-// ============================================================================
-
-describe("plugin-installer module", () => {
-  it("should export checkAndInstallPlugins function", async () => {
-    const module = await import("../src/plugin-installer.js");
-    expect(typeof module.checkAndInstallPlugins).toBe("function");
+    // Ensure .claude directory structure exists
+    fs.mkdirSync(path.join(tempHome, ".claude", "plugins"), { recursive: true });
   });
 
-  it("should skip installation when not in compiled mode", async () => {
-    const { checkAndInstallPlugins } = await import("../src/plugin-installer.js");
-
-    // In development mode (no embedded plugins), should skip silently
-    await expect(checkAndInstallPlugins()).resolves.not.toThrow();
-  });
-});
-
-// ============================================================================
-// isCompiledBinary Tests (via behavior)
-// ============================================================================
-
-describe("compiled binary detection", () => {
-  it("should detect non-compiled mode when EMBEDDED_PLUGINS is empty", async () => {
-    const { checkAndInstallPlugins } = await import("../src/plugin-installer.js");
-
-    // In development mode, checkAndInstallPlugins should return early
-    // without any side effects
-    const consoleSpy = vi.spyOn(console, "log");
-    await checkAndInstallPlugins();
-
-    // Should not log anything in development mode (returns early)
-    expect(consoleSpy).not.toHaveBeenCalledWith(
-      expect.stringContaining("Installing plugins")
-    );
-  });
-});
-
-// ============================================================================
-// Version File Handling Tests (via exports)
-// ============================================================================
-
-describe("version file handling", () => {
-  it("should handle missing version file gracefully", async () => {
-    // The getInstalledVersion function is internal, but we can test
-    // the behavior through checkAndInstallPlugins
-    const { checkAndInstallPlugins } = await import("../src/plugin-installer.js");
-
-    // Should not throw when version file doesn't exist
-    await expect(checkAndInstallPlugins()).resolves.not.toThrow();
-  });
-});
-
-// ============================================================================
-// Plugin Installation Flow Tests
-// ============================================================================
-
-describe("plugin installation flow", () => {
-  it("should skip installation in CI environment", async () => {
-    process.env.CI = "true";
-
-    const { checkAndInstallPlugins } = await import("../src/plugin-installer.js");
-
-    // Should complete without prompting in CI
-    await expect(checkAndInstallPlugins()).resolves.not.toThrow();
+  afterEach(() => {
+    // Restore original HOME
+    if (originalHome) {
+      process.env.HOME = originalHome;
+    }
+    // Clean up temp directory
+    fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
-  it("should skip installation when NO_PLUGIN_UPDATE is set", async () => {
-    process.env.NO_PLUGIN_UPDATE = "true";
-
-    const { checkAndInstallPlugins } = await import("../src/plugin-installer.js");
-
-    // Should complete without prompting
-    await expect(checkAndInstallPlugins()).resolves.not.toThrow();
-  });
-});
-
-// ============================================================================
-// Error Handling Tests
-// ============================================================================
-
-describe("error handling", () => {
-  it("should handle installation errors gracefully", async () => {
-    const { checkAndInstallPlugins } = await import("../src/plugin-installer.js");
-
-    // Should not throw even if internal operations fail
-    await expect(checkAndInstallPlugins()).resolves.not.toThrow();
-  });
-});
-
-// ============================================================================
-// Integration Tests
-// ============================================================================
-
-describe("integration", () => {
-  it("should be safe to call multiple times", async () => {
-    const { checkAndInstallPlugins } = await import("../src/plugin-installer.js");
-
-    // Multiple calls should be idempotent
-    await checkAndInstallPlugins();
-    await checkAndInstallPlugins();
-    await checkAndInstallPlugins();
-
-    // Should not throw
-    expect(true).toBe(true);
+  describe("isCompiledBinary", () => {
+    it("should return false in development mode (no embedded plugins)", () => {
+      // In development mode, EMBEDDED_PLUGINS is empty
+      const result = isCompiledBinary();
+      expect(typeof result).toBe("boolean");
+      // In test environment, we expect false since no compiled bundle
+      expect(result).toBe(false);
+    });
   });
 
-  it("should work in non-TTY environment", async () => {
-    const { checkAndInstallPlugins } = await import("../src/plugin-installer.js");
+  describe("isMarketplaceRegistered", () => {
+    it("should return false when known_marketplaces.json doesn't exist", () => {
+      const result = isMarketplaceRegistered();
+      expect(result).toBe(false);
+    });
 
-    // Non-TTY should skip prompts
-    const originalIsTTY = process.stdin.isTTY;
-    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+    it("should return false when marketplace is not in registry", () => {
+      const knownMarketplacesPath = path.join(tempHome, ".claude", "plugins", "known_marketplaces.json");
+      fs.writeFileSync(knownMarketplacesPath, JSON.stringify({}));
 
-    await expect(checkAndInstallPlugins()).resolves.not.toThrow();
+      const result = isMarketplaceRegistered();
+      expect(result).toBe(false);
+    });
 
-    Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
-  });
-});
+    it("should return true when marketplace is registered", () => {
+      const knownMarketplacesPath = path.join(tempHome, ".claude", "plugins", "known_marketplaces.json");
+      fs.writeFileSync(knownMarketplacesPath, JSON.stringify({
+        "agent-foreman-plugins": {
+          source: { source: "directory", path: "/some/path" },
+          installLocation: "/some/path",
+          lastUpdated: new Date().toISOString()
+        }
+      }));
 
-// ============================================================================
-// Registry and Status Tests
-// Note: These tests use the actual user's .claude directory since the module
-// caches paths at load time. Tests focus on export verification and
-// non-destructive operations.
-// ============================================================================
+      const result = isMarketplaceRegistered();
+      expect(result).toBe(true);
+    });
 
-describe("plugin registry functions - export verification", () => {
-  it("isCompiledBinary should return a boolean", async () => {
-    const { isCompiledBinary } = await import("../src/plugin-installer.js");
-    // Returns true if plugins-bundle.generated.ts has embedded plugins
-    // Returns false in pure development mode
-    expect(typeof isCompiledBinary()).toBe("boolean");
-  });
+    it("should handle invalid JSON gracefully", () => {
+      const knownMarketplacesPath = path.join(tempHome, ".claude", "plugins", "known_marketplaces.json");
+      fs.writeFileSync(knownMarketplacesPath, "invalid json");
 
-  it("should export isMarketplaceRegistered function", async () => {
-    const { isMarketplaceRegistered } = await import("../src/plugin-installer.js");
-    expect(typeof isMarketplaceRegistered).toBe("function");
-    // Just verify it returns a boolean
-    expect(typeof isMarketplaceRegistered()).toBe("boolean");
-  });
-
-  it("should export isPluginInstalled function", async () => {
-    const { isPluginInstalled } = await import("../src/plugin-installer.js");
-    expect(typeof isPluginInstalled).toBe("function");
-    expect(typeof isPluginInstalled()).toBe("boolean");
+      const result = isMarketplaceRegistered();
+      expect(result).toBe(false);
+    });
   });
 
-  it("should export isPluginEnabled function", async () => {
-    const { isPluginEnabled } = await import("../src/plugin-installer.js");
-    expect(typeof isPluginEnabled).toBe("function");
-    expect(typeof isPluginEnabled()).toBe("boolean");
+  describe("isPluginInstalled", () => {
+    it("should return false when installed_plugins_v2.json doesn't exist", () => {
+      const result = isPluginInstalled();
+      expect(result).toBe(false);
+    });
+
+    it("should return false when plugin is not in registry", () => {
+      const installedPluginsPath = path.join(tempHome, ".claude", "plugins", "installed_plugins_v2.json");
+      fs.writeFileSync(installedPluginsPath, JSON.stringify({ version: 2, plugins: {} }));
+
+      const result = isPluginInstalled();
+      expect(result).toBe(false);
+    });
+
+    it("should return true when plugin is installed", () => {
+      const installedPluginsPath = path.join(tempHome, ".claude", "plugins", "installed_plugins_v2.json");
+      fs.writeFileSync(installedPluginsPath, JSON.stringify({
+        version: 2,
+        plugins: {
+          "agent-foreman@agent-foreman-plugins": [{
+            scope: "user",
+            installPath: "/some/path",
+            version: "1.0.0",
+            installedAt: new Date().toISOString(),
+            lastUpdated: new Date().toISOString(),
+            isLocal: true
+          }]
+        }
+      }));
+
+      const result = isPluginInstalled();
+      expect(result).toBe(true);
+    });
+
+    it("should return false when plugins array is empty", () => {
+      const installedPluginsPath = path.join(tempHome, ".claude", "plugins", "installed_plugins_v2.json");
+      fs.writeFileSync(installedPluginsPath, JSON.stringify({
+        version: 2,
+        plugins: {
+          "agent-foreman@agent-foreman-plugins": []
+        }
+      }));
+
+      const result = isPluginInstalled();
+      expect(result).toBe(false);
+    });
   });
 
-  it("getPluginInstallInfo should return correct structure", async () => {
-    const { getPluginInstallInfo } = await import("../src/plugin-installer.js");
-    const info = getPluginInstallInfo();
+  describe("isPluginEnabled", () => {
+    it("should return false when settings.json doesn't exist", () => {
+      const result = isPluginEnabled();
+      expect(result).toBe(false);
+    });
 
-    // Verify structure
-    expect(typeof info.isMarketplaceRegistered).toBe("boolean");
-    expect(typeof info.isPluginInstalled).toBe("boolean");
-    expect(typeof info.isPluginEnabled).toBe("boolean");
-    expect(info.installedVersion === null || typeof info.installedVersion === "string").toBe(true);
-    expect(info.marketplaceDir).toContain("agent-foreman-plugins");
-    expect(typeof info.bundledVersion).toBe("string");
-  });
-});
+    it("should return false when enabledPlugins is not set", () => {
+      const settingsPath = path.join(tempHome, ".claude", "settings.json");
+      fs.writeFileSync(settingsPath, JSON.stringify({}));
 
-// ============================================================================
-// Install and Uninstall Flow Tests
-// These tests verify the functions exist and can be called without throwing
-// ============================================================================
+      const result = isPluginEnabled();
+      expect(result).toBe(false);
+    });
 
-describe("install and uninstall flows - export verification", () => {
-  it("should export fullInstall function", async () => {
-    const { fullInstall } = await import("../src/plugin-installer.js");
-    expect(typeof fullInstall).toBe("function");
-  });
+    it("should return false when plugin is not enabled", () => {
+      const settingsPath = path.join(tempHome, ".claude", "settings.json");
+      fs.writeFileSync(settingsPath, JSON.stringify({
+        enabledPlugins: {
+          "other-plugin@other-marketplace": true
+        }
+      }));
 
-  it("should export fullUninstall function", async () => {
-    const { fullUninstall } = await import("../src/plugin-installer.js");
-    expect(typeof fullUninstall).toBe("function");
-  });
+      const result = isPluginEnabled();
+      expect(result).toBe(false);
+    });
 
-  it("fullUninstall should handle missing files gracefully", async () => {
-    const { fullUninstall } = await import("../src/plugin-installer.js");
-    // Should not throw even when files don't exist in a fresh environment
-    // Note: Since module caches paths, this uses real HOME directory
-    expect(() => fullUninstall()).not.toThrow();
-  });
-});
+    it("should return true when plugin is enabled", () => {
+      const settingsPath = path.join(tempHome, ".claude", "settings.json");
+      fs.writeFileSync(settingsPath, JSON.stringify({
+        enabledPlugins: {
+          "agent-foreman@agent-foreman-plugins": true
+        }
+      }));
 
-// ============================================================================
-// Full Install Integration Tests
-// These tests call fullInstall() to exercise internal functions
-// ============================================================================
+      const result = isPluginEnabled();
+      expect(result).toBe(true);
+    });
 
-describe("fullInstall integration", () => {
-  it("should execute fullInstall without throwing", async () => {
-    const { fullInstall, fullUninstall, getPluginInstallInfo } = await import("../src/plugin-installer.js");
+    it("should return false when plugin is explicitly disabled", () => {
+      const settingsPath = path.join(tempHome, ".claude", "settings.json");
+      fs.writeFileSync(settingsPath, JSON.stringify({
+        enabledPlugins: {
+          "agent-foreman@agent-foreman-plugins": false
+        }
+      }));
 
-    // Record initial state
-    const beforeInfo = getPluginInstallInfo();
-
-    // Execute fullInstall - this exercises all internal functions:
-    // installMarketplaceFiles, registerMarketplace, installPlugin, enablePlugin
-    expect(() => fullInstall()).not.toThrow();
-
-    // Verify installation occurred
-    const afterInfo = getPluginInstallInfo();
-    expect(afterInfo.isMarketplaceRegistered).toBe(true);
-    expect(afterInfo.isPluginInstalled).toBe(true);
-    expect(afterInfo.isPluginEnabled).toBe(true);
-
-    // Cleanup: uninstall to restore state
-    expect(() => fullUninstall()).not.toThrow();
+      const result = isPluginEnabled();
+      expect(result).toBe(false);
+    });
   });
 
-  it("should be idempotent - calling fullInstall twice should not throw", async () => {
-    const { fullInstall, fullUninstall } = await import("../src/plugin-installer.js");
+  describe("getPluginInstallInfo", () => {
+    it("should return correct info when nothing is installed", () => {
+      const info = getPluginInstallInfo();
 
-    // First install
-    expect(() => fullInstall()).not.toThrow();
+      expect(info.isMarketplaceRegistered).toBe(false);
+      expect(info.isPluginInstalled).toBe(false);
+      expect(info.isPluginEnabled).toBe(false);
+      expect(info.installedVersion).toBeNull();
+      expect(info.bundledVersion).toBeDefined();
+      expect(info.marketplaceDir).toContain("agent-foreman-plugins");
+    });
 
-    // Second install (should overwrite/update, not fail)
-    expect(() => fullInstall()).not.toThrow();
+    it("should return correct version when plugin is installed", () => {
+      const installedPluginsPath = path.join(tempHome, ".claude", "plugins", "installed_plugins_v2.json");
+      fs.writeFileSync(installedPluginsPath, JSON.stringify({
+        version: 2,
+        plugins: {
+          "agent-foreman@agent-foreman-plugins": [{
+            scope: "user",
+            installPath: "/some/path",
+            version: "1.2.3",
+            installedAt: new Date().toISOString(),
+            lastUpdated: new Date().toISOString(),
+            isLocal: true
+          }]
+        }
+      }));
 
-    // Cleanup
-    expect(() => fullUninstall()).not.toThrow();
+      const info = getPluginInstallInfo();
+      expect(info.isPluginInstalled).toBe(true);
+      expect(info.installedVersion).toBe("1.2.3");
+    });
+
+    it("should return combined status correctly", () => {
+      // Set up all three: marketplace, plugin, and enabled
+      const knownMarketplacesPath = path.join(tempHome, ".claude", "plugins", "known_marketplaces.json");
+      fs.writeFileSync(knownMarketplacesPath, JSON.stringify({
+        "agent-foreman-plugins": {
+          source: { source: "directory", path: "/some/path" },
+          installLocation: "/some/path",
+          lastUpdated: new Date().toISOString()
+        }
+      }));
+
+      const installedPluginsPath = path.join(tempHome, ".claude", "plugins", "installed_plugins_v2.json");
+      fs.writeFileSync(installedPluginsPath, JSON.stringify({
+        version: 2,
+        plugins: {
+          "agent-foreman@agent-foreman-plugins": [{
+            scope: "user",
+            installPath: "/some/path",
+            version: "1.0.0",
+            installedAt: new Date().toISOString(),
+            lastUpdated: new Date().toISOString(),
+            isLocal: true
+          }]
+        }
+      }));
+
+      const settingsPath = path.join(tempHome, ".claude", "settings.json");
+      fs.writeFileSync(settingsPath, JSON.stringify({
+        enabledPlugins: {
+          "agent-foreman@agent-foreman-plugins": true
+        }
+      }));
+
+      const info = getPluginInstallInfo();
+      expect(info.isMarketplaceRegistered).toBe(true);
+      expect(info.isPluginInstalled).toBe(true);
+      expect(info.isPluginEnabled).toBe(true);
+    });
   });
 
-  it("fullUninstall should clean up all installed files", async () => {
-    const { fullInstall, fullUninstall, isPluginInstalled, isPluginEnabled } = await import("../src/plugin-installer.js");
+  describe("fullInstall", () => {
+    it("should create marketplace directory structure", () => {
+      // In development mode (no embedded plugins), fullInstall should still work
+      // but won't have embedded files to write
+      fullInstall();
 
-    // Install first
-    fullInstall();
+      // Check that marketplace directory was created
+      const marketplaceDir = path.join(tempHome, ".claude", "plugins", "marketplaces", "agent-foreman-plugins");
+      expect(fs.existsSync(marketplaceDir)).toBe(true);
 
-    // Verify installed
-    expect(isPluginInstalled()).toBeTruthy();
+      // Check that marketplace.json was created
+      const marketplaceJsonPath = path.join(marketplaceDir, ".claude-plugin", "marketplace.json");
+      expect(fs.existsSync(marketplaceJsonPath)).toBe(true);
+    });
 
-    // Uninstall
-    fullUninstall();
+    it("should register marketplace in known_marketplaces.json", () => {
+      fullInstall();
 
-    // Verify uninstalled - after uninstall, plugin should not be installed/enabled
-    expect(isPluginInstalled()).toBeFalsy();
-    expect(isPluginEnabled()).toBeFalsy();
-  });
-});
+      const knownMarketplacesPath = path.join(tempHome, ".claude", "plugins", "known_marketplaces.json");
+      expect(fs.existsSync(knownMarketplacesPath)).toBe(true);
 
-// ============================================================================
-// checkAndInstallPlugins Compiled Binary Simulation
-// ============================================================================
+      const marketplaces = JSON.parse(fs.readFileSync(knownMarketplacesPath, "utf-8"));
+      expect(marketplaces["agent-foreman-plugins"]).toBeDefined();
+      expect(marketplaces["agent-foreman-plugins"].source.source).toBe("directory");
+    });
 
-describe("checkAndInstallPlugins with compiled binary simulation", () => {
-  it("should skip when marketplace already registered", async () => {
-    const {
-      fullInstall,
-      fullUninstall,
-      checkAndInstallPlugins,
-      isMarketplaceRegistered
-    } = await import("../src/plugin-installer.js");
+    it("should register plugin in installed_plugins_v2.json", () => {
+      fullInstall();
 
-    // Pre-install to register marketplace
-    fullInstall();
-    expect(isMarketplaceRegistered()).toBe(true);
+      const installedPluginsPath = path.join(tempHome, ".claude", "plugins", "installed_plugins_v2.json");
+      expect(fs.existsSync(installedPluginsPath)).toBe(true);
 
-    // checkAndInstallPlugins should return early (not reinstall)
-    const consoleSpy = vi.spyOn(console, "log");
-    await checkAndInstallPlugins();
+      const registry = JSON.parse(fs.readFileSync(installedPluginsPath, "utf-8"));
+      expect(registry.version).toBe(2);
+      expect(registry.plugins["agent-foreman@agent-foreman-plugins"]).toBeDefined();
+      expect(registry.plugins["agent-foreman@agent-foreman-plugins"].length).toBeGreaterThan(0);
+    });
 
-    // Should not have logged installation message (since marketplace exists)
-    // Note: In dev mode isCompiledBinary() returns false, so it returns early anyway
-    expect(consoleSpy).not.toHaveBeenCalledWith(
-      expect.stringContaining("Plugin installed")
-    );
+    it("should enable plugin in settings.json", () => {
+      fullInstall();
 
-    // Cleanup
-    fullUninstall();
-    consoleSpy.mockRestore();
-  });
-});
+      const settingsPath = path.join(tempHome, ".claude", "settings.json");
+      expect(fs.existsSync(settingsPath)).toBe(true);
 
-// ============================================================================
-// Registry File Corruption Handling
-// ============================================================================
+      const settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+      expect(settings.enabledPlugins["agent-foreman@agent-foreman-plugins"]).toBe(true);
+    });
 
-describe("registry function return types", () => {
-  it("isMarketplaceRegistered should return falsy when not registered", async () => {
-    const { isMarketplaceRegistered, fullUninstall } = await import("../src/plugin-installer.js");
+    it("should preserve existing settings", () => {
+      // Create existing settings
+      const settingsPath = path.join(tempHome, ".claude", "settings.json");
+      fs.writeFileSync(settingsPath, JSON.stringify({
+        someOtherSetting: "value",
+        enabledPlugins: {
+          "other-plugin": true
+        }
+      }));
 
-    // Ensure clean state
-    fullUninstall();
+      fullInstall();
 
-    // Should return falsy when not registered
-    expect(isMarketplaceRegistered()).toBeFalsy();
-  });
-
-  it("isPluginInstalled should return falsy when not installed", async () => {
-    const { isPluginInstalled, fullUninstall } = await import("../src/plugin-installer.js");
-
-    // Ensure clean state
-    fullUninstall();
-
-    expect(isPluginInstalled()).toBeFalsy();
+      const settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+      expect(settings.someOtherSetting).toBe("value");
+      expect(settings.enabledPlugins["other-plugin"]).toBe(true);
+      expect(settings.enabledPlugins["agent-foreman@agent-foreman-plugins"]).toBe(true);
+    });
   });
 
-  it("isPluginEnabled should return falsy when not enabled", async () => {
-    const { isPluginEnabled, fullUninstall } = await import("../src/plugin-installer.js");
+  describe("fullUninstall", () => {
+    beforeEach(() => {
+      // First install the plugin
+      fullInstall();
+    });
 
-    // Ensure clean state
-    fullUninstall();
+    it("should remove plugin from settings.json", () => {
+      fullUninstall();
 
-    expect(isPluginEnabled()).toBeFalsy();
+      const settingsPath = path.join(tempHome, ".claude", "settings.json");
+      const settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+      expect(settings.enabledPlugins["agent-foreman@agent-foreman-plugins"]).toBeUndefined();
+    });
+
+    it("should remove plugin from installed_plugins_v2.json", () => {
+      fullUninstall();
+
+      const installedPluginsPath = path.join(tempHome, ".claude", "plugins", "installed_plugins_v2.json");
+      const registry = JSON.parse(fs.readFileSync(installedPluginsPath, "utf-8"));
+      expect(registry.plugins["agent-foreman@agent-foreman-plugins"]).toBeUndefined();
+    });
+
+    it("should remove marketplace from known_marketplaces.json", () => {
+      fullUninstall();
+
+      const knownMarketplacesPath = path.join(tempHome, ".claude", "plugins", "known_marketplaces.json");
+      const marketplaces = JSON.parse(fs.readFileSync(knownMarketplacesPath, "utf-8"));
+      expect(marketplaces["agent-foreman-plugins"]).toBeUndefined();
+    });
+
+    it("should remove marketplace directory", () => {
+      fullUninstall();
+
+      const marketplaceDir = path.join(tempHome, ".claude", "plugins", "marketplaces", "agent-foreman-plugins");
+      expect(fs.existsSync(marketplaceDir)).toBe(false);
+    });
+
+    it("should remove cache directory", () => {
+      fullUninstall();
+
+      const cacheDir = path.join(tempHome, ".claude", "plugins", "cache", "agent-foreman-plugins");
+      expect(fs.existsSync(cacheDir)).toBe(false);
+    });
+
+    it("should preserve other plugins settings", () => {
+      // Add another plugin setting before uninstall
+      const settingsPath = path.join(tempHome, ".claude", "settings.json");
+      const settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+      settings.enabledPlugins["other-plugin"] = true;
+      fs.writeFileSync(settingsPath, JSON.stringify(settings));
+
+      fullUninstall();
+
+      const updatedSettings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+      expect(updatedSettings.enabledPlugins["other-plugin"]).toBe(true);
+    });
+
+    it("should handle uninstall when nothing is installed", () => {
+      // Uninstall once
+      fullUninstall();
+
+      // Uninstall again - should not throw
+      expect(() => fullUninstall()).not.toThrow();
+    });
   });
 
-  it("getPluginInstallInfo should return structure with falsy values after uninstall", async () => {
-    const { getPluginInstallInfo, fullUninstall } = await import("../src/plugin-installer.js");
+  describe("checkAndInstallPlugins", () => {
+    it("should skip if not in compiled mode", async () => {
+      // In development mode, checkAndInstallPlugins should skip
+      await checkAndInstallPlugins();
 
-    // Ensure clean state
-    fullUninstall();
+      // Since we're not in compiled mode, nothing should be installed automatically
+      expect(isMarketplaceRegistered()).toBe(false);
+    });
 
-    const info = getPluginInstallInfo();
-    expect(info.isMarketplaceRegistered).toBeFalsy();
-    expect(info.isPluginInstalled).toBeFalsy();
-    expect(info.isPluginEnabled).toBeFalsy();
-    expect(info.installedVersion).toBeNull();
-  });
-});
+    it("should skip if marketplace is already registered", async () => {
+      // First, manually register the marketplace
+      const knownMarketplacesPath = path.join(tempHome, ".claude", "plugins", "known_marketplaces.json");
+      fs.writeFileSync(knownMarketplacesPath, JSON.stringify({
+        "agent-foreman-plugins": {
+          source: { source: "directory", path: "/some/path" },
+          installLocation: "/some/path",
+          lastUpdated: new Date().toISOString()
+        }
+      }));
 
-// ============================================================================
-// checkAndInstallPlugins update and first-run paths (coverage for lines 497-524)
-// ============================================================================
+      // Spy on console to check if installation message is printed
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-describe("checkAndInstallPlugins update and first-run flows", () => {
-  it("should handle plugin update when marketplace already registered", async () => {
-    const module = await import("../src/plugin-installer.js");
-    const { fullInstall, fullUninstall, checkAndInstallPlugins, getPluginInstallInfo } = module;
+      await checkAndInstallPlugins();
 
-    // Install first to register marketplace
-    fullInstall();
+      // Should not print installation message since marketplace is already registered
+      expect(consoleSpy).not.toHaveBeenCalledWith(expect.stringContaining("Registering"));
 
-    // Spy on console to capture output
-    const consoleSpy = vi.spyOn(console, "log");
-
-    // checkAndInstallPlugins should detect marketplace is registered and check for updates
-    await checkAndInstallPlugins();
-
-    // Cleanup
-    fullUninstall();
-    consoleSpy.mockRestore();
+      consoleSpy.mockRestore();
+    });
   });
 
-  it("should handle version comparison when installed version exists", async () => {
-    const {
-      fullInstall,
-      fullUninstall,
-      checkAndInstallPlugins,
-      getPluginInstallInfo
-    } = await import("../src/plugin-installer.js");
+  describe("install/uninstall cycle", () => {
+    it("should properly cycle through install and uninstall", () => {
+      // Initial state - nothing installed
+      expect(getPluginInstallInfo().isMarketplaceRegistered).toBe(false);
+      expect(getPluginInstallInfo().isPluginInstalled).toBe(false);
+      expect(getPluginInstallInfo().isPluginEnabled).toBe(false);
 
-    // Pre-install to create version file
-    fullInstall();
+      // Install
+      fullInstall();
+      expect(getPluginInstallInfo().isMarketplaceRegistered).toBe(true);
+      expect(getPluginInstallInfo().isPluginInstalled).toBe(true);
+      expect(getPluginInstallInfo().isPluginEnabled).toBe(true);
 
-    const info = getPluginInstallInfo();
-    expect(info.installedVersion).not.toBeNull();
-    expect(info.bundledVersion).toBeDefined();
+      // Uninstall
+      fullUninstall();
+      expect(getPluginInstallInfo().isMarketplaceRegistered).toBe(false);
+      expect(getPluginInstallInfo().isPluginInstalled).toBe(false);
+      expect(getPluginInstallInfo().isPluginEnabled).toBe(false);
 
-    // Now checkAndInstallPlugins will compare versions
-    const consoleSpy = vi.spyOn(console, "log");
-    await checkAndInstallPlugins();
-
-    // Should not reinstall since versions match
-    expect(consoleSpy).not.toHaveBeenCalledWith(
-      expect.stringContaining("Registering agent-foreman plugin")
-    );
-
-    // Cleanup
-    fullUninstall();
-    consoleSpy.mockRestore();
-  });
-
-  it("should use bundledVersion for comparison", async () => {
-    const { getPluginInstallInfo, fullInstall, fullUninstall } = await import("../src/plugin-installer.js");
-
-    fullInstall();
-    const info = getPluginInstallInfo();
-
-    // bundledVersion should be the current package version
-    expect(info.bundledVersion).toMatch(/^\d+\.\d+\.\d+/);
-
-    fullUninstall();
-  });
-});
-
-// ============================================================================
-// compareVersions Tests (coverage for version comparison logic)
-// ============================================================================
-
-describe("version comparison behavior in checkAndInstallPlugins", () => {
-  it("should not update when installed version matches bundled", async () => {
-    const { fullInstall, fullUninstall, checkAndInstallPlugins, getPluginInstallInfo } = await import("../src/plugin-installer.js");
-
-    // Install to sync versions
-    fullInstall();
-
-    const info = getPluginInstallInfo();
-    // After fullInstall, installedVersion should match bundledVersion
-    expect(info.installedVersion).toBe(info.bundledVersion);
-
-    const consoleSpy = vi.spyOn(console, "log");
-    await checkAndInstallPlugins();
-
-    // Should not have logged update message since versions match
-    expect(consoleSpy).not.toHaveBeenCalledWith(
-      expect.stringContaining("Updating agent-foreman plugin")
-    );
-
-    fullUninstall();
-    consoleSpy.mockRestore();
+      // Reinstall
+      fullInstall();
+      expect(getPluginInstallInfo().isMarketplaceRegistered).toBe(true);
+      expect(getPluginInstallInfo().isPluginInstalled).toBe(true);
+      expect(getPluginInstallInfo().isPluginEnabled).toBe(true);
+    });
   });
 });

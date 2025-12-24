@@ -1,21 +1,21 @@
 /**
- * Done command - Verify and mark a feature as complete
+ * 'done' command implementation
+ * Verify and mark a task/feature as complete
  */
-
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
 import chalk from "chalk";
 
 import {
   loadFeatureList,
-  saveFeatureList,
-  findFeatureById,
   selectNextFeature,
-  updateFeatureStatus,
-  updateFeatureVerification,
+  findFeatureById,
+  buildAndSaveIndex,
+  updateFeatureStatusQuick,
+  updateFeatureVerificationQuick,
   getFeatureStats,
   getCompletionPercentage,
-} from "../feature-list.js";
+  isBreakdownTask,
+} from "../features/index.js";
+import { loadFeatureIndex } from "../storage/index.js";
 import {
   appendProgressLog,
   createStepEntry,
@@ -26,34 +26,18 @@ import {
   verifyFeatureAutonomous,
   createVerificationSummary,
   formatVerificationResult,
-  type VerificationResult,
 } from "../verifier/index.js";
-import { isGitRepo, gitAdd, gitCommit } from "../git-utils.js";
 import { verifyTestFilesExist, discoverFeatureTestFiles, verifyTDDGate } from "../test-gate.js";
+import { isGitRepo, gitAdd, gitCommit } from "../git-utils.js";
+import { promptConfirmation } from "./utils.js";
+import {
+  regenerateSurvey,
+  displayTestFileHeader,
+  displayVerificationHeader,
+  displayCommitSuggestion,
+} from "./done-helpers.js";
 import { runFail } from "./fail.js";
-import { aiScanProject, aiResultToSurvey, generateAISurveyMarkdown } from "../ai-scanner.js";
-import { scanDirectoryStructure } from "../project-scanner.js";
-import { promptConfirmation } from "./helpers.js";
-import type { FeatureStatus } from "../types.js";
-
-/**
- * Map verification verdict to feature status
- * - "pass" → "passing" (feature works as expected)
- * - "needs_review" → "needs_review" (requires human review)
- * - "fail" → "failed" (verification failed)
- */
-function mapVerdictToStatus(verdict: string): FeatureStatus {
-  switch (verdict) {
-    case "pass":
-      return "passing";
-    case "needs_review":
-      return "needs_review";
-    case "fail":
-      return "failed";
-    default:
-      return "passing";
-  }
-}
+import { verifyBreakdownCompletion, displayBreakdownResult } from "./done-breakdown.js";
 
 /**
  * Run the done command
@@ -87,20 +71,107 @@ export async function runDone(
 
   const featureList = await loadFeatureList(cwd);
   if (!featureList) {
-    console.log(chalk.red("✗ No feature list found."));
+    console.log(chalk.red("✗ No task list found."));
     process.exit(1);
   }
 
   const feature = findFeatureById(featureList.features, featureId);
   if (!feature) {
-    console.log(chalk.red(`✗ Feature '${featureId}' not found.`));
+    console.log(chalk.red(`✗ Task '${featureId}' not found.`));
     process.exit(1);
   }
 
   // ─────────────────────────────────────────────────────────────────
-  // Strict TDD Mode: Adjust skipCheck behavior
+  // BREAKDOWN Task Completion Mode
   // ─────────────────────────────────────────────────────────────────
-  const isStrictMode = featureList.metadata.tddMode === "strict";
+  if (isBreakdownTask(featureId)) {
+    const breakdownResult = await verifyBreakdownCompletion(cwd, feature, featureList);
+    displayBreakdownResult(breakdownResult);
+
+    if (!breakdownResult.passed) {
+      console.log(chalk.red("\n   ✗ BREAKDOWN verification failed."));
+      console.log(chalk.yellow("   Fix the issues above and run the command again."));
+      process.exit(1);
+    }
+
+    // Update status to passing
+    await updateFeatureStatusQuick(cwd, featureId, "passing", notes || feature.notes);
+    // Sync in-memory state for accurate loop mode counting
+    feature.status = "passing";
+    await appendProgressLog(cwd, createStepEntry(featureId, "passing", "breakdown-complete", `Completed breakdown: ${featureId}`));
+    console.log(chalk.green(`\n✓ BREAKDOWN '${featureId}' completed successfully!`));
+
+    // Handle git commit for BREAKDOWN tasks
+    await handleCommit(cwd, feature, autoCommit);
+
+    // Suggest next action with loop mode instruction
+    const pendingBreakdowns = featureList.features.filter(f =>
+      isBreakdownTask(f.id) && f.status === "failing"
+    );
+    const pendingTasks = featureList.features.filter(f =>
+      !isBreakdownTask(f.id) && (f.status === "failing" || f.status === "needs_review")
+    );
+
+    if (pendingBreakdowns.length > 0) {
+      // More BREAKDOWN tasks to process
+      const totalBreakdowns = featureList.features.filter(f => isBreakdownTask(f.id)).length;
+      const completedBreakdowns = featureList.features.filter(f => isBreakdownTask(f.id) && f.status === "passing").length;
+
+      console.log(chalk.bold.cyan("\n══════════════════════════════════════════════════════════════"));
+      console.log(chalk.bold.cyan("                   BREAKDOWN LOOP MODE ACTIVE"));
+      console.log(chalk.bold.cyan("══════════════════════════════════════════════════════════════\n"));
+
+      console.log(chalk.white(`   Completed: ${featureId} (${completedBreakdowns}/${totalBreakdowns} breakdowns)`));
+      console.log(chalk.white(`   Next up: ${pendingBreakdowns[0].id}`));
+      console.log(chalk.white(`   Remaining: ${pendingBreakdowns.length} breakdown(s)`));
+
+      console.log(chalk.bold.red("\n   ⛔ NO QUESTIONS ALLOWED"));
+      console.log(chalk.white("   - NEVER ask: \"Should I...\", \"Do you want...\", \"Which approach...\""));
+      console.log(chalk.white("   - ALWAYS make autonomous decisions and proceed"));
+      console.log(chalk.white("   - On ANY error: mark as failed, continue to next"));
+
+      console.log(chalk.bold.yellow("\n   LOOP INSTRUCTION:"));
+      console.log(chalk.gray("   1. agent-foreman next"));
+      console.log(chalk.gray("   2. Create implementation tasks"));
+      console.log(chalk.gray("   3. agent-foreman check <task_id>"));
+      console.log(chalk.gray("   4. agent-foreman done <task_id>"));
+      console.log(chalk.gray("   5. REPEAT until all BREAKDOWNs processed"));
+
+      console.log(chalk.bold.green("\n   ➤ Do NOT stop. Do NOT ask questions. Continue NOW."));
+      console.log(chalk.bold.cyan("══════════════════════════════════════════════════════════════\n"));
+    } else {
+      // All breakdowns done - VALIDATION LOOP MODE
+      const totalBreakdowns = featureList.features.filter(f => isBreakdownTask(f.id)).length;
+
+      console.log(chalk.bold.cyan("\n══════════════════════════════════════════════════════════════"));
+      console.log(chalk.bold.cyan("                   VALIDATION PHASE REQUIRED"));
+      console.log(chalk.bold.cyan("══════════════════════════════════════════════════════════════\n"));
+
+      console.log(chalk.white(`   All ${totalBreakdowns} BREAKDOWN tasks completed`));
+      console.log(chalk.white(`   ${pendingTasks.length} implementation task(s) created`));
+
+      console.log(chalk.bold.red("\n   ⛔ NO QUESTIONS ALLOWED"));
+      console.log(chalk.white("   - NEVER ask: \"Should I...\", \"Do you want...\", \"Which approach...\""));
+      console.log(chalk.white("   - ALWAYS make autonomous decisions and proceed"));
+      console.log(chalk.white("   - On ANY error: report and continue"));
+
+      console.log(chalk.bold.yellow("\n   VALIDATION INSTRUCTION:"));
+      console.log(chalk.gray("   1. agent-foreman validate"));
+      console.log(chalk.gray("   2. Review any critical issues"));
+      console.log(chalk.gray("   3. If passed: agent-foreman next (start implementation)"));
+      console.log(chalk.gray("   4. If failed: fix issues, re-run validate"));
+
+      console.log(chalk.bold.green("\n   ➤ Run validation NOW. Do NOT stop. Do NOT ask questions."));
+      console.log(chalk.bold.cyan("══════════════════════════════════════════════════════════════\n"));
+    }
+
+    return;
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Strict TDD Mode: Check configuration (silent - no output for AI agents)
+  // ─────────────────────────────────────────────────────────────────
+  const isStrictMode = featureList.metadata?.tddMode === "strict";
   const hasRequiredTests =
     feature.testRequirements?.unit?.required ||
     feature.testRequirements?.e2e?.required;
@@ -162,7 +233,7 @@ export async function runDone(
       console.log(chalk.gray("   1. Create test file(s) matching the pattern(s) above"));
       console.log(chalk.gray("   2. Write failing tests for acceptance criteria"));
       console.log(chalk.gray("   3. Implement the feature to make tests pass"));
-      console.log(chalk.gray(`   4. Run 'agent-foreman check ${featureId}' again`));
+      console.log(chalk.gray(`   4. Run 'agent-foreman done ${featureId}' again`));
 
       console.log(
         chalk.cyan(`\n   Run 'agent-foreman next ${featureId}' for TDD guidance\n`)
@@ -181,230 +252,86 @@ export async function runDone(
       );
     }
     console.log("");
-  }
-
-  // ─────────────────────────────────────────────────────────────────
-  // Legacy Test File Gate (for non-strict mode with testRequirements)
-  // ─────────────────────────────────────────────────────────────────
-  if (feature.testRequirements && !isStrictMode && !hasRequiredTests) {
-    console.log(chalk.bold.blue("\n═══════════════════════════════════════════════════════════════"));
-    console.log(chalk.bold.blue("                    TEST FILE VERIFICATION"));
-    console.log(chalk.bold.blue("═══════════════════════════════════════════════════════════════\n"));
-
+  } else if (feature.testRequirements) {
+    // Legacy test file gate for non-strict mode
+    displayTestFileHeader();
     const gateResult = await verifyTestFilesExist(cwd, feature);
 
     if (!gateResult.passed) {
-      console.log(chalk.red("   ✗ Required test files are missing:"));
-
-      if (gateResult.missingUnitTests.length > 0) {
-        console.log(chalk.yellow("\n   Missing Unit Tests:"));
-        gateResult.missingUnitTests.forEach((pattern) => {
-          console.log(chalk.white(`     • ${pattern}`));
-        });
-      }
-
-      if (gateResult.missingE2ETests.length > 0) {
-        console.log(chalk.yellow("\n   Missing E2E Tests:"));
-        gateResult.missingE2ETests.forEach((pattern) => {
-          console.log(chalk.white(`     • ${pattern}`));
-        });
-      }
-
-      if (gateResult.errors.length > 0) {
-        console.log(chalk.red("\n   Errors:"));
-        gateResult.errors.forEach((error) => {
-          console.log(chalk.red(`     • ${error}`));
-        });
-      }
-
-      console.log(chalk.cyan("\n   Create the required tests before completing this feature."));
-      console.log(chalk.gray("   See TDD guidance from 'agent-foreman next' for test file suggestions."));
+      displayMissingTests(gateResult);
       process.exit(1);
     }
 
     console.log(chalk.green("   ✓ All required test files exist"));
     if (gateResult.foundTestFiles.length > 0) {
-      console.log(chalk.gray(`   Found: ${gateResult.foundTestFiles.slice(0, 3).join(", ")}${gateResult.foundTestFiles.length > 3 ? ` and ${gateResult.foundTestFiles.length - 3} more` : ""}`));
+      const preview = gateResult.foundTestFiles.slice(0, 3).join(", ");
+      const more = gateResult.foundTestFiles.length > 3
+        ? ` and ${gateResult.foundTestFiles.length - 3} more`
+        : "";
+      console.log(chalk.gray(`   Found: ${preview}${more}`));
     }
     console.log("");
   }
 
-  // Step 1: Run verification (unless skipped)
-  let result: VerificationResult | undefined;
-
+  // Run verification
+  let finalVerdict: "pass" | "fail" | "needs_review" = "pass";
   if (skipCheck) {
-    // Silent skip - no output needed for AI agents
-  } else {
-    console.log(chalk.bold.blue("\n═══════════════════════════════════════════════════════════════"));
-    console.log(chalk.bold.blue("                    FEATURE VERIFICATION"));
-    console.log(chalk.bold.blue("═══════════════════════════════════════════════════════════════\n"));
-
-    console.log(chalk.bold(`📋 Task: ${chalk.cyan(feature.id)}`));
-    console.log(chalk.gray(`   Module: ${feature.module} | Priority: ${feature.priority}`));
-    if (ai) {
-      console.log(chalk.cyan(`   Mode: AI autonomous exploration`));
-    }
-    if (testMode === "quick") {
-      console.log(chalk.cyan(`   Test mode: Quick (selective tests)`));
-    }
-    console.log("");
-    console.log(chalk.bold("📝 Acceptance Criteria:"));
-    feature.acceptance.forEach((a, i) => {
-      console.log(chalk.white(`   ${i + 1}. ${a}`));
-    });
-
-    // Derive skipE2E from feature.e2eTags: undefined or empty array means skip
-    const featureSkipsE2E = !feature.e2eTags || feature.e2eTags.length === 0;
-    const effectiveSkipE2E = skipE2E || featureSkipsE2E;
-
-    // Run verification (choose mode based on --ai flag)
-    const verifyOptions = {
-      verbose,
-      skipChecks: false,
-      testMode,
-      testPattern,
-      skipE2E: effectiveSkipE2E,
-      e2eTags: feature.e2eTags,
-      e2eMode,
-    };
-    result = ai
-      ? await verifyFeatureAutonomous(cwd, feature, verifyOptions)
-      : await verifyFeature(cwd, feature, verifyOptions);
-
-    // Display result
-    console.log(formatVerificationResult(result, verbose));
-
-    // Update feature with verification summary
-    const summary = createVerificationSummary(result);
-    featureList.features = updateFeatureVerification(
-      featureList.features,
-      featureId,
-      summary
-    );
-
-    // Save verification summary to feature list
-    await saveFeatureList(cwd, featureList);
-
-    // Log verification to progress
-    await appendProgressLog(
-      cwd,
-      createVerifyEntry(
-        featureId,
-        result.verdict,
-        `Verified ${featureId}: ${result.verdict}`
-      )
-    );
-
-    console.log(chalk.gray(`\n   Results saved to ai/verification/results.json`));
-
-    // Handle verdict
-    if (result.verdict === "fail") {
-      console.log(chalk.red("\n   ✗ Verification failed. Feature NOT marked as complete."));
-
-      // In loop mode: auto-fail and continue to next task
-      if (loopMode) {
-        console.log(chalk.yellow("\n   Auto-failing in loop mode..."));
-        await runFail(featureId, "Verification failed", true);
-        return;
-      }
-
-      // Manual mode: show options and exit
-      console.log(chalk.yellow("\n   Options:"));
-      console.log(chalk.gray(`   1. Fix the issues above and run 'agent-foreman done ${featureId}' again`));
-      console.log(chalk.gray(`   2. Mark as failed and continue: 'agent-foreman fail ${featureId} -r "reason"'`));
+    // Use last verification result instead of defaulting to "pass"
+    if (feature.verification?.verdict) {
+      finalVerdict = feature.verification.verdict;
+    } else {
+      // No prior verification - require running check first
+      console.log(chalk.red(`\n✗ No verification result found for '${featureId}'.`));
+      console.log(chalk.yellow(`   Run 'agent-foreman check ${featureId}' first, then run 'agent-foreman done ${featureId}'.`));
       process.exit(1);
     }
 
-    if (result.verdict === "needs_review") {
-      console.log(chalk.yellow("\n   ⚠ Some criteria could not be verified automatically."));
-      const confirmed = await promptConfirmation(chalk.yellow("   Do you still want to mark this feature as complete?"));
-      if (!confirmed) {
-        console.log(chalk.gray("\n   Feature NOT marked as complete."));
-        process.exit(0);
-      }
-      console.log(chalk.gray("   Proceeding with user confirmation..."));
+    // Block if last verification failed
+    if (finalVerdict === "fail") {
+      console.log(chalk.red(`\n✗ Last verification for '${featureId}' failed.`));
+      console.log(chalk.yellow(`   Fix the issues and run 'agent-foreman check ${featureId}' again.`));
+      process.exit(1);
     }
-
-    // Verdict is "pass" or user confirmed "needs_review"
-    console.log(chalk.green("\n   ✓ Verification passed!"));
+  } else {
+    const verificationResult = await runVerification(
+      cwd, feature, featureList, featureId, verbose, ai, testMode, testPattern, skipE2E, e2eMode, loopMode
+    );
+    if (!verificationResult.passed) return;
+    finalVerdict = verificationResult.verdict;
   }
 
-  // Discover and populate testFiles if testRequirements defined
+  // Discover test files
   if (feature.testRequirements) {
     const discoveredFiles = await discoverFeatureTestFiles(cwd, feature);
     if (discoveredFiles.length > 0) {
-      // Update feature with discovered test files
       featureList.features = featureList.features.map((f) =>
         f.id === featureId ? { ...f, testFiles: discoveredFiles } : f
       );
     }
   }
 
-  // Step 2: Update status based on verification verdict
-  // If skipCheck, default to "passing". Otherwise, map verdict to status.
-  // Note: Even if user confirmed "needs_review", keep status as "needs_review" for tracking.
-  const newStatus: FeatureStatus = skipCheck ? "passing" : mapVerdictToStatus(result!.verdict);
-  featureList.features = updateFeatureStatus(
-    featureList.features,
-    featureId,
-    newStatus,
-    notes || feature.notes
-  );
-  // Save
-  await saveFeatureList(cwd, featureList);
+  // Update status based on verification verdict
+  // Map verdict to status: "pass" -> "passing", "needs_review" -> "needs_review"
+  const newStatus = finalVerdict === "needs_review" ? "needs_review" : "passing";
+  const index = await loadFeatureIndex(cwd);
+  if (!index) {
+    // Create index from featureList if it doesn't exist (legacy fallback)
+    await buildAndSaveIndex(cwd, featureList);
+  }
+  await updateFeatureStatusQuick(cwd, featureId, newStatus, notes || feature.notes);
 
   // Log progress
-  await appendProgressLog(
-    cwd,
-    createStepEntry(featureId, newStatus, "./ai/init.sh check", `Completed ${featureId}`)
-  );
-
-  // Display status message with appropriate color
-  if (newStatus === "passing") {
+  await appendProgressLog(cwd, createStepEntry(featureId, newStatus, "./ai/init.sh check", `Completed ${featureId}`));
+  if (newStatus === "needs_review") {
+    console.log(chalk.yellow(`\n⚠ Marked '${featureId}' as needs_review (AI verification inconclusive)`));
+  } else {
     console.log(chalk.green(`\n✓ Marked '${featureId}' as passing`));
-  } else if (newStatus === "needs_review") {
-    console.log(chalk.yellow(`\n⚠ Marked '${featureId}' as needs_review`));
-  } else {
-    console.log(chalk.gray(`\n✓ Marked '${featureId}' as ${newStatus}`));
   }
 
-  // Auto-commit or suggest (PRD: write clear commit message)
-  const shortDesc = feature.description.length > 50
-    ? feature.description.substring(0, 47) + "..."
-    : feature.description;
+  // Handle git commit
+  await handleCommit(cwd, feature, autoCommit);
 
-  const commitMessage = `feat(${feature.module}): ${feature.description}
-
-Feature: ${featureId}
-
-🤖 Generated with agent-foreman`;
-
-  if (autoCommit && isGitRepo(cwd)) {
-    // Auto-commit all changes
-    const addResult = gitAdd(cwd, "all");
-    if (!addResult.success) {
-      console.log(chalk.yellow(`\n⚠ Failed to stage changes: ${addResult.error}`));
-      console.log(chalk.cyan("📝 Suggested commit:"));
-      console.log(chalk.white(`   git add -A && git commit -m "feat(${feature.module}): ${shortDesc}"`));
-    } else {
-      const commitResult = gitCommit(cwd, commitMessage);
-      if (commitResult.success) {
-        console.log(chalk.green(`\n✓ Committed: ${commitResult.commitHash?.substring(0, 7)}`));
-        console.log(chalk.gray(`  feat(${feature.module}): ${shortDesc}`));
-      } else if (commitResult.error === "Nothing to commit") {
-        console.log(chalk.gray("\n  No changes to commit"));
-      } else {
-        console.log(chalk.yellow(`\n⚠ Failed to commit: ${commitResult.error}`));
-        console.log(chalk.cyan("📝 Suggested commit:"));
-        console.log(chalk.white(`   git add -A && git commit -m "feat(${feature.module}): ${shortDesc}"`));
-      }
-    }
-  } else {
-    console.log(chalk.cyan("\n📝 Suggested commit:"));
-    console.log(chalk.white(`   git add -A && git commit -m "feat(${feature.module}): ${shortDesc}"`));
-  }
-
-  // Show next feature
+  // Show next or celebrate completion
   const next = selectNextFeature(featureList.features);
   if (next) {
     console.log(chalk.gray(`\n  Next up: ${next.id}`));
@@ -412,7 +339,7 @@ Feature: ${featureId}
     // Loop mode: Output explicit continuation reminder
     if (loopMode) {
       const stats = getFeatureStats(featureList.features);
-      const total = featureList.features.length;
+      const total = featureList.features.filter(f => f.status !== "deprecated").length;
       const completed = stats.passing;
       const percent = getCompletionPercentage(featureList.features);
 
@@ -431,10 +358,10 @@ Feature: ${featureId}
 
       console.log(chalk.bold.yellow("\n   LOOP INSTRUCTION:"));
       console.log(chalk.gray("   1. agent-foreman next"));
-      console.log(chalk.gray("   2. Implement feature"));
-      console.log(chalk.gray("   3. agent-foreman check <feature_id>"));
-      console.log(chalk.gray("   4. agent-foreman done <feature_id>"));
-      console.log(chalk.gray("   5. REPEAT until all features processed"));
+      console.log(chalk.gray("   2. Implement task"));
+      console.log(chalk.gray("   3. agent-foreman check <task_id>"));
+      console.log(chalk.gray("   4. agent-foreman done <task_id>"));
+      console.log(chalk.gray("   5. REPEAT until all tasks processed"));
 
       console.log(chalk.bold.green("\n   ➤ Do NOT stop. Do NOT ask questions. Continue NOW."));
       console.log(chalk.bold.cyan("══════════════════════════════════════════════════════════════\n"));
@@ -466,50 +393,145 @@ Feature: ${featureId}
       console.log(chalk.gray("\n   Run 'agent-foreman status' for details."));
       console.log(chalk.bold.green("══════════════════════════════════════════════════════════════\n"));
     } else {
-      console.log(chalk.green("\n  🎉 All features are now passing!"));
+      console.log(chalk.green("\n  🎉 All tasks are now passing!"));
+    }
+    await regenerateSurvey(cwd, featureList);
+  }
+}
+
+async function runVerification(
+  cwd: string,
+  feature: import("../types/index.js").Feature,
+  _featureList: import("../types/index.js").FeatureList,
+  featureId: string,
+  verbose: boolean,
+  ai: boolean,
+  testMode: "full" | "quick" | "skip",
+  testPattern: string | undefined,
+  skipE2E: boolean,
+  e2eMode: "full" | "smoke" | "tags" | "skip" | undefined,
+  loopMode: boolean = false
+): Promise<{ passed: boolean; verdict: "pass" | "fail" | "needs_review" }> {
+  displayVerificationHeader(feature, ai, testMode);
+
+  const featureSkipsE2E = !feature.e2eTags || feature.e2eTags.length === 0;
+  const effectiveSkipE2E = skipE2E || featureSkipsE2E;
+
+  const verifyOptions = {
+    verbose,
+    skipChecks: false,
+    testMode,
+    testPattern,
+    skipE2E: effectiveSkipE2E,
+    e2eTags: feature.e2eTags,
+    e2eMode,
+  };
+
+  const result = ai
+    ? await verifyFeatureAutonomous(cwd, feature, verifyOptions)
+    : await verifyFeature(cwd, feature, verifyOptions);
+
+  console.log(formatVerificationResult(result, verbose));
+
+  // Update verification summary (quick operation - only updates single feature file)
+  const summary = createVerificationSummary(result);
+  await updateFeatureVerificationQuick(cwd, featureId, summary);
+
+  await appendProgressLog(cwd, createVerifyEntry(featureId, result.verdict, `Verified ${featureId}: ${result.verdict}`));
+  console.log(chalk.gray(`\n   Results saved to ai/verification/results.json`));
+
+  if (result.verdict === "fail") {
+    console.log(chalk.red("\n   ✗ Verification failed. Task NOT marked as complete."));
+
+    // In loop mode: auto-fail and continue to next task
+    if (loopMode) {
+      console.log(chalk.yellow("\n   Auto-failing in loop mode..."));
+      await runFail(featureId, "Verification failed", true);
+      return { passed: false, verdict: "fail" };
     }
 
-    // Auto-regenerate ARCHITECTURE.md when all features complete
-    console.log(chalk.blue("\n📊 Regenerating project survey..."));
-    try {
-      const aiResult = await aiScanProject(cwd, { verbose: false });
-      if (aiResult.success) {
-        const structure = await scanDirectoryStructure(cwd);
-        const survey = aiResultToSurvey(aiResult, structure);
+    // Manual mode: show options
+    console.log(chalk.yellow("\n   Options:"));
+    console.log(chalk.gray(`   1. Fix the issues above and run 'agent-foreman done ${featureId}' again`));
+    console.log(chalk.gray(`   2. Mark as failed and continue: 'agent-foreman fail ${featureId} -r "reason"'`));
+    process.exit(1);
+  }
 
-        // Replace survey.features with actual features from feature index
-        // Show actual status (passing/failing) instead of AI confidence
-        survey.features = featureList.features.map((f) => ({
-          id: f.id,
-          description: f.description,
-          module: f.module,
-          source: "feature_list" as const,
-          confidence: f.status === "passing" ? 1.0 : 0.0,
-          status: f.status,
-        }));
+  if (result.verdict === "needs_review") {
+    console.log(chalk.yellow("\n   ⚠ Some criteria could not be verified automatically."));
+    const confirmed = await promptConfirmation(chalk.yellow("   Do you still want to mark this task as complete?"));
+    if (!confirmed) {
+      console.log(chalk.gray("\n   Task NOT marked as complete."));
+      process.exit(0);
+    }
+    console.log(chalk.gray("   Proceeding with user confirmation..."));
+  }
 
-        // Override completion to 100% since all features are passing
-        const passingCount = featureList.features.filter((f) => f.status === "passing").length;
-        const totalCount = featureList.features.length;
-        survey.completion = {
-          overall: Math.round((passingCount / totalCount) * 100),
-          byModule: Object.fromEntries(
-            survey.modules.map((m) => [m.name, 100])
-          ),
-          notes: [
-            "All features are passing",
-            `Completed ${passingCount}/${totalCount} features`,
-            `Last updated: ${new Date().toISOString().split("T")[0]}`
-          ]
-        };
-        const markdown = generateAISurveyMarkdown(survey, aiResult);
-        const surveyPath = path.join(cwd, "docs/ARCHITECTURE.md");
-        await fs.mkdir(path.dirname(surveyPath), { recursive: true });
-        await fs.writeFile(surveyPath, markdown);
-        console.log(chalk.green("✓ Updated docs/ARCHITECTURE.md (100% complete)"));
+  console.log(chalk.green("\n   ✓ Verification passed!"));
+  return { passed: true, verdict: result.verdict };
+}
+
+function displayMissingTests(gateResult: Awaited<ReturnType<typeof verifyTestFilesExist>>): void {
+  console.log(chalk.red("   ✗ Required test files are missing:"));
+
+  if (gateResult.missingUnitTests.length > 0) {
+    console.log(chalk.yellow("\n   Missing Unit Tests:"));
+    gateResult.missingUnitTests.forEach((pattern) => {
+      console.log(chalk.white(`     • ${pattern}`));
+    });
+  }
+
+  if (gateResult.missingE2ETests.length > 0) {
+    console.log(chalk.yellow("\n   Missing E2E Tests:"));
+    gateResult.missingE2ETests.forEach((pattern) => {
+      console.log(chalk.white(`     • ${pattern}`));
+    });
+  }
+
+  if (gateResult.errors.length > 0) {
+    console.log(chalk.red("\n   Errors:"));
+    gateResult.errors.forEach((error) => {
+      console.log(chalk.red(`     • ${error}`));
+    });
+  }
+
+  console.log(chalk.cyan("\n   Create the required tests before completing this task."));
+  console.log(chalk.gray("   See TDD guidance from 'agent-foreman next' for test file suggestions."));
+}
+
+async function handleCommit(
+  cwd: string,
+  feature: import("../types/index.js").Feature,
+  autoCommit: boolean
+): Promise<void> {
+  const shortDesc = feature.description.length > 50
+    ? feature.description.substring(0, 47) + "..."
+    : feature.description;
+
+  const commitMessage = `feat(${feature.module}): ${feature.description}
+
+Feature: ${feature.id}
+
+🤖 Generated with agent-foreman`;
+
+  if (autoCommit && isGitRepo(cwd)) {
+    const addResult = gitAdd(cwd, "all");
+    if (!addResult.success) {
+      console.log(chalk.yellow(`\n⚠ Failed to stage changes: ${addResult.error}`));
+      displayCommitSuggestion(feature.module, feature.description);
+    } else {
+      const commitResult = gitCommit(cwd, commitMessage);
+      if (commitResult.success) {
+        console.log(chalk.green(`\n✓ Committed: ${commitResult.commitHash?.substring(0, 7)}`));
+        console.log(chalk.gray(`  feat(${feature.module}): ${shortDesc}`));
+      } else if (commitResult.error === "Nothing to commit") {
+        console.log(chalk.gray("\n  No changes to commit"));
+      } else {
+        console.log(chalk.yellow(`\n⚠ Failed to commit: ${commitResult.error}`));
+        displayCommitSuggestion(feature.module, feature.description);
       }
-    } catch {
-      console.log(chalk.yellow("⚠ Could not regenerate survey (AI agent unavailable)"));
     }
+  } else {
+    displayCommitSuggestion(feature.module, feature.description);
   }
 }

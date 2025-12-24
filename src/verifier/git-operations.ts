@@ -1,5 +1,6 @@
 /**
  * Git operations for verification
+ * Handles git diff retrieval and commit hash operations
  */
 
 import { exec } from "node:child_process";

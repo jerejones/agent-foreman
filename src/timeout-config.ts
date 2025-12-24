@@ -99,6 +99,7 @@ export const AGENT_ENV_VAR = "AGENT_FOREMAN_AGENTS";
 /**
  * Default agent priority order
  * First agent has highest priority, agents are tried in order until one succeeds
+ * Priority: Claude > Codex > Gemini (1 = highest priority)
  */
 export const DEFAULT_AGENT_PRIORITY = ["claude", "codex", "gemini"] as const;
 
@@ -137,8 +138,9 @@ function loadEnvFile(): void {
               (value.startsWith("'") && value.endsWith("'"))) {
             value = value.slice(1, -1);
           }
-          // For AGENT_FOREMAN_AGENTS: .env always wins (project-level config)
-          // For other vars: only set if not already in environment
+          // Special case: AGENT_FOREMAN_AGENTS - .env always wins (project-level config)
+          // This allows project-specific agent configuration to override shell environment
+          // For other variables, only set if not already set in environment
           if (key === AGENT_ENV_VAR || !process.env[key]) {
             process.env[key] = value;
           }
@@ -152,6 +154,16 @@ function loadEnvFile(): void {
 
 // Load .env file on module initialization
 let envLoaded = false;
+
+/**
+ * Reset envLoaded flag for testing purposes
+ * This allows tests to verify fresh env loading behavior
+ *
+ * WARNING: For testing use only - do not use in production code
+ */
+export function _resetEnvLoadedForTesting(): void {
+  envLoaded = false;
+}
 
 /**
  * Get timeout value for a specific operation
@@ -299,12 +311,4 @@ export function getAgentPriority(): string[] {
   }
 
   return validAgents;
-}
-
-/**
- * Reset env loaded state for testing purposes
- * @internal This function is only for use in tests
- */
-export function _resetEnvLoadedForTesting(): void {
-  envLoaded = false;
 }

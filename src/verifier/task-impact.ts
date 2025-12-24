@@ -7,9 +7,10 @@
  * 3. Module-based matching (task.module)
  */
 
+import * as path from "node:path";
 import { minimatch } from "minimatch";
-import type { Feature } from "../types.js";
-import { loadFeatureList } from "../feature-list.js";
+import type { Feature } from "../types/index.js";
+import { loadFeatureList } from "../features/index.js";
 
 /**
  * Task impact result
@@ -131,9 +132,10 @@ function matchFeatureToFiles(
  * Convert test pattern to likely source path pattern.
  * Example: tests/auth/foo.test.ts -> src/auth/foo.ts
  */
-export function testPatternToSourcePath(testPattern: string): string | null {
+function testPatternToSourcePath(testPattern: string): string | null {
   // Common test directory prefixes
   const testPrefixes = ["tests/", "test/", "__tests__/", "spec/"];
+  const srcPrefixes = ["src/", "lib/", ""];
 
   let pattern = testPattern;
 

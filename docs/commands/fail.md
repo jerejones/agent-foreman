@@ -1,8 +1,8 @@
 # fail Command
 
-Mark a feature as failed and continue to the next feature in the workflow loop.
+Mark a task/feature as failed with a reason.
 
-## Synopsis
+## Command Syntax
 
 ```bash
 agent-foreman fail <feature_id> [options]
@@ -10,151 +10,216 @@ agent-foreman fail <feature_id> [options]
 
 ## Description
 
-The `fail` command marks a feature as `failed` status, logs the failure to progress.log, and shows guidance for continuing to the next feature. This enables the unattended loop workflow to continue without stopping when verification fails.
+The `fail` command marks a task as failed when verification fails and you want to continue to the next task. This is part of the AI agent loop workflow - instead of stopping on verification failure, mark the task as failed and proceed.
 
 ## Arguments
 
-| Argument | Description |
-|----------|-------------|
-| `feature_id` | The feature ID to mark as failed (required) |
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `feature_id` | string | Yes | Task ID to mark as failed |
 
 ## Options
 
-| Option | Alias | Default | Description |
-|--------|-------|---------|-------------|
-| `--reason` | `-r` | - | Reason for failure (added to notes) |
-| `--no-loop` | - | false | Disable loop continuation guidance |
+| Option | Alias | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--reason` | `-r` | string | - | Reason for failure |
+| `--loop` | - | boolean | `true` | Show next task instruction (use `--no-loop` to disable) |
 
 ## Execution Flow
 
 ```mermaid
 flowchart TD
-    Start[fail command] --> LoadFeatures[Load feature_list.json]
-    LoadFeatures --> FindFeature{Feature exists?}
+    A[Start: runFail] --> B[Load Feature List]
+    B --> C{Feature List Exists?}
+    C -->|No| D[Exit: No task list]
+    C -->|Yes| E[Find Feature by ID]
+    E --> F{Feature Found?}
+    F -->|No| G[Exit: Task not found]
+    F -->|Yes| H{Already Failed?}
 
-    FindFeature -->|No| ErrorNotFound[Exit: Feature not found]
-    FindFeature -->|Yes| CheckStatus{Already failed?}
+    H -->|Yes| I[Display: Already failed]
+    I --> J[Exit]
 
-    CheckStatus -->|Yes| WarnAlready[Warn: Already failed]
-    CheckStatus -->|No| UpdateStatus[Update status to 'failed']
+    H -->|No| K[Build Notes with Reason]
+    K --> L[Update Status to failed]
+    L --> M[Save Feature List]
+    M --> N[Append Progress Log]
+    N --> O[Display Failure Message]
 
-    WarnAlready --> ShowNext
-    UpdateStatus --> AddNotes[Add reason to notes]
-    AddNotes --> SaveJSON[Save feature_list.json]
-    SaveJSON --> LogProgress[Append to progress.log]
-    LogProgress --> ShowNext{Has next feature?}
-
-    ShowNext -->|Yes| ShowLoop{Loop mode?}
-    ShowNext -->|No| ShowSummary[Show completion summary]
-
-    ShowLoop -->|Yes| ShowContinuation[Show continuation guidance]
-    ShowLoop -->|No| ShowNextFeature[Show next feature ID]
-
-    ShowContinuation --> End[Exit 0]
-    ShowNextFeature --> End
-    ShowSummary --> End
-    ErrorNotFound --> Exit1[Exit 1]
+    O --> P{Loop Mode?}
+    P -->|Yes| Q{More Tasks?}
+    Q -->|Yes| R[Display Loop Instructions]
+    Q -->|No| S[Display: No more tasks]
+    P -->|No| T[End]
+    R --> T
+    S --> T
 ```
 
-## Data Flow
+## Data Flow Diagram
 
 ```mermaid
-flowchart LR
+graph TB
     subgraph Input
-        FeatureID[feature_id]
-        Reason[--reason]
+        A1[feature_id]
+        A2[--reason]
+        A3[--loop]
     end
 
-    subgraph Process["fail command"]
-        UpdateStatus[Update to 'failed']
-        AddNotes[Add failure notes]
-        LogEntry[Create VERIFY log entry]
+    subgraph DataLoad["Data Loading"]
+        B1[loadFeatureList]
+        B2[findFeatureById]
+        B3[loadFeatureIndex]
+    end
+
+    subgraph StatusUpdate["Status Update"]
+        C1[Update to failed]
+        C2[Add reason to notes]
+        C3[Save changes]
+    end
+
+    subgraph ProgressLog["Progress Logging"]
+        D1[createVerifyEntry]
+        D2[appendProgressLog]
     end
 
     subgraph Output
-        FeatureJSON[ai/feature_list.json]
-        ProgressLog[ai/progress.log]
-        Console[Console output]
+        E1[Display failure]
+        E2[Loop instructions]
+        E3[Next task info]
     end
 
-    FeatureID --> UpdateStatus
-    Reason --> AddNotes
-    UpdateStatus --> FeatureJSON
-    AddNotes --> FeatureJSON
-    LogEntry --> ProgressLog
-    UpdateStatus --> Console
+    A1 --> B1
+    B1 --> B2
+    B2 --> C1
+    A2 --> C2
+    C1 --> C2
+    C2 --> C3
+    B3 --> C3
+
+    C3 --> D1
+    D1 --> D2
+
+    D2 --> E1
+    A3 --> E2
+    E2 --> E3
 ```
 
-## Examples
+## Key Functions
 
-### Basic Usage
+### `runFail(featureId, reason, loopMode)`
 
-```bash
-# Mark a feature as failed
-agent-foreman fail auth.login
-```
+**Location**: `src/commands/fail.ts:20`
 
-### With Reason
+Main entry point for the fail command.
 
-```bash
-# Mark failed with explanation
-agent-foreman fail auth.login --reason "Tests failing: API endpoint not implemented"
-```
+**Parameters**:
+- `featureId: string` - Task ID to mark as failed
+- `reason?: string` - Optional failure reason
+- `loopMode: boolean` - Whether to show loop continuation instructions
 
-### Without Loop Guidance
+## Output Examples
 
-```bash
-# Mark failed without continuation prompts
-agent-foreman fail auth.login --no-loop
-```
-
-## Output Example
+### Basic Failure
 
 ```
 ✗ Marked 'auth.login' as failed
-  Reason: Tests failing: API endpoint not implemented
-
-  Next up: auth.logout
+  Reason: Tests timeout after 30 seconds
 
 ══════════════════════════════════════════════════════════════
-                   CONTINUE TO NEXT FEATURE
+                   CONTINUE TO NEXT TASK
 ══════════════════════════════════════════════════════════════
 
    Failed: auth.login
-   Status: 5 passing, 1 failed, 3 pending
-   Progress: 55%
+   Next up: auth.logout
+   Progress: 5/17 passing (29%)
+   Failed tasks: 1
 
-   NEXT STEPS:
+   LOOP INSTRUCTION:
    1. agent-foreman next
-   2. Implement feature
-   3. agent-foreman check <feature_id>
-   4. agent-foreman done <feature_id>
+   2. Implement task
+   3. agent-foreman check <task_id>
+   4. agent-foreman done <task_id>
+   5. REPEAT until all tasks processed
 
-   ➤ Continue NOW. Do NOT stop.
+   ➤ Continue to the next task NOW.
 ══════════════════════════════════════════════════════════════
+```
+
+### Already Failed
+
+```
+⚠ Task 'auth.login' is already marked as failed.
+  Previous reason: Verification failed: Tests timeout
+```
+
+## Use Cases
+
+### After Verification Failure
+
+```bash
+# Verification failed
+agent-foreman check auth.login
+# Output: ✗ Verification failed...
+
+# Mark as failed and continue
+agent-foreman fail auth.login --reason "API endpoint not responding"
+```
+
+### In AI Agent Loop
+
+```bash
+# When verification fails during loop mode
+agent-foreman done auth.login
+# Output: ✗ Verification failed...
+# Output: 2. Mark as failed: 'agent-foreman fail auth.login -r "reason"'
+
+# Mark and continue
+agent-foreman fail auth.login -r "Database schema mismatch"
+# Continue with next task
+agent-foreman next
+```
+
+### Without Loop Mode
+
+```bash
+# Just mark as failed without continuation instructions
+agent-foreman fail auth.login --reason "Blocked by external API" --no-loop
 ```
 
 ## Status Transition
 
+```mermaid
+graph LR
+    A[failing] -->|agent-foreman fail| B[failed]
+    C[needs_review] -->|agent-foreman fail| B
+    D[passing] -->|agent-foreman fail| B
+
+    style B fill:#f44336,color:#fff
 ```
-failing → failed (via fail command)
+
+## Notes Field Format
+
+When marked as failed, the notes field is updated:
+
+```
+Verification failed: <reason provided>
 ```
 
-The `failed` status indicates a feature was attempted but could not be completed. This differs from:
-- `failing`: Not yet attempted
-- `blocked`: Cannot be attempted due to dependencies
-- `needs_review`: May need re-verification
+Or if no reason:
+```
+Marked as failed
+```
 
-## Use Cases
+## Error Handling
 
-1. **Verification Failure**: When `check` or `done` reports verification failed
-2. **Implementation Blocked**: External API not available, missing dependencies
-3. **Time Constraints**: Need to move on in unattended mode
-4. **Loop Workflow**: Enables AI to continue without stopping
+| Error | Cause | Resolution |
+|-------|-------|------------|
+| "No task list found" | Harness not initialized | Run `agent-foreman init` first |
+| "Task not found" | Invalid feature ID | Check `agent-foreman status` for valid IDs |
 
 ## Related Commands
 
-- [`check`](./check.md) - Verify feature implementation
-- [`done`](./done.md) - Mark feature as complete
-- [`next`](./next.md) - Get next feature to work on
-- [`status`](./status.md) - View all feature statuses
+- [`done`](./done.md) - Mark task as complete (opposite action)
+- [`check`](./check.md) - Verify task (may suggest using fail)
+- [`next`](./next.md) - Get next task (failed tasks are excluded)
+- [`status`](./status.md) - View all task statuses including failed

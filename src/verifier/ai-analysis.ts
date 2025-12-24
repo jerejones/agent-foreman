@@ -1,19 +1,17 @@
 /**
- * AI analysis with retry logic
+ * AI Analysis with retry logic
+ * Handles AI-powered verification with exponential backoff
  */
 
 import chalk from "chalk";
 
-import type { Feature } from "../types.js";
-import type { AutomatedCheckResult, VerifyOptions, CriterionResult, VerificationVerdict } from "./verification-types.js";
-import { isPathWithinRoot, safeReadFile } from "../file-utils.js";
-import { buildVerificationPrompt, parseVerificationResponse } from "./prompts.js";
+import type { Feature } from "../types/index.js";
+import type { AutomatedCheckResult, VerifyOptions } from "./types/index.js";
+import { buildVerificationPrompt, parseVerificationResponse } from "../verification-prompts.js";
 import { callAnyAvailableAgent } from "../agents.js";
 import { getTimeout } from "../timeout-config.js";
 import { createSpinner } from "../progress.js";
-
-/** Source file extensions for filtering */
-const SOURCE_FILE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rs"];
+import { readRelatedFiles } from "./related-files.js";
 
 /** Retry configuration */
 export const RETRY_CONFIG = {
@@ -76,44 +74,6 @@ export function calculateBackoff(
 }
 
 /**
- * Read related files for context
- * Uses parallel file reading for better performance
- * Validates paths to prevent path traversal attacks
- * Handles partial failures gracefully - continues if some files fail to read
- */
-export async function readRelatedFiles(
-  cwd: string,
-  changedFiles: string[]
-): Promise<Map<string, string>> {
-  // Filter to source files only
-  const sourceFiles = changedFiles.filter((f) =>
-    SOURCE_FILE_EXTENSIONS.some((ext) => f.endsWith(ext))
-  );
-
-  // Validate paths before reading
-  const validFiles = sourceFiles.filter((file) => isPathWithinRoot(cwd, file));
-
-  // Read all files in parallel for better performance
-  const readPromises = validFiles.map(async (file) => {
-    const content = await safeReadFile(cwd, file);
-    return { file, content };
-  });
-
-  const results = await Promise.all(readPromises);
-
-  // Build Map from successful reads (gracefully handle failures)
-  const relatedFiles = new Map<string, string>();
-  for (const { file, content } of results) {
-    if (content !== null) {
-      relatedFiles.set(file, content);
-    }
-    // If content is null, file doesn't exist or can't be read - skip silently
-  }
-
-  return relatedFiles;
-}
-
-/**
  * Perform AI analysis of the changes with retry logic
  */
 export async function analyzeWithAI(
@@ -124,8 +84,8 @@ export async function analyzeWithAI(
   automatedResults: AutomatedCheckResult[],
   options: VerifyOptions = {}
 ): Promise<{
-  criteriaResults: CriterionResult[];
-  verdict: VerificationVerdict;
+  criteriaResults: ReturnType<typeof parseVerificationResponse>["criteriaResults"];
+  verdict: ReturnType<typeof parseVerificationResponse>["verdict"];
   overallReasoning: string;
   suggestions: string[];
   codeQualityNotes: string[];
@@ -150,17 +110,21 @@ export async function analyzeWithAI(
   let lastAgentUsed: string | undefined;
 
   // Create spinner for AI analysis
-  const spinner = createSpinner("Analyzing code changes with AI");
+  const baseMessage = "Analyzing code changes with AI";
+  const spinner = createSpinner(baseMessage);
 
   for (let attempt = 1; attempt <= RETRY_CONFIG.maxRetries; attempt++) {
+    const attemptSuffix = attempt > 1 ? ` (attempt ${attempt}/${RETRY_CONFIG.maxRetries})` : "";
     if (attempt > 1) {
-      spinner.update(`Analyzing code changes with AI (attempt ${attempt}/${RETRY_CONFIG.maxRetries})`);
+      spinner.update(`${baseMessage}${attemptSuffix}`);
     }
 
     const result = await callAnyAvailableAgent(prompt, {
       cwd,
       timeoutMs: options.timeout || getTimeout("AI_VERIFICATION"),
       verbose: options.verbose,
+      showProgress: false,
+      onAgentSelected: (name) => spinner.update(`${baseMessage}${attemptSuffix} (Using ${name})`),
     });
 
     lastAgentUsed = result.agentUsed;

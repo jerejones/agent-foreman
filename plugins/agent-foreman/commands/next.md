@@ -1,18 +1,38 @@
 ---
-description: Work on the next priority feature with guided implementation workflow
-allowed-tools: Bash, Read, Glob, Grep, Write, Edit
-argument-hint: [feature_id] [--check|--dry-run|--json|--quiet]
+description: Get next task and implement with TDD workflow
+allowed-tools: Bash, Read, Glob, Grep, Write, Edit, Skill
+argument-hint: "[task_id] [--check|--dry-run|--json|--quiet]"
 ---
 
-# EXECUTE NOW
+# ⚠️ STRICT WORKFLOW - NO IMPROVISATION
 
-**IMPORTANT**: Load the `feature-next` skill for TDD workflow details if strict mode is active.
+**You MUST follow this exact sequence. Do NOT skip or reorder steps.**
+
+```
+next → implement → check → done
+```
+
+---
+
+# STEP 0: INVOKE SKILL (MANDATORY)
+
+**BEFORE doing anything else, you MUST invoke the `feature-next` skill:**
+
+```
+Skill({ skill: "feature-next" })
+```
+
+The instructions below are a fallback only if the skill fails to load.
+
+---
+
+# FALLBACK: EXECUTE NOW
 
 ```bash
 agent-foreman next
 ```
 
-Wait for completion. Review the feature shown.
+Wait for completion. Review the task shown.
 
 **Check for TDD Mode**: Look for "!!! TDD ENFORCEMENT ACTIVE !!!" in output.
 
@@ -20,51 +40,31 @@ Wait for completion. Review the feature shown.
 
 | User Says | Execute |
 |-----------|---------|
-| Feature ID provided | `agent-foreman next <feature_id>` |
+| Task ID provided | `agent-foreman next <task_id>` |
 | "check" / "test first" | `agent-foreman next --check` |
 | "preview" / "dry-run" | `agent-foreman next --dry-run` |
 | "json" / "as json" | `agent-foreman next --json` |
 | "quiet" / "minimal" | `agent-foreman next --quiet` |
 | "refresh guidance" / "regenerate" | `agent-foreman next --refresh-guidance` |
 | "allow dirty" / "uncommitted ok" | `agent-foreman next --allow-dirty` |
-| (default) | `agent-foreman next` |
 
-## After Next Command
+## After Next
 
-### Check TDD Mode First
-
-Look for "!!! TDD ENFORCEMENT ACTIVE !!!" in the output.
-
-**If TDD strict mode active → MUST follow TDD Workflow:**
-
-1. **RED** - Write failing tests FIRST (DO NOT write implementation yet)
-2. **Run tests** - Verify they FAIL
-3. **GREEN** - Implement MINIMUM code to pass tests
-4. **Run tests** - Verify they PASS
-5. **REFACTOR** - Clean up, run tests after each change
-6. **Verify** with: `agent-foreman check <feature_id>`
-7. **Complete** with: `agent-foreman done <feature_id>`
-
-**If TDD not strict → Standard Workflow:**
-
-1. **Read** the acceptance criteria shown
-2. **Implement** the feature to satisfy ALL criteria
-3. **Verify** with: `agent-foreman check <feature_id>`
-4. **Complete** with: `agent-foreman done <feature_id>`
+1. **Read** acceptance criteria shown
+2. **Implement** to satisfy ALL criteria
+3. **Verify**: `agent-foreman check <task_id>`
+4. **Complete**: `agent-foreman done <task_id>`
 
 ## Complete Options
 
 | User Says | Execute |
 |-----------|---------|
-| (default, skip verification) | `agent-foreman done <id>` |
-| "verify first" / "run tests" | `agent-foreman done <id> --no-skip-check` |
-| "full test" / "all tests" | `agent-foreman done <id> --full --no-skip-check` |
+| "full test" / "all tests" | `agent-foreman done <id> --full` |
 | "skip e2e" | `agent-foreman done <id> --skip-e2e` |
 | "no commit" / "manual commit" | `agent-foreman done <id> --no-commit` |
-| "no loop" / "single feature" | `agent-foreman done <id> --no-loop` |
 
-## Priority Order (Auto-Selected)
+## Priority Order
 
-1. `needs_review` → may be broken (highest)
-2. `failing` → not implemented
+1. `needs_review` → highest
+2. `failing` → next
 3. Lower `priority` number

@@ -1,221 +1,170 @@
-# Agent Foreman CLI Commands
+# Agent-Foreman CLI Commands
 
-Complete reference documentation for all agent-foreman CLI commands.
-
-> agent-foreman CLI 所有命令的完整参考文档。
+Comprehensive documentation for all agent-foreman CLI commands.
 
 ## Command Overview
 
-```mermaid
-flowchart TB
-    subgraph Setup["Setup Commands"]
-        init[init]
-        install[install]
-        uninstall[uninstall]
-    end
+| Command | Description | Primary Use |
+|---------|-------------|-------------|
+| [`init`](./init.md) | Initialize or upgrade the long-task harness | Project setup |
+| [`next`](./next.md) | Show next task to work on | Task selection |
+| [`status`](./status.md) | Show current harness status | Progress tracking |
+| [`check`](./check.md) | AI-powered verification (no status change) | Task verification |
+| [`done`](./done.md) | Verify and mark task complete | Task completion |
+| [`fail`](./fail.md) | Mark task as failed | Failure handling |
+| [`tdd`](./tdd.md) | View or change TDD mode | TDD configuration |
+| [`impact`](./impact.md) | Analyze change impact | Dependency analysis |
+| [`install`](./install.md) | Install Claude Code plugin | Plugin management |
+| [`uninstall`](./uninstall.md) | Remove Claude Code plugin | Plugin management |
+| [`agents`](./agents.md) | Show AI agents status | Agent management |
+| [`upgrade`](./upgrade.md) | Check for updates | Version management |
 
-    subgraph Workflow["Workflow Commands"]
-        next[next]
-        check[check]
-        done[done]
-        fail[fail]
-    end
+## Workflow Commands
 
-    subgraph Status["Status Commands"]
-        status[status]
-        impact[impact]
-    end
-
-    subgraph Discovery["Discovery Commands"]
-        analyze[analyze]
-        scan[scan]
-        agents[agents]
-    end
-
-    init --> next
-    next --> check
-    check -->|pass| done
-    check -->|fail| fail
-    done --> next
-    fail --> next
-
-    style init fill:#4CAF50
-    style next fill:#2196F3
-    style check fill:#FF9800
-    style done fill:#4CAF50
-    style fail fill:#F44336
-```
-
-## Commands by Category
-
-### Setup Commands
-
-| Command | Description |
-|---------|-------------|
-| [init](./init.md) | Initialize or upgrade the long-task harness |
-| [install](./install.md) | Install Claude Code plugin |
-| [uninstall](./uninstall.md) | Remove Claude Code plugin |
-
-### Core Workflow Commands
-
-| Command | Description |
-|---------|-------------|
-| [next](./next.md) | Show next feature to work on with TDD guidance |
-| [check](./check.md) | AI-powered verification of feature completion |
-| [done](./done.md) | Mark feature as complete with auto-commit |
-| [fail](./fail.md) | Mark feature as failed and continue to next |
-
-### Status & Analysis Commands
-
-| Command | Description |
-|---------|-------------|
-| [status](./status.md) | Show current harness status |
-| [impact](./impact.md) | Analyze impact of changes to a feature |
-
-### Discovery Commands
-
-| Command | Description |
-|---------|-------------|
-| [analyze](./analyze.md) | Generate AI-powered project analysis report |
-| [scan](./scan.md) | Detect project verification capabilities |
-| [agents](./agents.md) | Show available AI agents status |
-
-### Configuration Commands
-
-| Command | Description |
-|---------|-------------|
-| tdd | View or change TDD mode (strict, recommended, disabled) |
-
-## Standard Workflow
+### Core Task Workflow
 
 ```mermaid
-flowchart LR
-    subgraph Phase1["Phase 1: Setup"]
-        A1[agent-foreman init]
-    end
-
-    subgraph Phase2["Phase 2: Development Loop"]
-        B1[agent-foreman next] --> B2[Implement Feature]
-        B2 --> B3[agent-foreman check]
-        B3 -->|pass| B4[agent-foreman done]
-        B3 -->|fail| B5[agent-foreman fail]
-        B4 --> B1
-        B5 --> B1
-    end
-
-    subgraph Phase3["Phase 3: Monitoring"]
-        C1[agent-foreman status]
-        C2[agent-foreman impact]
-    end
-
-    A1 --> B1
-    B4 --> C1
+graph LR
+    A[init] --> B[status]
+    B --> C[next]
+    C --> D[Implement]
+    D --> E[check]
+    E --> F{Pass?}
+    F -->|Yes| G[done]
+    F -->|No| H{Fixable?}
+    H -->|Yes| D
+    H -->|No| I[fail]
+    I --> B
+    G --> B
 ```
 
-### Recommended Workflow Steps
-
-1. **Initialize**: `agent-foreman init` - Set up the harness
-2. **Get Task**: `agent-foreman next` - View next feature
-3. **Implement**: Write code to satisfy acceptance criteria
-4. **Verify**: `agent-foreman check <feature_id>` - Verify implementation
-5. **Complete**: `agent-foreman done <feature_id>` - Mark as complete
-6. **Repeat**: Go back to step 2
-
-## TDD Workflow (Strict Mode)
-
-```mermaid
-flowchart LR
-    subgraph RED["RED Phase"]
-        R1[Create test file]
-        R2[Write failing tests]
-        R3[Verify tests fail]
-    end
-
-    subgraph GREEN["GREEN Phase"]
-        G1[Write minimum code]
-        G2[Make tests pass]
-    end
-
-    subgraph REFACTOR["REFACTOR Phase"]
-        F1[Clean up code]
-        F2[Tests still pass]
-    end
-
-    subgraph COMPLETE["COMPLETE Phase"]
-        C1[agent-foreman check]
-        C2[agent-foreman done]
-    end
-
-    R1 --> R2 --> R3 --> G1 --> G2 --> F1 --> F2 --> C1 --> C2
-```
-
-## Quick Reference
-
-### Most Common Commands
+### Typical Session
 
 ```bash
-# Initialize harness
-agent-foreman init
+# 1. Initialize (first time only)
+agent-foreman init "Build a REST API"
 
-# Get next feature
+# 2. Check current status
+agent-foreman status
+
+# 3. Get next task
 agent-foreman next
 
-# Verify feature
-agent-foreman check <feature_id>
+# 4. Implement the task...
 
-# Complete feature (if check passes)
-agent-foreman done <feature_id>
+# 5. Verify implementation
+agent-foreman check task.id
 
-# Mark failed (if check fails, continue to next)
-agent-foreman fail <feature_id> --reason "..."
+# 6. Mark as complete
+agent-foreman done task.id
 
-# View status
-agent-foreman status
+# 7. Repeat from step 2
 ```
 
-### Output Modes
+## Analysis Commands
 
-Most commands support multiple output modes:
+### Project Analysis
 
-| Flag | Description |
-|------|-------------|
-| (default) | Human-readable formatted output |
-| `--json` | Machine-readable JSON output |
-| `--quiet` | Minimal output |
+```bash
+# Generate architecture docs only
+agent-foreman init --analyze
 
-### Common Options
+# Detect verification capabilities only
+agent-foreman init --scan
 
-| Option | Description |
-|--------|-------------|
-| `-v, --verbose` | Show detailed output |
-| `--help` | Show command help |
+# Check AI agent status
+agent-foreman agents
+```
 
-## Data Files
+## Plugin Commands
 
-Commands interact with these files in the `ai/` directory:
+### Claude Code Integration
 
-| File | Purpose | Commands |
-|------|---------|----------|
-| `ai/feature_list.json` | Feature backlog | All workflow commands |
-| `ai/progress.log` | Activity log | next, check, done, fail, status |
-| `ai/capabilities.json` | Tool detection cache | scan, check, done |
-| `ai/init.sh` | Bootstrap script | init |
+```bash
+# Install plugin
+agent-foreman install
+
+# Remove plugin
+agent-foreman uninstall
+
+# Check for updates
+agent-foreman upgrade --check
+
+# Perform upgrade
+agent-foreman upgrade
+```
+
+## Command Categories
+
+### Initialization & Setup
+
+| Command | When to Use |
+|---------|-------------|
+| `init` | First time setup, re-initialization |
+| `init --scan` | After adding new dev tools (re-detect capabilities) |
+| `install` | Enable Claude Code integration |
+
+### Daily Development
+
+| Command | When to Use |
+|---------|-------------|
+| `next` | Start working on a task |
+| `check` | Verify task implementation |
+| `done` | Complete a task |
+| `fail` | Mark task as failed (when verification fails and you want to continue) |
+| `status` | Track overall progress |
+| `tdd` | View or change TDD mode |
+
+### Analysis & Maintenance
+
+| Command | When to Use |
+|---------|-------------|
+| `init --analyze` | Generate/update architecture docs |
+| `impact` | Before/after significant changes |
+| `upgrade` | Keep tool up to date |
+
+## Common Options
+
+Many commands share common options:
+
+| Option | Commands | Description |
+|--------|----------|-------------|
+| `--verbose, -v` | init, check, done | Detailed output |
+| `--json` | next, status | Machine-readable output |
+| `--quiet, -q` | next, status | Minimal output |
+| `--force, -f` | init (with --scan), install | Bypass cache/checks |
 
 ## Exit Codes
 
 | Code | Meaning |
 |------|---------|
 | 0 | Success |
-| 1 | Error (missing feature list, feature not found, verification failed) |
+| 1 | Error (check message) |
 
-## Environment Variables
+## Data Files
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AGENT_FOREMAN_AGENTS` | `claude,codex,gemini` | AI agent priority order |
+Commands interact with these files:
 
-## See Also
+| File | Purpose | Commands |
+|------|---------|----------|
+| `ai/tasks/index.json` | Task index | All task commands |
+| `ai/tasks/{module}/*.md` | Task definitions | next, check, done |
+| `ai/progress.log` | Activity log | next, check, done |
+| `ai/capabilities.json` | Capability cache | init --scan, check, done |
+| `docs/ARCHITECTURE.md` | Project docs | init --analyze, done |
 
-- [USAGE.md](../USAGE.md) - Detailed usage guide
-- [ARCHITECTURE.md](../ARCHITECTURE.md) - Project architecture
-- [TECH.md](../TECH.md) - Technical details
+## Getting Help
+
+```bash
+# General help
+agent-foreman --help
+
+# Command-specific help
+agent-foreman <command> --help
+```
+
+## Related Documentation
+
+- [Workflow Rules](../../src/rules/templates/01-workflow.md)
+- [TDD Mode](../../src/rules/templates/05-tdd.md)
+- [Feature Schema](../../src/rules/templates/04-feature-schema.md)

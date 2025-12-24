@@ -3,7 +3,7 @@ name: project-analyze
 description: Scans codebases to generate architecture documentation (ARCHITECTURE.md). Use when joining an existing project, understanding codebase structure, exploring project architecture, or preparing for agent-foreman init. Triggers on 'analyze project', 'understand codebase', 'explore architecture', 'scan project structure', 'survey project'.
 ---
 
-# Project Analyze
+# 🔍 Project Analyze
 
 **One command**: `agent-foreman analyze`
 

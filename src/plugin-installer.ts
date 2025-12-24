@@ -9,7 +9,8 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync, cpSync, rmSync } fr
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import chalk from "chalk";
-import { compareVersions } from "./upgrade.js";
+import { compareVersions } from "./version.js";
+import { copyRulesToProject, hasRulesInstalled } from "./rules/index.js";
 
 // These imports will be available after running embed-assets.ts
 // For development, we provide fallback behavior
@@ -17,28 +18,50 @@ let EMBEDDED_PLUGINS: Record<string, string> = {};
 let EMBEDDED_PLUGINS_VERSION = "0.0.0";
 
 try {
-  const embedded = await import("./plugins-bundle.generated.js");
+  const embedded = await import("./embedded-assets.generated.js");
   EMBEDDED_PLUGINS = embedded.EMBEDDED_PLUGINS;
-  EMBEDDED_PLUGINS_VERSION = embedded.EMBEDDED_PLUGINS_VERSION;
+  EMBEDDED_PLUGINS_VERSION = embedded.EMBEDDED_VERSION;
 } catch {
   // Not in compiled mode or generated file doesn't exist
 }
 
-// Claude Code plugin structure
-const CLAUDE_DIR = join(homedir(), ".claude");
-const CLAUDE_PLUGINS_DIR = join(CLAUDE_DIR, "plugins");
-const KNOWN_MARKETPLACES_FILE = join(CLAUDE_PLUGINS_DIR, "known_marketplaces.json");
-const INSTALLED_PLUGINS_FILE = join(CLAUDE_PLUGINS_DIR, "installed_plugins_v2.json");
-const SETTINGS_FILE = join(CLAUDE_DIR, "settings.json");
-const MARKETPLACES_DIR = join(CLAUDE_PLUGINS_DIR, "marketplaces");
-const CACHE_DIR = join(CLAUDE_PLUGINS_DIR, "cache");
-
+// Plugin identifiers
 const MARKETPLACE_NAME = "agent-foreman-plugins";
 const PLUGIN_NAME = "agent-foreman";
 const PLUGIN_KEY = `${PLUGIN_NAME}@${MARKETPLACE_NAME}`;
 
-// Local marketplace directory (where we install embedded files)
-const LOCAL_MARKETPLACE_DIR = join(MARKETPLACES_DIR, MARKETPLACE_NAME);
+// Dynamic path getters to support HOME override in tests
+function getClaudeDir(): string {
+  return join(process.env.HOME || homedir(), ".claude");
+}
+
+function getClaudePluginsDir(): string {
+  return join(getClaudeDir(), "plugins");
+}
+
+function getKnownMarketplacesFile(): string {
+  return join(getClaudePluginsDir(), "known_marketplaces.json");
+}
+
+function getInstalledPluginsFile(): string {
+  return join(getClaudePluginsDir(), "installed_plugins_v2.json");
+}
+
+function getSettingsFile(): string {
+  return join(getClaudeDir(), "settings.json");
+}
+
+function getMarketplacesDir(): string {
+  return join(getClaudePluginsDir(), "marketplaces");
+}
+
+function getCacheDir(): string {
+  return join(getClaudePluginsDir(), "cache");
+}
+
+function getLocalMarketplaceDir(): string {
+  return join(getMarketplacesDir(), MARKETPLACE_NAME);
+}
 
 /**
  * Marketplace registry types
@@ -82,40 +105,43 @@ interface Settings {
 /**
  * Check if running in compiled binary mode
  *
- * This checks multiple signals to determine if we're running as a compiled
- * Bun binary vs npm/node execution:
+ * This function uses multiple signals to distinguish between:
+ * 1. Compiled standalone binary (return true) - can self-update via GitHub Releases
+ * 2. npm installed package (return false) - update via npm
+ * 3. Development mode (return false) - no embedded plugins
  *
- * 1. Must have embedded plugins (packaged at build time)
- * 2. process.execPath must NOT be a known runtime (node, bun, etc.)
+ * Detection logic:
+ * - Must have embedded plugins (compiled binaries have these bundled)
+ * - Must NOT be running via a known runtime (node, bun, deno)
+ * - Must NOT have runtime manager paths in execPath (.nvm, .fnm, .bun, etc.)
  *
- * The second check is crucial because npm installs can also have embedded
- * plugins, but they run via the node runtime.
+ * @returns true if running as compiled standalone binary, false otherwise
  */
 export function isCompiledBinary(): boolean {
-  // Must have embedded plugins
+  // 1. Must have embedded plugins - compiled binaries have these bundled
   if (Object.keys(EMBEDDED_PLUGINS).length === 0) {
     return false;
   }
 
-  // Check if process.execPath is a known runtime
-  // For npm installs, execPath is node/bun runtime
-  // For compiled binaries, execPath IS the binary itself
+  // 2. Check if process.execPath is a known runtime
+  // When running via npm/npx, execPath will be node/bun/deno
   const execPath = process.execPath.toLowerCase();
   const basename = execPath.split(/[/\\]/).pop() || "";
 
-  // Known runtime executables that indicate npm/node execution
+  // Known runtime executables - if we're running via these, it's not a compiled binary
   const runtimes = ["node", "node.exe", "bun", "bun.exe", "deno", "deno.exe"];
-
   if (runtimes.includes(basename)) {
     return false;
   }
 
-  // Additional check: if path contains .nvm, .fnm, .bun, nodejs - it's a runtime
+  // 3. Additional path-based check for runtime managers
+  // These paths indicate npm/version manager installs, not compiled binaries
   const runtimePaths = [".nvm", ".fnm", ".bun", "nodejs", "node_modules"];
   if (runtimePaths.some((p) => execPath.includes(p))) {
     return false;
   }
 
+  // All checks passed - this is a compiled binary
   return true;
 }
 
@@ -124,6 +150,11 @@ export function isCompiledBinary(): boolean {
  *
  * This is true for both compiled binaries AND npm installed packages
  * that have been built with the plugins embedded.
+ *
+ * Use this function to check if install/uninstall commands are available,
+ * rather than isCompiledBinary() which is only true for standalone binaries.
+ *
+ * @returns true if embedded plugins are available
  */
 export function hasEmbeddedPlugins(): boolean {
   return Object.keys(EMBEDDED_PLUGINS).length > 0;
@@ -133,11 +164,12 @@ export function hasEmbeddedPlugins(): boolean {
  * Read known marketplaces registry
  */
 function readKnownMarketplaces(): KnownMarketplaces {
-  if (!existsSync(KNOWN_MARKETPLACES_FILE)) {
+  const knownMarketplacesFile = getKnownMarketplacesFile();
+  if (!existsSync(knownMarketplacesFile)) {
     return {};
   }
   try {
-    return JSON.parse(readFileSync(KNOWN_MARKETPLACES_FILE, "utf-8"));
+    return JSON.parse(readFileSync(knownMarketplacesFile, "utf-8"));
   } catch {
     return {};
   }
@@ -147,22 +179,24 @@ function readKnownMarketplaces(): KnownMarketplaces {
  * Write known marketplaces registry
  */
 function writeKnownMarketplaces(marketplaces: KnownMarketplaces): void {
-  const dir = dirname(KNOWN_MARKETPLACES_FILE);
+  const knownMarketplacesFile = getKnownMarketplacesFile();
+  const dir = dirname(knownMarketplacesFile);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
-  writeFileSync(KNOWN_MARKETPLACES_FILE, JSON.stringify(marketplaces, null, 2), "utf-8");
+  writeFileSync(knownMarketplacesFile, JSON.stringify(marketplaces, null, 2), "utf-8");
 }
 
 /**
  * Read installed plugins registry
  */
 function readInstalledPlugins(): PluginRegistry {
-  if (!existsSync(INSTALLED_PLUGINS_FILE)) {
+  const installedPluginsFile = getInstalledPluginsFile();
+  if (!existsSync(installedPluginsFile)) {
     return { version: 2, plugins: {} };
   }
   try {
-    return JSON.parse(readFileSync(INSTALLED_PLUGINS_FILE, "utf-8"));
+    return JSON.parse(readFileSync(installedPluginsFile, "utf-8"));
   } catch {
     return { version: 2, plugins: {} };
   }
@@ -172,22 +206,24 @@ function readInstalledPlugins(): PluginRegistry {
  * Write installed plugins registry
  */
 function writeInstalledPlugins(registry: PluginRegistry): void {
-  const dir = dirname(INSTALLED_PLUGINS_FILE);
+  const installedPluginsFile = getInstalledPluginsFile();
+  const dir = dirname(installedPluginsFile);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
-  writeFileSync(INSTALLED_PLUGINS_FILE, JSON.stringify(registry, null, 2), "utf-8");
+  writeFileSync(installedPluginsFile, JSON.stringify(registry, null, 2), "utf-8");
 }
 
 /**
  * Read settings
  */
 function readSettings(): Settings {
-  if (!existsSync(SETTINGS_FILE)) {
+  const settingsFile = getSettingsFile();
+  if (!existsSync(settingsFile)) {
     return {};
   }
   try {
-    return JSON.parse(readFileSync(SETTINGS_FILE, "utf-8"));
+    return JSON.parse(readFileSync(settingsFile, "utf-8"));
   } catch {
     return {};
   }
@@ -197,11 +233,12 @@ function readSettings(): Settings {
  * Write settings
  */
 function writeSettings(settings: Settings): void {
-  const dir = dirname(SETTINGS_FILE);
+  const settingsFile = getSettingsFile();
+  const dir = dirname(settingsFile);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
-  writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf-8");
+  writeFileSync(settingsFile, JSON.stringify(settings, null, 2), "utf-8");
 }
 
 /**
@@ -218,7 +255,7 @@ export function isMarketplaceRegistered(): boolean {
 export function isPluginInstalled(): boolean {
   const registry = readInstalledPlugins();
   const installations = registry.plugins[PLUGIN_KEY];
-  return Boolean(installations && installations.length > 0);
+  return !!(installations && installations.length > 0);
 }
 
 /**
@@ -245,7 +282,7 @@ export function getPluginInstallInfo(): {
   const userInstall = installations?.find(i => i.scope === "user");
 
   return {
-    marketplaceDir: LOCAL_MARKETPLACE_DIR,
+    marketplaceDir: getLocalMarketplaceDir(),
     bundledVersion: EMBEDDED_PLUGINS_VERSION,
     isMarketplaceRegistered: isMarketplaceRegistered(),
     isPluginInstalled: isPluginInstalled(),
@@ -258,19 +295,20 @@ export function getPluginInstallInfo(): {
  * Install embedded plugin files to local marketplace directory
  */
 function installMarketplaceFiles(): void {
+  const localMarketplaceDir = getLocalMarketplaceDir();
   // Create marketplace directory structure
-  if (!existsSync(LOCAL_MARKETPLACE_DIR)) {
-    mkdirSync(LOCAL_MARKETPLACE_DIR, { recursive: true });
+  if (!existsSync(localMarketplaceDir)) {
+    mkdirSync(localMarketplaceDir, { recursive: true });
   }
 
   // Create .claude-plugin directory
-  const pluginConfigDir = join(LOCAL_MARKETPLACE_DIR, ".claude-plugin");
+  const pluginConfigDir = join(localMarketplaceDir, ".claude-plugin");
   if (!existsSync(pluginConfigDir)) {
     mkdirSync(pluginConfigDir, { recursive: true });
   }
 
   // Create plugins/agent-foreman directory
-  const pluginDir = join(LOCAL_MARKETPLACE_DIR, "plugins", PLUGIN_NAME);
+  const pluginDir = join(localMarketplaceDir, "plugins", PLUGIN_NAME);
   if (!existsSync(pluginDir)) {
     mkdirSync(pluginDir, { recursive: true });
   }
@@ -309,12 +347,19 @@ function installMarketplaceFiles(): void {
           "ai-agent",
           "claude-code"
         ],
-        agents: ["./agents/foreman.md"],
+        agents: [
+          "./agents/foreman.md",
+          "./agents/foreman-pm.md",
+          "./agents/foreman-ux.md",
+          "./agents/foreman-tech.md",
+          "./agents/foreman-qa.md"
+        ],
         skills: [
           "./skills/project-analyze",
           "./skills/init-harness",
           "./skills/feature-next",
-          "./skills/feature-run"
+          "./skills/feature-run",
+          "./skills/foreman-spec"
         ]
       }
     ]
@@ -347,15 +392,16 @@ function installMarketplaceFiles(): void {
  * Register marketplace in known_marketplaces.json
  */
 function registerMarketplace(): void {
+  const localMarketplaceDir = getLocalMarketplaceDir();
   const marketplaces = readKnownMarketplaces();
   const now = new Date().toISOString();
 
   marketplaces[MARKETPLACE_NAME] = {
     source: {
       source: "directory",
-      path: LOCAL_MARKETPLACE_DIR
+      path: localMarketplaceDir
     },
-    installLocation: LOCAL_MARKETPLACE_DIR,
+    installLocation: localMarketplaceDir,
     lastUpdated: now
   };
 
@@ -366,7 +412,8 @@ function registerMarketplace(): void {
  * Install plugin to cache and register in installed_plugins_v2.json
  */
 function installPlugin(): void {
-  const cacheDir = join(CACHE_DIR, MARKETPLACE_NAME, PLUGIN_NAME, EMBEDDED_PLUGINS_VERSION);
+  const localMarketplaceDir = getLocalMarketplaceDir();
+  const cacheDir = join(getCacheDir(), MARKETPLACE_NAME, PLUGIN_NAME, EMBEDDED_PLUGINS_VERSION);
 
   // Create cache directory
   if (!existsSync(cacheDir)) {
@@ -374,7 +421,7 @@ function installPlugin(): void {
   }
 
   // Copy plugin files from marketplace to cache
-  const sourcePluginDir = join(LOCAL_MARKETPLACE_DIR, "plugins", PLUGIN_NAME);
+  const sourcePluginDir = join(localMarketplaceDir, "plugins", PLUGIN_NAME);
   if (existsSync(sourcePluginDir)) {
     cpSync(sourcePluginDir, cacheDir, { recursive: true });
   }
@@ -458,33 +505,34 @@ export function fullUninstall(): void {
   }
 
   // Step 4: Remove cache directory
-  const cacheDir = join(CACHE_DIR, MARKETPLACE_NAME);
+  const cacheDir = join(getCacheDir(), MARKETPLACE_NAME);
   if (existsSync(cacheDir)) {
     rmSync(cacheDir, { recursive: true, force: true });
   }
 
   // Step 5: Remove marketplace directory
-  if (existsSync(LOCAL_MARKETPLACE_DIR)) {
-    rmSync(LOCAL_MARKETPLACE_DIR, { recursive: true, force: true });
+  const localMarketplaceDir = getLocalMarketplaceDir();
+  if (existsSync(localMarketplaceDir)) {
+    rmSync(localMarketplaceDir, { recursive: true, force: true });
   }
 }
 
 /**
- * Check and auto-install/update on CLI startup
+ * Check and auto-install/update on CLI startup (for compiled binary)
  * This is silent and non-intrusive
  *
  * Behavior:
- * - First run (compiled binary only): auto-install marketplace and plugin
- * - First run (npm install): skip, users should opt-in via `agent-foreman plugin install`
- * - Upgrade (ALL installation methods): if bundled version > installed version, update plugin files
+ * - First run: install marketplace and plugin
+ * - Upgrade: if bundled version > installed version, update plugin files
+ * - Also updates project-level .claude/rules/ if they exist
  */
 export async function checkAndInstallPlugins(): Promise<void> {
-  // Skip if no embedded plugins available
-  if (!hasEmbeddedPlugins()) {
+  // Skip if not in compiled mode
+  if (!isCompiledBinary()) {
     return;
   }
 
-  // Check if marketplace is already registered (upgrade path)
+  // Check if marketplace is already registered
   if (isMarketplaceRegistered()) {
     // Already installed - check if update is needed
     const info = getPluginInstallInfo();
@@ -492,12 +540,15 @@ export async function checkAndInstallPlugins(): Promise<void> {
     const bundledVersion = info.bundledVersion;
 
     // Compare versions: if bundled > installed, update
-    // This works for ALL installation methods (compiled binary, npm, etc.)
     if (compareVersions(bundledVersion, installedVersion) > 0) {
       console.log(chalk.cyan(`Updating agent-foreman plugin (${installedVersion} → ${bundledVersion})...`));
       try {
         fullInstall();
         console.log(chalk.green("✓ Plugin updated"));
+
+        // Also update project rules if they exist
+        await updateProjectRulesIfExists();
+
         console.log(chalk.gray("  Restart Claude Code to use the updated plugin\n"));
       } catch (error) {
         console.warn(
@@ -508,13 +559,7 @@ export async function checkAndInstallPlugins(): Promise<void> {
     return;
   }
 
-  // First run: only auto-install for compiled binary
-  // npm users should opt-in via `agent-foreman plugin install`
-  if (!isCompiledBinary()) {
-    return;
-  }
-
-  // First run (compiled binary only): silently install marketplace
+  // First run: silently install marketplace
   console.log(chalk.cyan("Registering agent-foreman plugin marketplace..."));
   try {
     fullInstall();
@@ -524,5 +569,27 @@ export async function checkAndInstallPlugins(): Promise<void> {
     console.warn(
       chalk.yellow(`⚠ Failed to install plugin: ${error instanceof Error ? error.message : error}`)
     );
+  }
+}
+
+/**
+ * Update project-level .claude/rules/ if they already exist
+ * This is called during auto-update to keep project rules in sync
+ */
+async function updateProjectRulesIfExists(): Promise<void> {
+  const cwd = process.cwd();
+
+  // Only update if rules already exist (project has been initialized)
+  if (!hasRulesInstalled(cwd)) {
+    return;
+  }
+
+  try {
+    const result = await copyRulesToProject(cwd, { force: true });
+    if (result.created > 0) {
+      console.log(chalk.green(`✓ Updated ${result.created} project rules`));
+    }
+  } catch {
+    // Silent failure for auto-update - non-critical
   }
 }

@@ -1,22 +1,28 @@
 # Commands
 
+## Core Workflow Commands
+
 ```bash
 # View project status
 agent-foreman status
 
-# Work on next priority feature
+# Work on next priority task
 agent-foreman next
 
-# Work on specific feature
-agent-foreman next <feature_id>
+# Work on specific task
+agent-foreman next <task_id>
 
-# Fast check (default, no task_id): Git diff → selective tests + task impact
+# Fast check (default) - git diff based verification
 agent-foreman check
+# → Runs: typecheck + lint + selective tests (based on changed files)
+# → Skips: build, E2E, AI analysis
+# → Shows: Task impact notification
 
-# Fast check with AI verification for affected tasks
+# Fast check with AI task verification
 agent-foreman check --ai
+# → Fast checks + AI verification for affected tasks
 
-# Full check (all tests + build + E2E): Auto-selects next task
+# Full verification - all tests + build + E2E
 agent-foreman check --full
 
 # Task-specific verification (no AI by default)
@@ -28,48 +34,86 @@ agent-foreman check <task_id>
 agent-foreman check <task_id> --ai
 # → Full checks + AI autonomous exploration
 
-# Mark feature as done (skips verification by default, use after check)
-agent-foreman done <feature_id>
+# Mark task as done (skips verification by default, use after check)
+agent-foreman done <task_id>
 
-# Mark feature as done (with verification, for manual use)
-agent-foreman done <feature_id> --no-skip-check
+# Mark task as done (with verification, for manual use)
+agent-foreman done <task_id> --no-skip-check
 
-# Mark feature as done with AI verification
-agent-foreman done <feature_id> --no-skip-check --ai
+# Mark task as done with AI verification
+agent-foreman done <task_id> --no-skip-check --ai
+
+# Mark task as failed (when verification fails and you want to continue)
+agent-foreman fail <task_id> --reason "Brief failure description"
 
 # Full mode - run all tests (slower, for final verification)
-agent-foreman done <feature_id> --full --no-skip-check
+agent-foreman done <task_id> --full --no-skip-check
 
 # Skip E2E tests (faster iterations)
-agent-foreman done <feature_id> --skip-e2e
+agent-foreman done <task_id> --skip-e2e
 
 # Skip auto-commit (manual commit)
-agent-foreman done <feature_id> --no-commit
+agent-foreman done <task_id> --no-commit
 
 # Disable loop mode (no continuation reminder)
-agent-foreman done <feature_id> --no-loop
+agent-foreman done <task_id> --no-loop
 
-# Mark feature as failed (for verification failures, continue to next)
-agent-foreman fail <feature_id> --reason "Reason for failure"
+# Analyze impact of changes on dependent tasks
+agent-foreman impact <task_id>
+```
 
-# Analyze impact of changes
-agent-foreman impact <feature_id>
+## Analysis & Setup Commands
 
-# Scan project verification capabilities
-agent-foreman scan
+```bash
+# Full harness initialization (default behavior)
+agent-foreman init
 
-# View or change TDD mode
-agent-foreman tdd                    # Show current mode
-agent-foreman tdd strict             # Enable strict TDD
-agent-foreman tdd recommended        # Enable recommended TDD (default)
-agent-foreman tdd disabled           # Disable TDD guidance
+# Generate ARCHITECTURE.md only (skip harness setup)
+agent-foreman init --analyze
+agent-foreman init --analyze --analyze-output custom/path.md
 
-# Bootstrap/development/testing (init.sh)
-./ai/init.sh bootstrap              # Install dependencies
-./ai/init.sh dev                    # Start dev server
-./ai/init.sh check                  # Run all checks (tests, types, lint, build, e2e)
-./ai/init.sh check --quick          # Quick mode: unit tests + E2E by tags only
-./ai/init.sh check --full           # Full mode: all tests including full E2E suite
-./ai/init.sh check --skip-e2e       # Skip E2E tests entirely
-./ai/init.sh check "pattern"        # Run tests matching pattern
+# Detect verification capabilities only (skip harness setup)
+agent-foreman init --scan
+agent-foreman init --scan --scan-force  # Force re-detection (ignore cache)
+
+# Show AI agent status (claude, codex, gemini)
+agent-foreman agents
+```
+
+## TDD Mode Commands
+
+```bash
+# View current TDD mode
+agent-foreman tdd
+
+# Enable strict TDD (tests required, workflow mandatory)
+agent-foreman tdd strict
+
+# Enable recommended TDD (tests suggested, default)
+agent-foreman tdd recommended
+
+# Disable TDD guidance
+agent-foreman tdd disabled
+```
+
+## Plugin Commands
+
+```bash
+# Install Claude Code plugin
+agent-foreman install
+
+# Uninstall Claude Code plugin
+agent-foreman uninstall
+```
+
+## Bootstrap Scripts
+
+```bash
+# Bootstrap/development/testing
+./ai/init.sh bootstrap
+./ai/init.sh dev
+./ai/init.sh check                # Fast mode (git diff based)
+./ai/init.sh check --ai           # Fast + AI task verification
+./ai/init.sh check --full         # Full verification (all tests + build + E2E)
+./ai/init.sh check <task_id>      # Task-specific verification
 ```

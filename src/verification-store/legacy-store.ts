@@ -1,23 +1,11 @@
 /**
- * Legacy store operations for backward compatibility
+ * Legacy Store Operations (for backward compatibility)
  */
-
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import type { VerificationStore, VerificationResult } from "../verifier/verification-types.js";
-import {
-  VERIFICATION_STORE_PATH,
-  VERIFICATION_STORE_DIR,
-  STORE_VERSION,
-} from "./constants.js";
-
-/**
- * Ensure the verification directory exists
- */
-export async function ensureVerificationDir(cwd: string): Promise<void> {
-  const dirPath = path.join(cwd, VERIFICATION_STORE_DIR);
-  await fs.mkdir(dirPath, { recursive: true });
-}
+import type { VerificationStore, VerificationResult } from "../verifier/types/index.js";
+import { VERIFICATION_STORE_PATH, STORE_VERSION } from "./constants.js";
+import { ensureVerificationDir } from "./helpers.js";
 
 /**
  * Create an empty verification store (legacy)

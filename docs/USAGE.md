@@ -14,10 +14,14 @@ agent-foreman is designed as a Claude Code plugin. This is the recommended way t
 
 ### Installation
 
+```bash
+# Install plugin (auto-registers with Claude Code)
+agent-foreman install
+
+# Restart Claude Code to activate
 ```
-/plugin marketplace add mylukin/agent-foreman
-/plugin install agent-foreman
-```
+
+> 通过 `agent-foreman install` 命令自动安装插件，然后重启 Claude Code 即可。
 
 ### Slash Commands Reference
 
@@ -26,8 +30,8 @@ agent-foreman is designed as a Claude Code plugin. This is the recommended way t
 | `/agent-foreman:status` | View project status and progress |
 | `/agent-foreman:init` | Initialize harness with project goal |
 | `/agent-foreman:analyze` | Analyze existing project structure |
-| `/agent-foreman:next` | Get next priority feature to work on |
-| `/agent-foreman:run` | Auto-complete all pending features |
+| `/agent-foreman:next` | Get next priority task to work on |
+| `/agent-foreman:run` | Auto-complete all pending tasks |
 
 ---
 
@@ -42,13 +46,22 @@ Initialize or upgrade the long-task harness.
 /agent-foreman:init <goal>
 /agent-foreman:init <goal> --mode new
 /agent-foreman:init <goal> --mode scan
+/agent-foreman:init <goal> --task-type ops
 ```
 
 **Parameters:**
 - `<goal>` - Project goal in natural language (supports English and Chinese)
-- `--mode merge` - (default) Merge new features with existing list
-- `--mode new` - Replace existing feature list entirely
-- `--mode scan` - Preview only, don't save
+- `--mode` / `-m` - Init mode (default: merge)
+  - `merge` - Merge new features with existing list
+  - `new` - Replace existing task list entirely
+  - `scan` - Preview only, don't save
+- `--task-type` / `-t` - Default verification type for tasks:
+  - `code` - Software development tasks (unit tests, build)
+  - `ops` - Operational tasks (manual checklist verification)
+  - `data` - Data processing tasks (output validation)
+  - `infra` - Infrastructure tasks (resource state checks)
+  - `manual` - Manual verification only (no automation)
+- `--verbose` / `-v` - Show detailed output
 
 **Examples:**
 ```
@@ -68,24 +81,25 @@ Initialize or upgrade the long-task harness.
 
 ### `/agent-foreman:next`
 
-Get the next priority feature to work on.
+Get the next priority task to work on.
 
 > 获取下一个优先任务。
 
 **Usage:**
 ```
 /agent-foreman:next
-/agent-foreman:next <feature_id>
+/agent-foreman:next <task_id>
+/agent-foreman:next --json
 ```
 
 **Parameters:**
-- `<feature_id>` - (optional) Work on specific feature
-- `--dry-run` / `-d` - Preview only, don't select
+- `<task_id>` - (optional) Work on specific task
+- `--dry-run` / `-d` - Preview only, don't make changes
 - `--check` / `-c` - Run basic tests before showing next task
 - `--allow-dirty` - Allow running with uncommitted changes
 - `--json` - Output as JSON for scripting
 - `--quiet` / `-q` - Suppress decorative output
-- `--refresh-guidance` - Force regenerate TDD guidance
+- `--refresh-guidance` - Force regenerate TDD guidance (ignore cache)
 
 **Priority Order:**
 1. `needs_review` status (highest priority)
@@ -96,7 +110,6 @@ Get the next priority feature to work on.
 ```
 /agent-foreman:next
 /agent-foreman:next auth.login
-/agent-foreman:next --json
 ```
 
 ---
@@ -116,7 +129,7 @@ View project status and progress.
 
 **Output includes:**
 - Project goal
-- Feature counts by status
+- Task counts by status
 - Completion percentage with progress bar
 - Recent activity from progress log
 
@@ -151,55 +164,108 @@ Work on features - either all pending features or a specific one.
 
 **Usage:**
 ```
-/agent-foreman:run                  # Auto-complete all features
-/agent-foreman:run auth.login       # Work on specific feature
+/agent-foreman:run                  # Auto-complete all tasks
+/agent-foreman:run auth.login       # Work on specific task
 ```
 
 **Parameters:**
-- No argument: Auto-complete all pending features in priority order
-- `<feature_id>`: Work on the specified feature only
+- No argument: Auto-complete all pending tasks in priority order
+- `<task_id>`: Work on the specified task only
 
 **Examples:**
 ```
 /agent-foreman:run                  # Complete all pending tasks
-/agent-foreman:run api.users.create # Work on specific feature
+/agent-foreman:run api.users.create # Work on specific task
 ```
 
-**Execution loop (when no feature_id):**
+**Execution loop (when no task_id):**
 1. Check status
-2. Get next feature (auto-selected by priority)
-3. Implement feature (satisfy ALL acceptance criteria)
-4. Complete feature with verification
-5. Repeat until all done
+2. Get next task (auto-selected by priority)
+3. Implement task (satisfy ALL acceptance criteria)
+4. Check implementation with verification
+5. Complete task
+6. Repeat until all done
 
 **Exit conditions:**
-- All features `passing`/`deprecated` → Success
-- Verification fails → Stop and report
+- All tasks `passing`/`deprecated` → Success
+- Verification fails → Mark as failed and continue
 - User interrupts → Stop with clean state
 
 ---
 
-## Feature Completion
+## Task Verification
 
-After implementing a feature, mark it complete using the CLI:
+Before marking a task complete, verify it with AI-powered analysis:
+
+> 在将任务标记为完成之前，使用 AI 驱动的分析进行验证。
 
 ```bash
-agent-foreman done <feature_id>
+agent-foreman check [task_id]
+```
+
+**Modes:**
+| Mode | Command | Description |
+|------|---------|-------------|
+| Fast (default) | `check` | Git diff → selective tests + task impact (10-30s) |
+| AI | `check --ai` | Fast + AI task verification (2-5 min) |
+| Full | `check --full` | All tests + build + E2E (5-10 min) |
+| Task | `check <task_id>` | Task-scoped full verification |
+
+**Options:**
+| Flag | Description |
+|------|-------------|
+| `--verbose` / `-v` | Show detailed AI reasoning |
+| `--skip-checks` / `-s` | Skip automated checks, AI only |
+| `--ai` | Enable AI verification (autonomous exploration for tasks, affected tasks for fast mode) |
+| `--quick` | Run only related tests (default for task mode) |
+| `--full` | Full verification (all tests + build + E2E) |
+| `--test-pattern <pattern>` | Explicit test pattern to use |
+| `--skip-e2e` | Skip E2E tests entirely |
+
+**Examples:**
+```bash
+# Fast check (default) - git diff based selective tests
+agent-foreman check
+
+# Fast check with AI task verification
+agent-foreman check --ai
+
+# Full verification - runs all tests + build + E2E
+agent-foreman check --full
+
+# Task-specific verification
+agent-foreman check auth.login
+
+# Skip E2E tests for faster feedback
+agent-foreman check auth.login --skip-e2e
+
+# Verbose output with detailed AI reasoning
+agent-foreman check auth.login --verbose
+```
+
+---
+
+## Task Completion
+
+After implementing a task, mark it complete using the CLI:
+
+```bash
+agent-foreman done <task_id>
 ```
 
 **Options:**
 | Flag | Description |
 |------|-------------|
-| `--quick` / `-q` | Run only related tests (default) |
+| `--notes` / `-n` | Additional notes to attach to the task |
+| `--quick` | Run only related tests (default) |
 | `--full` | Run complete test suite |
 | `--test-pattern <pattern>` | Use explicit test pattern |
 | `--skip-e2e` | Skip E2E tests |
-| `--no-skip-check` | Run verification (default skips) |
+| `--no-skip-check` | Run verification before marking done (default: skipped) |
 | `--no-commit` | Skip auto-commit |
 | `--verbose` / `-v` | Show detailed verification output |
 | `--ai` | Enable AI autonomous exploration for verification |
-| `--loop` / `--no-loop` | Enable/disable loop mode (continuation reminder) |
-| `--notes` / `-n` | Add completion notes |
+| `--loop` | Loop mode for batch workflow (default: true, use `--no-loop` to disable) |
 
 **Examples:**
 ```bash
@@ -207,47 +273,10 @@ agent-foreman done <feature_id>
 agent-foreman done auth.login
 
 # Full mode - runs all tests
-agent-foreman done auth.login --full --no-skip-check
+agent-foreman done auth.login --full
 
 # Explicit pattern
 agent-foreman done auth.login --test-pattern "tests/auth/*.test.ts"
-
-# With verification
-agent-foreman done auth.login --no-skip-check --verbose
-```
-
----
-
-## Feature Verification
-
-Preview verification without completing a feature:
-
-```bash
-agent-foreman check <feature_id>
-```
-
-**Options:**
-| Flag | Description |
-|------|-------------|
-| `--verbose` / `-v` | Show detailed AI reasoning |
-| `--skip-checks` / `-s` | Skip automated checks, AI only |
-| `--ai` | Enable AI autonomous exploration for verification |
-| `--quick` / `-q` | Run only related tests (default) |
-| `--full` | Run complete test suite |
-| `--test-pattern <pattern>` | Explicit test pattern |
-| `--skip-e2e` | Skip E2E tests |
-
-**Examples:**
-
-```bash
-# Standard verification
-agent-foreman check auth.login
-
-# Verbose mode with full tests
-agent-foreman check auth.login --verbose --full
-
-# AI-only verification (skip automated checks)
-agent-foreman check auth.login --skip-checks
 ```
 
 ---
@@ -258,12 +287,25 @@ For users not using Claude Code, agent-foreman is available as a standalone CLI.
 
 ### Installation
 
-```bash
-# Global installation
-npm install -g agent-foreman
+Download the latest binary for your platform from [Releases](https://foreman.lukin.net/):
 
-# Or use with npx
-npx agent-foreman <command>
+```bash
+# macOS (Apple Silicon)
+curl -fsSL https://foreman.lukin.net/latest/agent-foreman-darwin-arm64 -o agent-foreman
+chmod +x agent-foreman
+sudo mv agent-foreman /usr/local/bin/
+sudo xattr -dr com.apple.quarantine /usr/local/bin/agent-foreman
+
+# macOS (Intel)
+curl -fsSL https://foreman.lukin.net/latest/agent-foreman-darwin-x64 -o agent-foreman
+chmod +x agent-foreman
+sudo mv agent-foreman /usr/local/bin/
+sudo xattr -dr com.apple.quarantine /usr/local/bin/agent-foreman
+
+# Linux (x64)
+curl -fsSL https://foreman.lukin.net/latest/agent-foreman-linux-x64 -o agent-foreman
+chmod +x agent-foreman
+sudo mv agent-foreman /usr/local/bin/
 ```
 
 ### Commands
@@ -272,30 +314,22 @@ npx agent-foreman <command>
 |---------|-------------|
 | `analyze [output]` | Generate project architecture report |
 | `init [goal]` | Initialize or upgrade the harness |
-| `next [feature_id]` | Show next feature to work on |
+| `next [task_id]` | Show next task to work on |
 | `status` | Show current project status |
-| `check <feature_id>` | Verify implementation (without marking complete) |
-| `done <feature_id>` | Mark complete and auto-commit |
-| `fail <feature_id>` | Mark as failed and continue to next |
-| `impact <feature_id>` | Analyze impact of changes |
-| `tdd [mode]` | View or change TDD mode |
+| `check [task_id]` | Verify code changes or task completion |
+| `done <task_id>` | Mark complete and auto-commit |
+| `fail <task_id>` | Mark task as failed |
+| `tdd [mode]` | View or change TDD mode (strict/recommended/disabled) |
+| `impact <task_id>` | Analyze impact of changes |
+| `validate [module]` | Validate spec workflow task quality |
 | `agents` | Show available AI agents |
 | `scan` | Scan project verification capabilities |
-| `install` | Install Claude Code plugin |
-| `uninstall` | Uninstall Claude Code plugin |
-
-### Plugin Installation
-
-```bash
-# Install plugin (registers marketplace + installs + enables)
-agent-foreman install
-
-# Force reinstall
-agent-foreman install --force
-
-# Uninstall (removes all registrations)
-agent-foreman uninstall
-```
+| `upgrade` | Check for updates and upgrade to latest version |
+| `install` | Install agent-foreman Claude Code plugin |
+| `uninstall` | Uninstall agent-foreman Claude Code plugin |
+| `license` | Show license status |
+| `activate <key>` | Activate a license key on this device |
+| `deactivate` | Deactivate the license on this device |
 
 ### CLI Examples
 
@@ -315,175 +349,12 @@ agent-foreman init "Add authentication feature"
 
 **Development loop:**
 ```bash
-agent-foreman next             # Get next task
-# ... implement feature ...
-agent-foreman check cli.init   # Verify implementation
-agent-foreman done cli.init    # Mark complete + commit
-agent-foreman next             # Continue
+agent-foreman next           # Get next task
+# ... implement task ...
+agent-foreman check cli.init # Verify implementation
+agent-foreman done cli.init  # Mark complete + commit
+agent-foreman next           # Continue
 ```
-
----
-
-## Command Relationships
-
-Understanding when to use each command:
-
-### `analyze` vs `init`
-
-| Command | Purpose | When to Use |
-|---------|---------|-------------|
-| `analyze` | **Documentation only** - Generate ARCHITECTURE.md | Before init (for existing projects), or anytime you want updated docs |
-| `init` | **Setup harness** - Create feature list + rules | Once per project, or to add new features |
-
-**Typical flow for existing projects:**
-
-```bash
-# Step 1: Analyze first (creates ARCHITECTURE.md)
-agent-foreman analyze
-
-# Step 2: Init reads ARCHITECTURE.md to generate features
-agent-foreman init "Add new features"
-```
-
-**Typical flow for new projects:**
-
-```bash
-# Just init - it will scan the codebase if needed
-agent-foreman init "Build a REST API"
-```
-
-### `scan` Command Role
-
-The `scan` command detects project verification capabilities:
-
-```bash
-agent-foreman scan          # Detect and cache capabilities
-agent-foreman scan --force  # Force re-detection
-```
-
-**When to use:**
-
-- After `init` to verify capabilities were detected correctly
-- After changing package.json, tsconfig, or test configuration
-- When `check`/`done` verification commands fail unexpectedly
-
-**What it detects:**
-
-- Test framework (Jest, Vitest, pytest, etc.)
-- Test command
-- Linter (ESLint, Biome, etc.)
-- Type checker
-- Build command
-- E2E framework (Playwright, Cypress, etc.)
-
-### `impact` for Re-verification
-
-Use `impact` to analyze dependency chains before modifying shared code:
-
-```bash
-agent-foreman impact auth.login
-```
-
-**Workflow for modifying passing features:**
-
-```bash
-# 1. Check impact first
-agent-foreman impact auth.login
-# Shows: dashboard.profile, api.protected-routes depend on this
-
-# 2. Make your changes
-
-# 3. Re-verify the changed feature
-agent-foreman check auth.login
-
-# 4. If check passes, dependent features may need review
-# Manually mark them as needs_review or re-run check on them
-```
-
----
-
-## Error Recovery
-
-When verification fails, use the `fail` command to continue the loop:
-
-### Using `fail` Command
-
-```bash
-# After check fails
-agent-foreman check auth.login
-# Output: ✗ Verification failed
-
-# Mark as failed and continue
-agent-foreman fail auth.login --reason "Tests failing: API not implemented"
-
-# Continue to next feature
-agent-foreman next
-```
-
-### Error Recovery Workflow
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                    ERROR RECOVERY                            │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│    ┌──────────────────┐                                     │
-│    │ check fails or   │                                     │
-│    │ done fails       │                                     │
-│    └────────┬─────────┘                                     │
-│             │                                                │
-│             ↓                                                │
-│    ┌──────────────────┐                                     │
-│    │ agent-foreman    │                                     │
-│    │ fail <id>        │  ← Mark as failed with reason       │
-│    │ --reason "..."   │                                     │
-│    └────────┬─────────┘                                     │
-│             │                                                │
-│             ↓                                                │
-│    ┌──────────────────┐                                     │
-│    │ agent-foreman    │                                     │
-│    │ next             │  ← Continue to next feature         │
-│    └────────┬─────────┘                                     │
-│             │                                                │
-│             └──────────→ Continue loop                      │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Rules for AI Agents
-
-When in loop mode (processing all features):
-
-1. **NEVER STOP** for verification failures
-2. Use `agent-foreman fail` to mark and continue
-3. Only stop when all features are processed
-4. Review failed features in the summary
-
----
-
-## TDD Mode Configuration
-
-Change TDD mode anytime after initialization:
-
-```bash
-# View current mode
-agent-foreman tdd
-
-# Enable strict TDD (tests required)
-agent-foreman tdd strict
-
-# Enable recommended TDD (tests suggested, default)
-agent-foreman tdd recommended
-
-# Disable TDD guidance
-agent-foreman tdd disabled
-```
-
-| Mode | Effect |
-|------|--------|
-| `strict` | Tests REQUIRED - check/done fail without tests |
-| `recommended` | Tests suggested - TDD guidance shown |
-| `disabled` | No TDD guidance or requirements |
 
 ---
 
@@ -498,7 +369,7 @@ agent-foreman tdd disabled
 │  mkdir project && cd project                                │
 │  git init                                                    │
 │           ↓                                                  │
-│  /agent-foreman:init "goal" →  ai/feature_list.json         │
+│  /agent-foreman:init "goal" →  ai/tasks/                      │
 │                                ai/progress.log               │
 │                                ai/init.sh                    │
 │                                CLAUDE.md                     │
@@ -521,7 +392,7 @@ agent-foreman tdd disabled
 │                               docs/ARCHITECTURE.md           │
 │           ↓                                                  │
 │  /agent-foreman:init       →  Reads ARCHITECTURE.md +        │
-│                               ai/feature_list.json           │
+│                               ai/tasks/                      │
 │                               + git commit (suggested)       │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -534,14 +405,15 @@ agent-foreman tdd disabled
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
 │    ┌──────────────────┐                                     │
-│    │ agent-foreman    │                                     │
+│    │ /agent-foreman:  │                                     │
 │    │     next         │  ← External memory sync             │
-│    └────────┬─────────┘    - pwd, git log, progress.log     │
-│             │                                                │
-│             ↓                                                │
+│    └────────┬─────────┘    - pwd                            │
+│             │              - git log                         │
+│             │              - progress.log                    │
+│             ↓              - task status                     │
 │    ┌──────────────────┐                                     │
 │    │   Implement      │                                     │
-│    │   Feature        │  ← Human or AI agent                │
+│    │   Task           │  ← Human or AI agent                │
 │    └────────┬─────────┘                                     │
 │             │                                                │
 │             ↓                                                │
@@ -550,17 +422,11 @@ agent-foreman tdd disabled
 │    │   check <id>     │  ← Verify implementation            │
 │    └────────┬─────────┘                                     │
 │             │                                                │
-│         ┌───┴───┐                                           │
-│         │       │                                           │
-│       pass    fail                                          │
-│         │       │                                           │
-│         ↓       ↓                                           │
-│    ┌────────┐ ┌────────┐                                   │
-│    │  done  │ │  fail  │                                   │
-│    │  <id>  │ │  <id>  │  ← Mark failed + continue         │
-│    └───┬────┘ └───┬────┘                                   │
-│        │          │                                         │
-│        └────┬─────┘                                         │
+│             ↓                                                │
+│    ┌──────────────────┐                                     │
+│    │ agent-foreman    │                                     │
+│    │   done <id>      │  ← Mark complete + auto-commit      │
+│    └────────┬─────────┘                                     │
 │             │                                                │
 │             └──────────→ Loop back to next                  │
 │                                                              │
@@ -576,7 +442,10 @@ After initialization, your project will have:
 ```
 your-project/
 ├── ai/
-│   ├── feature_list.json   # Feature backlog (JSON for AI)
+│   ├── tasks/              # Task/feature backlog (modular markdown)
+│   │   ├── index.json      # Task index (with optional filePath for custom filenames)
+│   │   └── {module}/       # Module directories
+│   │       └── {id}.md     # Individual tasks (or custom filename via filePath)
 │   ├── progress.log        # Immutable audit log
 │   └── init.sh             # Bootstrap script
 ├── docs/
@@ -587,29 +456,52 @@ your-project/
 
 ---
 
-## Feature JSON Schema
+## Task Schema
 
-```json
-{
-  "id": "module.feature.action",
-  "description": "Human-readable description",
-  "module": "parent-module-name",
-  "priority": 1,
-  "status": "failing",
-  "acceptance": [
-    "First acceptance criterion",
-    "Second acceptance criterion"
-  ],
-  "dependsOn": ["other.feature.id"],
-  "tags": ["optional-tag"],
-  "version": 1,
-  "origin": "manual",
-  "notes": "",
-  "testRequirements": {
-    "unit": { "required": false, "pattern": "tests/module/**/*.test.ts" }
-  }
-}
+Tasks are stored as **Markdown files with YAML frontmatter** in `ai/tasks/{module}/{id}.md`:
+
+```markdown
+---
+id: module.task.action
+module: parent-module-name
+priority: 1
+status: failing
+version: 1
+origin: manual
+dependsOn:
+  - other.task.id
+supersedes:
+  - old.task.id
+tags:
+  - optional-tag
+notes: ""
+e2eTags:
+  - "@feature-auth"
+  - "@smoke"
+testRequirements:
+  unit:
+    required: false
+    pattern: tests/module/**/*.test.ts
+testFiles:
+  - tests/auth/login.test.ts
+verification:
+  verifiedAt: "2024-01-15T10:00:00Z"
+  verdict: pass
+  verifiedBy: claude
+  commitHash: abc123
+  summary: All acceptance criteria met
+---
+# Human-readable description
+
+## Acceptance Criteria
+
+1. First acceptance criterion
+2. Second acceptance criterion
 ```
+
+**Required fields:** `id`, `description`, `module`, `priority`, `status`, `acceptance`, `version`, `origin`
+
+**Optional fields:** `dependsOn`, `supersedes`, `tags`, `notes`, `e2eTags`, `testRequirements`, `testFiles`, `verification`
 
 **Status values:** `failing` | `passing` | `blocked` | `needs_review` | `failed` | `deprecated`
 
@@ -617,21 +509,35 @@ your-project/
 
 ### testRequirements Structure
 
-```json
-"testRequirements": {
-  "unit": {
-    "required": false,
-    "pattern": "tests/auth/**/*.test.ts",
-    "cases": ["should login", "should logout"]
-  },
-  "e2e": {
-    "required": false,
-    "pattern": "e2e/auth/**/*.spec.ts",
-    "tags": ["@auth"],
-    "scenarios": ["user can login"]
-  }
-}
+```yaml
+testRequirements:
+  unit:
+    required: false
+    pattern: tests/auth/**/*.test.ts
+    cases:
+      - should login
+      - should logout
+  e2e:
+    required: false
+    pattern: e2e/auth/**/*.spec.ts
+    tags:
+      - "@auth"
+    scenarios:
+      - user can login
 ```
+
+### verification Structure
+
+```yaml
+verification:
+  verifiedAt: "2024-01-15T10:00:00Z"
+  verdict: pass
+  verifiedBy: claude
+  commitHash: abc123def456
+  summary: All 3 acceptance criteria satisfied
+```
+
+**Verdict values:** `pass` | `fail` | `needs_review`
 
 ---
 
@@ -652,7 +558,7 @@ npm install -g @google/gemini-cli
 npm install -g @openai/codex
 ```
 
-### "No feature list found"
+### "No task list found"
 
 Run init first:
 

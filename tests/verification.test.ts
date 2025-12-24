@@ -16,12 +16,7 @@ import {
   hasVerification,
   getVerificationStats,
   STORE_VERSION,
-  loadVerificationIndex,
 } from "../src/verification-store/index.js";
-
-import {
-  saveLegacyResult,
-} from "../src/verification-store/legacy-store.js";
 
 import {
   buildVerificationPrompt,
@@ -29,13 +24,13 @@ import {
   parseVerificationResponse,
   truncateDiffIntelligently,
   DEFAULT_MAX_DIFF_SIZE,
-} from "../src/verifier/prompts.js";
+} from "../src/verification-prompts.js";
 
 import type {
   VerificationResult,
   AutomatedCheckResult,
   CriterionResult,
-} from "../src/verifier/verification-types.js";
+} from "../src/verifier/types/index.js";
 
 import type { Feature } from "../src/types.js";
 
@@ -157,55 +152,34 @@ describe("Verification Store", () => {
   });
 
   describe("saveVerificationResult", () => {
-    it("should save result to individual JSON file (v3.0.0 format)", async () => {
+    it("should save result and create directory if needed", async () => {
       const result = createTestVerificationResult();
 
       await saveVerificationResult(tempDir, result);
 
-      // Verify individual JSON file is created (not results.json)
-      const jsonPath = path.join(
-        tempDir,
-        "ai",
-        "verification",
-        "test.feature",
-        "001.json"
-      );
-      const content = await fs.readFile(jsonPath, "utf-8");
-      const metadata = JSON.parse(content);
-
-      expect(metadata.featureId).toBe("test.feature");
-      expect(metadata.verdict).toBe("pass");
-      expect(metadata.runNumber).toBe(1);
-      // Verify full data is stored (v3.0.0)
-      expect(metadata.overallReasoning).toBe("All criteria met");
-    });
-
-    it("should NOT create legacy results.json (v3.0.0)", async () => {
-      const result = createTestVerificationResult();
-
-      await saveVerificationResult(tempDir, result);
-
-      // Legacy results.json should NOT be created
-      const legacyPath = path.join(
+      const storePath = path.join(
         tempDir,
         "ai",
         "verification",
         "results.json"
       );
-      await expect(fs.stat(legacyPath)).rejects.toThrow();
+      const content = await fs.readFile(storePath, "utf-8");
+      const store = JSON.parse(content);
+
+      expect(store.results["test.feature"]).toBeDefined();
+      expect(store.results["test.feature"].verdict).toBe("pass");
     });
 
-    it("should update index on subsequent saves", async () => {
+    it("should update existing result", async () => {
       const result1 = createTestVerificationResult({ verdict: "fail" });
       const result2 = createTestVerificationResult({ verdict: "pass" });
 
       await saveVerificationResult(tempDir, result1);
       await saveVerificationResult(tempDir, result2);
 
-      const index = await loadVerificationIndex(tempDir);
+      const store = await loadVerificationStore(tempDir);
 
-      expect(index?.features["test.feature"].latestVerdict).toBe("pass");
-      expect(index?.features["test.feature"].latestRun).toBe(2);
+      expect(store?.results["test.feature"].verdict).toBe("pass");
     });
   });
 
@@ -249,14 +223,14 @@ describe("Verification Store", () => {
     });
 
     it("should do nothing when feature doesn't exist in store", async () => {
-      const result = createTestVerificationResult({ featureId: "other.feature" });
+      const result = createTestVerificationResult({ featureId: "other.task" });
       await saveVerificationResult(tempDir, result);
 
       // Should not throw
       await clearVerificationResult(tempDir, "non.existent");
 
       // Other feature should still exist
-      const other = await getLastVerification(tempDir, "other.feature");
+      const other = await getLastVerification(tempDir, "other.task");
       expect(other).not.toBeNull();
     });
   });
@@ -292,7 +266,7 @@ describe("Verification Store", () => {
     });
 
     it("should return false when feature not verified", async () => {
-      const result = createTestVerificationResult({ featureId: "other.feature" });
+      const result = createTestVerificationResult({ featureId: "other.task" });
       await saveVerificationResult(tempDir, result);
 
       const has = await hasVerification(tempDir, "test.feature");
@@ -790,6 +764,7 @@ ${"content line\n".repeat(2000)}`;
 // ============================================================================
 
 import {
+  loadVerificationIndex,
   createEmptyIndex,
   getVerificationHistory,
   getFeatureSummary,
@@ -799,7 +774,7 @@ import {
   autoMigrateIfNeeded,
 } from "../src/verification-store/index.js";
 
-import { generateVerificationReport, generateVerificationSummary } from "../src/verifier/report.js";
+import { generateVerificationReport, generateVerificationSummary } from "../src/verification-report.js";
 
 describe("Per-Feature Verification Storage", () => {
   let tempDir: string;
@@ -967,32 +942,6 @@ describe("Per-Feature Verification Storage", () => {
       expect(index?.features["test.feature"].passCount).toBe(1);
       expect(index?.features["test.feature"].failCount).toBe(1);
       expect(index?.features["test.feature"].latestVerdict).toBe("pass");
-    });
-
-    it("should include enhanced fields in index summary (v3.0.0)", async () => {
-      const result = createTestVerificationResult({
-        commitHash: "abc123def",
-        automatedChecks: [
-          { type: "test", success: true, duration: 1000 },
-          { type: "lint", success: true, duration: 500 },
-        ],
-        criteriaResults: [
-          { criterion: "A", index: 0, satisfied: true, reasoning: "OK", confidence: 0.9 },
-          { criterion: "B", index: 1, satisfied: false, reasoning: "Missing", confidence: 0.8 },
-        ],
-        suggestions: ["Consider adding more tests"],
-      });
-      await saveVerificationResult(tempDir, result);
-
-      const index = await loadVerificationIndex(tempDir);
-      const summary = index?.features["test.feature"];
-
-      // Enhanced fields (v3.0.0)
-      expect(summary?.latestCommitHash).toBe("abc123def");
-      expect(summary?.automatedChecksPassed).toBe(true);
-      expect(summary?.criteriaCount).toBe(2);
-      expect(summary?.criteriaSatisfied).toBe(1);
-      expect(summary?.hasWarnings).toBe(true);
     });
   });
 
@@ -1721,129 +1670,6 @@ describe("verification-prompts additional coverage", () => {
       const prompt = buildVerificationPrompt(feature, "diff", [], []);
 
       expect(prompt).toContain("No automated checks were run");
-    });
-  });
-});
-
-// ============================================================================
-// Legacy Store Tests
-// ============================================================================
-
-describe("Legacy Store Operations", () => {
-  let tempDir: string;
-
-  beforeEach(async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "legacy-store-test-"));
-  });
-
-  afterEach(async () => {
-    await fs.rm(tempDir, { recursive: true, force: true });
-  });
-
-  describe("saveLegacyResult", () => {
-    it("should create new store when none exists", async () => {
-      const result: VerificationResult = {
-        featureId: "test.feature",
-        timestamp: new Date().toISOString(),
-        commitHash: "abc123",
-        changedFiles: ["src/test.ts"],
-        diffSummary: "1 file changed",
-        automatedChecks: [],
-        criteriaResults: [],
-        verdict: "pass",
-        verifiedBy: "claude",
-        overallReasoning: "Test passed",
-      };
-
-      await saveLegacyResult(tempDir, result);
-
-      // Verify the legacy results.json file was created
-      const storePath = path.join(tempDir, "ai", "verification", "results.json");
-      const content = await fs.readFile(storePath, "utf-8");
-      const store = JSON.parse(content);
-
-      expect(store.results["test.feature"]).toBeDefined();
-      expect(store.results["test.feature"].verdict).toBe("pass");
-    });
-
-    it("should update existing store with new result", async () => {
-      // First save
-      const result1: VerificationResult = {
-        featureId: "feature.one",
-        timestamp: new Date().toISOString(),
-        commitHash: "abc123",
-        changedFiles: [],
-        diffSummary: "",
-        automatedChecks: [],
-        criteriaResults: [],
-        verdict: "pass",
-        verifiedBy: "claude",
-        overallReasoning: "",
-      };
-      await saveLegacyResult(tempDir, result1);
-
-      // Second save with different feature
-      const result2: VerificationResult = {
-        featureId: "feature.two",
-        timestamp: new Date().toISOString(),
-        commitHash: "def456",
-        changedFiles: [],
-        diffSummary: "",
-        automatedChecks: [],
-        criteriaResults: [],
-        verdict: "fail",
-        verifiedBy: "claude",
-        overallReasoning: "",
-      };
-      await saveLegacyResult(tempDir, result2);
-
-      // Verify both features are in the store
-      const storePath = path.join(tempDir, "ai", "verification", "results.json");
-      const content = await fs.readFile(storePath, "utf-8");
-      const store = JSON.parse(content);
-
-      expect(Object.keys(store.results)).toHaveLength(2);
-      expect(store.results["feature.one"].verdict).toBe("pass");
-      expect(store.results["feature.two"].verdict).toBe("fail");
-    });
-
-    it("should overwrite existing feature result", async () => {
-      const result1: VerificationResult = {
-        featureId: "test.feature",
-        timestamp: "2024-01-01T00:00:00Z",
-        commitHash: "abc123",
-        changedFiles: [],
-        diffSummary: "",
-        automatedChecks: [],
-        criteriaResults: [],
-        verdict: "fail",
-        verifiedBy: "claude",
-        overallReasoning: "First run",
-      };
-      await saveLegacyResult(tempDir, result1);
-
-      const result2: VerificationResult = {
-        featureId: "test.feature",
-        timestamp: "2024-01-02T00:00:00Z",
-        commitHash: "def456",
-        changedFiles: [],
-        diffSummary: "",
-        automatedChecks: [],
-        criteriaResults: [],
-        verdict: "pass",
-        verifiedBy: "claude",
-        overallReasoning: "Second run",
-      };
-      await saveLegacyResult(tempDir, result2);
-
-      const storePath = path.join(tempDir, "ai", "verification", "results.json");
-      const content = await fs.readFile(storePath, "utf-8");
-      const store = JSON.parse(content);
-
-      // Should have only one entry, with updated values
-      expect(Object.keys(store.results)).toHaveLength(1);
-      expect(store.results["test.feature"].verdict).toBe("pass");
-      expect(store.results["test.feature"].overallReasoning).toBe("Second run");
     });
   });
 });

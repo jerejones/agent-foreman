@@ -2,9 +2,7 @@
 
 Remove the agent-foreman Claude Code plugin.
 
-> 移除 agent-foreman Claude Code 插件。
-
-## Synopsis
+## Command Syntax
 
 ```bash
 agent-foreman uninstall
@@ -12,192 +10,184 @@ agent-foreman uninstall
 
 ## Description
 
-The `uninstall` command completely removes the agent-foreman plugin from Claude Code. It disables the plugin, removes registrations, and deletes cached files.
-
-> `uninstall` 命令从 Claude Code 完全移除 agent-foreman 插件。它禁用插件、删除注册信息并删除缓存文件。
-
-## Options
-
-This command has no options.
+The `uninstall` command removes the agent-foreman plugin from Claude Code, including disabling the plugin, removing registration entries, and deleting cached files.
 
 ## Execution Flow
 
 ```mermaid
 flowchart TD
-    Start([Start]) --> GetInfo[getPluginInstallInfo]
+    A[Start: runUninstall] --> B[getPluginInstallInfo]
+    B --> C[Display Current Status]
 
-    subgraph Status["Check Current Status"]
-        GetInfo --> ShowStatus[Display Current Status]
-        ShowStatus --> CheckInstalled{Anything<br/>Installed?}
-    end
+    C --> D{Anything Installed?}
+    D -->|No| E[Display: Nothing to uninstall]
+    E --> F[Show Install Instructions]
+    F --> G[End: Early Exit]
 
-    CheckInstalled -->|No| NotInstalled[Show Not Installed]
-    NotInstalled --> End([End])
+    D -->|Yes| H[fullUninstall]
 
-    CheckInstalled -->|Yes| RunUninstall
+    H --> I{Plugin Enabled?}
+    I -->|Yes| J[Disable in settings.json]
+    I -->|No| K[Continue]
+    J --> K
 
-    subgraph UninstallPhase["Uninstallation Process"]
-        RunUninstall[fullUninstall] --> CheckEnabled{Plugin Enabled?}
-        CheckEnabled -->|Yes| Step1[Disable in settings.json]
-        CheckEnabled -->|No| CheckPlugin
+    K --> L{Plugin Installed?}
+    L -->|Yes| M[Remove from installed_plugins_v2.json]
+    M --> N[Delete Plugin Cache]
+    L -->|No| O[Continue]
+    N --> O
 
-        Step1 --> CheckPlugin{Plugin Installed?}
-        CheckPlugin -->|Yes| Step2[Remove from installed_plugins_v2.json]
-        CheckPlugin -->|No| CheckMarketplace
+    O --> P{Marketplace Registered?}
+    P -->|Yes| Q[Remove from known_marketplaces.json]
+    Q --> R[Delete Marketplace Files]
+    P -->|No| S[Continue]
+    R --> S
 
-        Step2 --> Step3[Delete Plugin Cache]
-        Step3 --> CheckMarketplace{Marketplace<br/>Registered?}
-
-        CheckMarketplace -->|Yes| Step4[Remove from known_marketplaces.json]
-        CheckMarketplace -->|No| Success
-
-        Step4 --> Step5[Delete Marketplace Files]
-        Step5 --> Success
-    end
-
-    Success[Show Success] --> Restart[Prompt: Restart Claude Code]
-    Restart --> End
-
-    style NotInstalled fill:#999999
-    style Success fill:#00cc00
-```
-
-## Uninstallation Steps Detail
-
-```mermaid
-flowchart TD
-    subgraph Step1["Step 1: Disable Plugin"]
-        S1A[Read settings.json] --> S1B[Remove from enabledPlugins]
-        S1B --> S1C[Write settings.json]
-    end
-
-    subgraph Step2["Step 2: Unregister Plugin"]
-        S2A[Read installed_plugins_v2.json] --> S2B[Remove plugin entry]
-        S2B --> S2C[Write installed_plugins_v2.json]
-    end
-
-    subgraph Step3["Step 3: Delete Plugin Cache"]
-        S3A[Find cache directory] --> S3B[Delete plugin files]
-    end
-
-    subgraph Step4["Step 4: Unregister Marketplace"]
-        S4A[Read known_marketplaces.json] --> S4B[Remove marketplace entry]
-        S4B --> S4C[Write known_marketplaces.json]
-    end
-
-    subgraph Step5["Step 5: Delete Marketplace Files"]
-        S5A[Find marketplace directory] --> S5B[Delete marketplace files]
-    end
-
-    Step1 --> Step2
-    Step2 --> Step3
-    Step3 --> Step4
-    Step4 --> Step5
-```
-
-## State Cleanup
-
-```mermaid
-flowchart LR
-    subgraph Before["Before Uninstall"]
-        B1[settings.json<br/>enabledPlugins: agent-foreman]
-        B2[installed_plugins_v2.json<br/>plugin entry]
-        B3[known_marketplaces.json<br/>marketplace entry]
-        B4[cache/plugins/agent-foreman/]
-        B5[marketplaces/agent-foreman/]
-    end
-
-    subgraph After["After Uninstall"]
-        A1[settings.json<br/>enabledPlugins: removed]
-        A2[installed_plugins_v2.json<br/>entry removed]
-        A3[known_marketplaces.json<br/>entry removed]
-        A4[cache/plugins/agent-foreman/<br/>deleted]
-        A5[marketplaces/agent-foreman/<br/>deleted]
-    end
-
-    B1 -->|Clean| A1
-    B2 -->|Clean| A2
-    B3 -->|Clean| A3
-    B4 -->|Clean| A4
-    B5 -->|Clean| A5
+    S --> T{Uninstall Success?}
+    T -->|No| U[Display Error]
+    U --> V[Exit with Error]
+    T -->|Yes| W[Display Success]
+    W --> X[List Completed Steps]
+    X --> Y[Display: Restart Claude Code]
+    Y --> Z[End]
 ```
 
 ## Data Flow Diagram
 
 ```mermaid
-flowchart LR
-    subgraph Input
-        ClaudeConfig[Claude Code Config Dir]
+graph TB
+    subgraph StatusCheck["Status Check"]
+        A1[getPluginInstallInfo]
+        A2[isMarketplaceRegistered]
+        A3[isPluginInstalled]
+        A4[isPluginEnabled]
     end
 
-    subgraph Processing
-        StatusCheck[Status Checker]
-        Uninstaller[Plugin Uninstaller]
+    subgraph Uninstall["Uninstall Process"]
+        B1[fullUninstall]
+        B2[Disable Plugin]
+        B3[Remove Plugin Entry]
+        B4[Delete Plugin Cache]
+        B5[Remove Marketplace Registration]
+        B6[Delete Marketplace Files]
+    end
+
+    subgraph ClaudeCode["Claude Code Files Modified"]
+        C1[~/.claude/settings.json]
+        C2[~/.claude/installed_plugins_v2.json]
+        C3[~/.claude/cache/plugins/agent-foreman/]
+        C4[~/.claude/known_marketplaces.json]
+        C5[~/.claude/marketplaces/agent-foreman/]
     end
 
     subgraph Output
-        Settings[settings.json - plugin disabled]
-        Plugins[installed_plugins_v2.json - entry removed]
-        Marketplaces[known_marketplaces.json - entry removed]
-        Deleted[Cached files deleted]
+        D1[Success Message]
+        D2[Steps Completed]
+        D3[Restart Reminder]
     end
 
-    ClaudeConfig --> StatusCheck
-    StatusCheck --> Uninstaller
+    A1 --> A2
+    A1 --> A3
+    A1 --> A4
 
-    Uninstaller --> Settings
-    Uninstaller --> Plugins
-    Uninstaller --> Marketplaces
-    Uninstaller --> Deleted
+    A2 --> B1
+    A3 --> B1
+    A4 --> B1
+
+    B1 --> B2
+    B2 --> C1
+
+    B1 --> B3
+    B3 --> C2
+
+    B1 --> B4
+    B4 --> C3
+
+    B1 --> B5
+    B5 --> C4
+
+    B1 --> B6
+    B6 --> C5
+
+    B1 --> D1
+    D1 --> D2
+    D2 --> D3
 ```
 
-## Dependencies
+## Uninstallation Steps
 
-### Internal Modules
+### 1. Disable Plugin
 
-- `src/plugin-installer.ts` - Plugin uninstall logic
-  - `fullUninstall()` - Complete uninstallation
-  - `getPluginInstallInfo()` - Get installation status
+Removes from enabled plugins in `~/.claude/settings.json`:
 
-### External Dependencies
-
-- Claude Code installation (for config access)
-
-## Files Read
-
-| File | Purpose |
-|------|---------|
-| `~/.claude-code/known_marketplaces.json` | Check marketplace registration |
-| `~/.claude-code/installed_plugins_v2.json` | Check plugin installation |
-| `~/.claude-code/settings.json` | Check if enabled |
-
-## Files Modified/Deleted
-
-| File | Action |
-|------|--------|
-| `~/.claude-code/settings.json` | Remove from enabledPlugins |
-| `~/.claude-code/installed_plugins_v2.json` | Remove plugin entry |
-| `~/.claude-code/known_marketplaces.json` | Remove marketplace entry |
-| `~/.claude-code/cache/plugins/agent-foreman/` | Delete directory |
-| `~/.claude-code/marketplaces/agent-foreman/` | Delete directory |
-
-## Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | Success (or nothing to uninstall) |
-| 1 | Uninstallation failed |
-
-## Examples
-
-### Basic Uninstall
-
-```bash
-# Remove the plugin
-agent-foreman uninstall
+```json
+{
+  "enabledPlugins": [
+    // "agent-foreman:agent-foreman" removed
+  ]
+}
 ```
 
-## Console Output Example
+### 2. Remove Plugin Entry
+
+Removes from `~/.claude/installed_plugins_v2.json`:
+
+```json
+{
+  "plugins": [
+    // agent-foreman entry removed
+  ]
+}
+```
+
+### 3. Delete Plugin Cache
+
+Removes directory:
+```
+~/.claude/cache/plugins/agent-foreman@agent-foreman-plugins/
+```
+
+### 4. Remove Marketplace Registration
+
+Removes entry from `~/.claude/known_marketplaces.json`:
+
+```json
+{
+  "marketplaces": [
+    // agent-foreman entry removed
+  ]
+}
+```
+
+### 5. Delete Marketplace Files
+
+Removes directory:
+```
+~/.claude/marketplaces/agent-foreman/
+```
+
+## Key Functions
+
+### `runUninstall()`
+
+**Location**: `src/commands/uninstall.ts:17`
+
+Main entry point for the uninstall command.
+
+### `fullUninstall()`
+
+**Location**: `src/plugin-installer.ts`
+
+Performs complete uninstallation process.
+
+**Steps**:
+1. Disable plugin in settings.json
+2. Remove from installed_plugins_v2.json
+3. Delete plugin cache directory
+4. Remove from known_marketplaces.json
+5. Delete marketplace directory
+
+## Output Example
 
 ### Successful Uninstall
 
@@ -207,7 +197,7 @@ Agent Foreman Plugin Uninstaller
 
 Current Status:
   Marketplace: ✓ registered
-  Plugin:      ✓ installed (0.1.100)
+  Plugin:      ✓ installed (0.1.91)
   Enabled:     ✓ yes
 
 Uninstalling plugin...
@@ -241,7 +231,7 @@ To install the plugin:
   agent-foreman install
 ```
 
-### Partial Uninstall
+### Partial Installation
 
 ```
 Agent Foreman Plugin Uninstaller
@@ -263,30 +253,34 @@ Steps completed:
 ⚡ Restart Claude Code to complete removal
 ```
 
-## Post-Uninstall State
+## Examples
 
-After uninstallation:
-
-1. **Claude Code** will no longer show agent-foreman commands
-2. **Slash commands** (`/agent-foreman:*`) will be unavailable
-3. **Skills** will be removed from skill list
-4. **Plugin files** are deleted from disk
-
-Note: Uninstalling the plugin does NOT affect:
-- Project files (`ai/feature_list.json`, etc.)
-- The `agent-foreman` CLI itself
-- Any work done using the harness
-
-## Reinstallation
-
-To reinstall after uninstalling:
+### Basic Uninstall
 
 ```bash
-# Restart Claude Code first
-# Then reinstall
-agent-foreman install
+# Remove the plugin
+agent-foreman uninstall
 ```
+
+## Cleanup Verification
+
+After uninstalling, verify these locations are cleaned:
+
+```bash
+# Check if files are removed
+ls ~/.claude/marketplaces/agent-foreman/  # Should not exist
+ls ~/.claude/cache/plugins/ | grep agent-foreman  # Should be empty
+cat ~/.claude/settings.json | grep agent-foreman  # Should not appear
+```
+
+## Error Handling
+
+| Error | Cause | Resolution |
+|-------|-------|------------|
+| "Failed to uninstall" | Permission issue | Check file permissions |
+| Partial cleanup | Interrupted process | Re-run uninstall |
 
 ## Related Commands
 
-- `agent-foreman install` - Install the plugin
+- [`install`](./install.md) - Install the plugin
+- [`upgrade`](./upgrade.md) - Update to latest version

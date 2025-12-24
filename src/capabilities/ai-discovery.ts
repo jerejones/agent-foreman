@@ -1,7 +1,9 @@
 /**
  * AI-powered capability discovery
+ * Uses autonomous AI exploration to detect project verification commands
  */
-
+import { callAnyAvailableAgent } from "../agents.js";
+import { getTimeout } from "../timeout-config.js";
 import type {
   ExtendedCapabilities,
   CapabilityCommand,
@@ -9,61 +11,9 @@ import type {
   E2ECapabilityInfo,
   CustomRule,
   CustomRuleType,
-} from "../verifier/verification-types.js";
-import { callAnyAvailableAgent } from "../agents.js";
-import { getTimeout } from "../timeout-config.js";
-import { checkGitAvailable } from "./git-invalidation.js";
-
-/** AI response structure for capability discovery */
-interface AICapabilityResponse {
-  languages: string[];
-  configFiles: string[];
-  packageManager?: string;
-  test?: {
-    available: boolean;
-    command?: string;
-    framework?: string;
-    confidence?: number;
-    selectiveFileTemplate?: string;
-    selectiveNameTemplate?: string;
-  };
-  e2e?: {
-    available: boolean;
-    command?: string;
-    framework?: string;
-    confidence?: number;
-    configFile?: string;
-    grepTemplate?: string;
-    fileTemplate?: string;
-  };
-  typecheck?: {
-    available: boolean;
-    command?: string;
-    confidence?: number;
-  };
-  lint?: {
-    available: boolean;
-    command?: string;
-    confidence?: number;
-  };
-  build?: {
-    available: boolean;
-    command?: string;
-    confidence?: number;
-  };
-  customRules?: Array<{
-    id: string;
-    description: string;
-    command: string;
-    type: string;
-  }>;
-}
-
-/** Result from AI discovery including config files for cache tracking */
-export interface DiscoveryResult {
-  capabilities: ExtendedCapabilities;
-  configFiles: string[];
-}
+} from "../verifier/types/index.js";
+import type { AICapabilityResponse, DiscoveryResult } from "./types.js";
+import { checkGitAvailable } from "./git-helpers.js";
 
 /**
  * Build autonomous capability discovery prompt
@@ -318,14 +268,19 @@ function createMinimalDiscoveryResult(): DiscoveryResult {
  * Use AI to autonomously discover verification capabilities
  */
 export async function discoverCapabilitiesWithAI(
-  cwd: string
+  cwd: string,
+  options: {
+    /** Callback when an agent is selected, useful for updating parent spinners */
+    onAgentSelected?: (agentName: string) => void;
+  } = {}
 ): Promise<DiscoveryResult> {
   const prompt = buildAutonomousDiscoveryPrompt(cwd);
 
-  console.log("  AI exploring project structure...");
   const result = await callAnyAvailableAgent(prompt, {
     cwd,
     timeoutMs: getTimeout("AI_CAPABILITY_DISCOVERY"),
+    showProgress: false, // Parent already shows spinner
+    onAgentSelected: options.onAgentSelected,
   });
 
   if (!result.success) {

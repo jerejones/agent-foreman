@@ -1,585 +1,613 @@
 /**
- * Tests for task impact detection
+ * Tests for task-impact.ts
+ * Task impact detection - maps changed files to affected tasks
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import {
-  testPatternToSourcePath,
-  getTaskImpact,
-  buildFileTaskIndex,
-} from "../../src/verifier/task-impact.js";
-import type { Feature } from "../../src/types.js";
 
-// Mock the feature-list module
-vi.mock("../../src/feature-list.js", () => ({
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { getTaskImpact, buildFileTaskIndex } from "../../src/verifier/task-impact.js";
+import type { Feature, FeatureList } from "../../src/types/index.js";
+
+// Mock the features module
+vi.mock("../../src/features/index.js", () => ({
   loadFeatureList: vi.fn(),
 }));
 
-describe("task-impact", () => {
-  describe("testPatternToSourcePath", () => {
-    it("should convert tests/ prefix to src/", () => {
-      const result = testPatternToSourcePath("tests/auth/login.test.ts");
-      expect(result).toBe("src/auth/login.ts");
-    });
+import { loadFeatureList } from "../../src/features/index.js";
 
-    it("should convert test/ prefix to src/", () => {
-      const result = testPatternToSourcePath("test/utils/helper.test.ts");
-      expect(result).toBe("src/utils/helper.ts");
-    });
+const mockedLoadFeatureList = vi.mocked(loadFeatureList);
 
-    it("should convert __tests__/ prefix to src/", () => {
-      const result = testPatternToSourcePath("__tests__/core/feature.test.ts");
-      expect(result).toBe("src/core/feature.ts");
-    });
+// Helper to create a test feature
+function createTestFeature(overrides: Partial<Feature> = {}): Feature {
+  return {
+    id: "test.feature",
+    description: "Test feature",
+    module: "test",
+    priority: 1,
+    status: "failing",
+    acceptance: ["Test criterion"],
+    dependsOn: [],
+    supersedes: [],
+    tags: [],
+    notes: "",
+    version: 1,
+    origin: "manual",
+    ...overrides,
+  };
+}
 
-    it("should convert spec/ prefix to src/", () => {
-      const result = testPatternToSourcePath("spec/module/service.spec.ts");
-      expect(result).toBe("src/module/service.ts");
-    });
+// Helper to create a test feature list
+function createFeatureList(features: Feature[]): FeatureList {
+  return {
+    features,
+    metadata: {
+      projectGoal: "Test project",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      version: "1.0.0",
+    },
+  };
+}
 
-    it("should handle .spec.ts suffix", () => {
-      const result = testPatternToSourcePath("tests/auth/login.spec.ts");
-      expect(result).toBe("src/auth/login.ts");
-    });
+describe("Task Impact Detection", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
-    it("should handle glob patterns with .test.*", () => {
-      const result = testPatternToSourcePath("tests/auth/**/*.test.*");
-      expect(result).toBe("src/auth/**/*.*");
-    });
-
-    it("should handle .tsx files", () => {
-      const result = testPatternToSourcePath("tests/components/Button.test.tsx");
-      expect(result).toBe("src/components/Button.tsx");
-    });
-
-    it("should handle .js files", () => {
-      const result = testPatternToSourcePath("tests/utils/format.test.js");
-      expect(result).toBe("src/utils/format.js");
-    });
-
-    it("should handle patterns without test prefix", () => {
-      const result = testPatternToSourcePath("auth/login.test.ts");
-      expect(result).toBe("src/auth/login.ts");
-    });
-
-    it("should handle .spec.js suffix", () => {
-      const result = testPatternToSourcePath("tests/utils/format.spec.js");
-      expect(result).toBe("src/utils/format.js");
-    });
-
-    it("should handle .spec.tsx suffix", () => {
-      const result = testPatternToSourcePath("tests/components/Button.spec.tsx");
-      expect(result).toBe("src/components/Button.tsx");
-    });
-
-    it("should handle .spec.* glob pattern", () => {
-      const result = testPatternToSourcePath("tests/auth/**/*.spec.*");
-      expect(result).toBe("src/auth/**/*.*");
-    });
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   describe("getTaskImpact", () => {
-    beforeEach(() => {
-      vi.resetAllMocks();
-    });
-
-    afterEach(() => {
-      vi.restoreAllMocks();
-    });
-
     it("should return empty array when no feature list exists", async () => {
-      const { loadFeatureList } = await import("../../src/feature-list.js");
-      vi.mocked(loadFeatureList).mockResolvedValue(null);
+      mockedLoadFeatureList.mockResolvedValue(null);
 
-      const result = await getTaskImpact("/test", ["src/auth/login.ts"]);
+      const result = await getTaskImpact("/test/dir", ["src/foo.ts"]);
+
       expect(result).toEqual([]);
     });
 
-    it("should return empty array when feature list is empty", async () => {
-      const { loadFeatureList } = await import("../../src/feature-list.js");
-      vi.mocked(loadFeatureList).mockResolvedValue({
-        features: [],
-        metadata: {
-          projectGoal: "test",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          version: "1.0.0",
-        },
-      });
+    it("should return empty array when feature list has no features", async () => {
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList([]));
 
-      const result = await getTaskImpact("/test", ["src/auth/login.ts"]);
+      const result = await getTaskImpact("/test/dir", ["src/foo.ts"]);
+
       expect(result).toEqual([]);
     });
 
-    it("should skip passing tasks", async () => {
-      const { loadFeatureList } = await import("../../src/feature-list.js");
-      vi.mocked(loadFeatureList).mockResolvedValue({
-        features: [
-          {
-            id: "auth.login",
-            description: "Login feature",
-            module: "auth",
-            priority: 1,
-            status: "passing",
-            acceptance: [],
-            dependsOn: [],
-            supersedes: [],
-            tags: [],
-            notes: "",
-            version: 1,
-            origin: "manual",
-            affectedBy: ["src/auth/**/*"],
-          } as Feature,
-        ],
-        metadata: {
-          projectGoal: "test",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          version: "1.0.0",
-        },
-      });
+    it("should skip tasks with passing status", async () => {
+      const features = [
+        createTestFeature({ id: "auth.login", status: "passing", module: "auth" }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
 
-      const result = await getTaskImpact("/test", ["src/auth/login.ts"]);
+      const result = await getTaskImpact("/test/dir", ["src/auth/login.ts"]);
+
       expect(result).toEqual([]);
     });
 
-    it("should skip deprecated tasks", async () => {
-      const { loadFeatureList } = await import("../../src/feature-list.js");
-      vi.mocked(loadFeatureList).mockResolvedValue({
-        features: [
-          {
-            id: "auth.login",
-            description: "Login feature",
-            module: "auth",
-            priority: 1,
-            status: "deprecated",
-            acceptance: [],
-            dependsOn: [],
-            supersedes: [],
-            tags: [],
-            notes: "",
-            version: 1,
-            origin: "manual",
-            affectedBy: ["src/auth/**/*"],
-          } as Feature,
-        ],
-        metadata: {
-          projectGoal: "test",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          version: "1.0.0",
-        },
-      });
+    it("should skip tasks with deprecated status", async () => {
+      const features = [
+        createTestFeature({ id: "auth.login", status: "deprecated", module: "auth" }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
 
-      const result = await getTaskImpact("/test", ["src/auth/login.ts"]);
+      const result = await getTaskImpact("/test/dir", ["src/auth/login.ts"]);
+
       expect(result).toEqual([]);
     });
 
     it("should match tasks using affectedBy patterns (high confidence)", async () => {
-      const { loadFeatureList } = await import("../../src/feature-list.js");
-      vi.mocked(loadFeatureList).mockResolvedValue({
-        features: [
-          {
-            id: "auth.login",
-            description: "Login feature",
-            module: "auth",
-            priority: 1,
-            status: "failing",
-            acceptance: [],
-            dependsOn: [],
-            supersedes: [],
-            tags: [],
-            notes: "",
-            version: 1,
-            origin: "manual",
-            affectedBy: ["src/auth/**/*"],
-          } as Feature,
-        ],
-        metadata: {
-          projectGoal: "test",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          version: "1.0.0",
-        },
-      });
+      const features = [
+        createTestFeature({
+          id: "auth.login",
+          status: "failing",
+          module: "auth",
+          affectedBy: ["src/auth/**/*.ts"],
+        }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
 
-      const result = await getTaskImpact("/test", ["src/auth/login.ts"]);
+      const result = await getTaskImpact("/test/dir", ["src/auth/login.ts"]);
+
       expect(result).toHaveLength(1);
-      expect(result[0].taskId).toBe("auth.login");
-      expect(result[0].confidence).toBe("high");
-      expect(result[0].reason).toContain("affectedBy");
-      expect(result[0].matchedFiles).toContain("src/auth/login.ts");
+      expect(result[0]).toEqual({
+        taskId: "auth.login",
+        reason: "matches affectedBy pattern: src/auth/**/*.ts",
+        confidence: "high",
+        matchedFiles: ["src/auth/login.ts"],
+      });
     });
 
-    it("should match tasks using test patterns (medium confidence)", async () => {
-      const { loadFeatureList } = await import("../../src/feature-list.js");
-      vi.mocked(loadFeatureList).mockResolvedValue({
-        features: [
-          {
-            id: "auth.login",
-            description: "Login feature",
-            module: "auth",
-            priority: 1,
-            status: "failing",
-            acceptance: [],
-            dependsOn: [],
-            supersedes: [],
-            tags: [],
-            notes: "",
-            version: 1,
-            origin: "manual",
-            testRequirements: {
-              unit: {
-                required: false,
-                pattern: "tests/auth/**/*.test.ts",
-              },
+    it("should match tasks using test pattern (medium confidence)", async () => {
+      const features = [
+        createTestFeature({
+          id: "auth.login",
+          status: "failing",
+          module: "auth",
+          testRequirements: {
+            unit: {
+              required: true,
+              pattern: "tests/auth/**/*.test.ts",
             },
-          } as Feature,
-        ],
-        metadata: {
-          projectGoal: "test",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          version: "1.0.0",
-        },
-      });
+          },
+        }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
 
-      const result = await getTaskImpact("/test", ["src/auth/login.ts"]);
+      const result = await getTaskImpact("/test/dir", ["src/auth/login.ts"]);
+
       expect(result).toHaveLength(1);
       expect(result[0].taskId).toBe("auth.login");
       expect(result[0].confidence).toBe("medium");
-      expect(result[0].reason).toContain("test pattern");
+      expect(result[0].reason).toContain("matches test pattern");
     });
 
-    it("should match tasks using module name (low confidence)", async () => {
-      const { loadFeatureList } = await import("../../src/feature-list.js");
-      vi.mocked(loadFeatureList).mockResolvedValue({
-        features: [
-          {
-            id: "auth.login",
-            description: "Login feature",
-            module: "auth",
-            priority: 1,
-            status: "failing",
-            acceptance: [],
-            dependsOn: [],
-            supersedes: [],
-            tags: [],
-            notes: "",
-            version: 1,
-            origin: "manual",
-          } as Feature,
-        ],
-        metadata: {
-          projectGoal: "test",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          version: "1.0.0",
-        },
-      });
+    it("should match tasks using module-based matching (low confidence)", async () => {
+      const features = [
+        createTestFeature({
+          id: "auth.login",
+          status: "failing",
+          module: "auth",
+        }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
 
-      const result = await getTaskImpact("/test", ["src/auth/login.ts"]);
+      const result = await getTaskImpact("/test/dir", ["src/auth/login.ts"]);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual({
+        taskId: "auth.login",
+        reason: "file in module: auth",
+        confidence: "low",
+        matchedFiles: ["src/auth/login.ts"],
+      });
+    });
+
+    it("should prioritize affectedBy over test pattern", async () => {
+      const features = [
+        createTestFeature({
+          id: "auth.login",
+          status: "failing",
+          module: "auth",
+          affectedBy: ["src/auth/**/*.ts"],
+          testRequirements: {
+            unit: {
+              required: true,
+              pattern: "tests/auth/**/*.test.ts",
+            },
+          },
+        }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
+
+      const result = await getTaskImpact("/test/dir", ["src/auth/login.ts"]);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].confidence).toBe("high");
+      expect(result[0].reason).toContain("affectedBy");
+    });
+
+    it("should sort results by confidence (high first)", async () => {
+      const features = [
+        createTestFeature({
+          id: "low.conf",
+          status: "failing",
+          module: "low",
+        }),
+        createTestFeature({
+          id: "high.conf",
+          status: "failing",
+          module: "high",
+          affectedBy: ["src/high/**/*.ts"],
+        }),
+        createTestFeature({
+          id: "medium.conf",
+          status: "failing",
+          module: "medium",
+          testRequirements: {
+            unit: {
+              required: true,
+              pattern: "tests/medium/**/*.test.ts",
+            },
+          },
+        }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
+
+      const result = await getTaskImpact("/test/dir", [
+        "src/low/file.ts",
+        "src/high/file.ts",
+        "src/medium/file.ts",
+      ]);
+
+      expect(result).toHaveLength(3);
+      expect(result[0].confidence).toBe("high");
+      expect(result[1].confidence).toBe("medium");
+      expect(result[2].confidence).toBe("low");
+    });
+
+    it("should not duplicate tasks", async () => {
+      const features = [
+        createTestFeature({
+          id: "auth.login",
+          status: "failing",
+          module: "auth",
+          affectedBy: ["src/auth/**/*.ts"],
+        }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
+
+      const result = await getTaskImpact("/test/dir", [
+        "src/auth/login.ts",
+        "src/auth/logout.ts",
+        "src/auth/utils.ts",
+      ]);
+
       expect(result).toHaveLength(1);
       expect(result[0].taskId).toBe("auth.login");
-      expect(result[0].confidence).toBe("low");
-      expect(result[0].reason).toContain("module");
+      expect(result[0].matchedFiles).toEqual(["src/auth/login.ts", "src/auth/logout.ts", "src/auth/utils.ts"]);
     });
 
-    it("should sort results by confidence (high → medium → low)", async () => {
-      const { loadFeatureList } = await import("../../src/feature-list.js");
-      vi.mocked(loadFeatureList).mockResolvedValue({
-        features: [
-          {
-            id: "low.feature",
-            description: "Low confidence feature",
-            module: "auth",
-            priority: 1,
-            status: "failing",
-            acceptance: [],
-            dependsOn: [],
-            supersedes: [],
-            tags: [],
-            notes: "",
-            version: 1,
-            origin: "manual",
-          } as Feature,
-          {
-            id: "high.feature",
-            description: "High confidence feature",
-            module: "other",
-            priority: 1,
-            status: "failing",
-            acceptance: [],
-            dependsOn: [],
-            supersedes: [],
-            tags: [],
-            notes: "",
-            version: 1,
-            origin: "manual",
-            affectedBy: ["src/auth/**/*"],
-          } as Feature,
-          {
-            id: "medium.feature",
-            description: "Medium confidence feature",
-            module: "other",
-            priority: 1,
-            status: "failing",
-            acceptance: [],
-            dependsOn: [],
-            supersedes: [],
-            tags: [],
-            notes: "",
-            version: 1,
-            origin: "manual",
-            testRequirements: {
-              unit: {
-                required: false,
-                pattern: "tests/utils/**/*.test.ts",
-              },
-            },
-          } as Feature,
-        ],
-        metadata: {
-          projectGoal: "test",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          version: "1.0.0",
-        },
-      });
+    it("should match files with module path substring", async () => {
+      const features = [
+        createTestFeature({
+          id: "api.users",
+          status: "failing",
+          module: "api",
+        }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
 
-      const result = await getTaskImpact("/test", ["src/auth/login.ts", "src/utils/helper.ts"]);
-      expect(result.length).toBeGreaterThanOrEqual(2);
-      // First should be high confidence
-      expect(result[0].confidence).toBe("high");
-    });
+      const result = await getTaskImpact("/test/dir", ["src/api/users.ts"]);
 
-    it("should not duplicate tasks when matched by multiple strategies", async () => {
-      const { loadFeatureList } = await import("../../src/feature-list.js");
-      vi.mocked(loadFeatureList).mockResolvedValue({
-        features: [
-          {
-            id: "auth.login",
-            description: "Login feature",
-            module: "auth",
-            priority: 1,
-            status: "failing",
-            acceptance: [],
-            dependsOn: [],
-            supersedes: [],
-            tags: [],
-            notes: "",
-            version: 1,
-            origin: "manual",
-            affectedBy: ["src/auth/**/*"],
-            testRequirements: {
-              unit: {
-                required: false,
-                pattern: "tests/auth/**/*.test.ts",
-              },
-            },
-          } as Feature,
-        ],
-        metadata: {
-          projectGoal: "test",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          version: "1.0.0",
-        },
-      });
-
-      const result = await getTaskImpact("/test", ["src/auth/login.ts"]);
       expect(result).toHaveLength(1);
-      // Should use highest confidence match (affectedBy)
-      expect(result[0].confidence).toBe("high");
+      expect(result[0].taskId).toBe("api.users");
     });
 
-    it("should handle needs_review status tasks", async () => {
-      const { loadFeatureList } = await import("../../src/feature-list.js");
-      vi.mocked(loadFeatureList).mockResolvedValue({
-        features: [
-          {
-            id: "auth.login",
-            description: "Login feature",
-            module: "auth",
-            priority: 1,
-            status: "needs_review",
-            acceptance: [],
-            dependsOn: [],
-            supersedes: [],
-            tags: [],
-            notes: "",
-            version: 1,
-            origin: "manual",
-            affectedBy: ["src/auth/**/*"],
-          } as Feature,
-        ],
-        metadata: {
-          projectGoal: "test",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          version: "1.0.0",
-        },
-      });
+    it("should handle tasks with needs_review status", async () => {
+      const features = [
+        createTestFeature({
+          id: "auth.login",
+          status: "needs_review",
+          module: "auth",
+        }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
 
-      const result = await getTaskImpact("/test", ["src/auth/login.ts"]);
+      const result = await getTaskImpact("/test/dir", ["src/auth/login.ts"]);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].taskId).toBe("auth.login");
+    });
+
+    it("should handle tasks with blocked status", async () => {
+      const features = [
+        createTestFeature({
+          id: "auth.login",
+          status: "blocked",
+          module: "auth",
+        }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
+
+      const result = await getTaskImpact("/test/dir", ["src/auth/login.ts"]);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].taskId).toBe("auth.login");
+    });
+
+    it("should handle tasks with failed status", async () => {
+      const features = [
+        createTestFeature({
+          id: "auth.login",
+          status: "failed",
+          module: "auth",
+        }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
+
+      const result = await getTaskImpact("/test/dir", ["src/auth/login.ts"]);
+
       expect(result).toHaveLength(1);
       expect(result[0].taskId).toBe("auth.login");
     });
   });
 
   describe("buildFileTaskIndex", () => {
-    it("should build index from affectedBy patterns", () => {
-      const tasks: Feature[] = [
-        {
-          id: "auth.login",
-          description: "Login feature",
-          module: "auth",
-          priority: 1,
-          status: "failing",
-          acceptance: [],
-          dependsOn: [],
-          supersedes: [],
-          tags: [],
-          notes: "",
-          version: 1,
-          origin: "manual",
-          affectedBy: ["src/auth/**/*"],
-        },
-      ];
+    it("should build empty index for empty task list", () => {
+      const index = buildFileTaskIndex([]);
 
-      const index = buildFileTaskIndex(tasks);
-      expect(index.has("src/auth/**/*")).toBe(true);
-      expect(index.get("src/auth/**/*")?.has("auth.login")).toBe(true);
+      expect(index.size).toBe(0);
     });
 
-    it("should build index from test patterns", () => {
-      const tasks: Feature[] = [
-        {
+    it("should index affectedBy patterns", () => {
+      const tasks = [
+        createTestFeature({
           id: "auth.login",
-          description: "Login feature",
-          module: "auth",
-          priority: 1,
-          status: "failing",
-          acceptance: [],
-          dependsOn: [],
-          supersedes: [],
-          tags: [],
-          notes: "",
-          version: 1,
-          origin: "manual",
-          testRequirements: {
-            unit: {
-              required: false,
-              pattern: "tests/auth/**/*.test.ts",
-            },
-          },
-        },
+          affectedBy: ["src/auth/**/*.ts"],
+        }),
       ];
 
       const index = buildFileTaskIndex(tasks);
+
       expect(index.has("src/auth/**/*.ts")).toBe(true);
       expect(index.get("src/auth/**/*.ts")?.has("auth.login")).toBe(true);
     });
 
-    it("should build index from module names", () => {
-      const tasks: Feature[] = [
-        {
+    it("should index test patterns as source patterns", () => {
+      const tasks = [
+        createTestFeature({
           id: "auth.login",
-          description: "Login feature",
-          module: "auth",
-          priority: 1,
-          status: "failing",
-          acceptance: [],
-          dependsOn: [],
-          supersedes: [],
-          tags: [],
-          notes: "",
-          version: 1,
-          origin: "manual",
-        },
+          testRequirements: {
+            unit: {
+              required: true,
+              pattern: "tests/auth/**/*.test.ts",
+            },
+          },
+        }),
       ];
 
       const index = buildFileTaskIndex(tasks);
+
+      expect(index.has("src/auth/**/*.ts")).toBe(true);
+      expect(index.get("src/auth/**/*.ts")?.has("auth.login")).toBe(true);
+    });
+
+    it("should index module patterns", () => {
+      const tasks = [
+        createTestFeature({
+          id: "auth.login",
+          module: "auth",
+        }),
+      ];
+
+      const index = buildFileTaskIndex(tasks);
+
       expect(index.has("**/auth/**/*")).toBe(true);
       expect(index.get("**/auth/**/*")?.has("auth.login")).toBe(true);
     });
 
-    it("should handle multiple tasks with same pattern", () => {
-      const tasks: Feature[] = [
-        {
+    it("should handle multiple patterns for same task", () => {
+      const tasks = [
+        createTestFeature({
           id: "auth.login",
-          description: "Login feature",
           module: "auth",
-          priority: 1,
-          status: "failing",
-          acceptance: [],
-          dependsOn: [],
-          supersedes: [],
-          tags: [],
-          notes: "",
-          version: 1,
-          origin: "manual",
-          affectedBy: ["src/auth/**/*"],
-        },
-        {
-          id: "auth.logout",
-          description: "Logout feature",
-          module: "auth",
-          priority: 2,
-          status: "failing",
-          acceptance: [],
-          dependsOn: [],
-          supersedes: [],
-          tags: [],
-          notes: "",
-          version: 1,
-          origin: "manual",
-          affectedBy: ["src/auth/**/*"],
-        },
-      ];
-
-      const index = buildFileTaskIndex(tasks);
-      expect(index.get("src/auth/**/*")?.size).toBe(2);
-      expect(index.get("src/auth/**/*")?.has("auth.login")).toBe(true);
-      expect(index.get("src/auth/**/*")?.has("auth.logout")).toBe(true);
-    });
-
-    it("should return empty map for empty tasks array", () => {
-      const index = buildFileTaskIndex([]);
-      expect(index.size).toBe(0);
-    });
-
-    it("should collect all patterns from a task", () => {
-      const tasks: Feature[] = [
-        {
-          id: "auth.login",
-          description: "Login feature",
-          module: "auth",
-          priority: 1,
-          status: "failing",
-          acceptance: [],
-          dependsOn: [],
-          supersedes: [],
-          tags: [],
-          notes: "",
-          version: 1,
-          origin: "manual",
-          affectedBy: ["src/auth/**/*", "src/utils/session.ts"],
+          affectedBy: ["src/auth/**/*.ts", "src/utils/hash.ts"],
           testRequirements: {
             unit: {
-              required: false,
+              required: true,
               pattern: "tests/auth/**/*.test.ts",
             },
           },
-        },
+        }),
       ];
 
       const index = buildFileTaskIndex(tasks);
-      // Should have: 2 affectedBy + 1 testPattern + 1 module = 4 patterns
-      expect(index.size).toBe(4);
-      expect(index.has("src/auth/**/*")).toBe(true);
-      expect(index.has("src/utils/session.ts")).toBe(true);
-      expect(index.has("src/auth/**/*.ts")).toBe(true);
-      expect(index.has("**/auth/**/*")).toBe(true);
+
+      // affectedBy[0], affectedBy[1], test pattern -> src/auth/**/*.ts (same as affectedBy[0]), module
+      // So we get 3 unique patterns: src/auth/**/*.ts, src/utils/hash.ts, **/auth/**/*
+      expect(index.size).toBe(3);
+      expect(index.get("src/auth/**/*.ts")?.has("auth.login")).toBe(true);
+      expect(index.get("src/utils/hash.ts")?.has("auth.login")).toBe(true);
+      expect(index.get("**/auth/**/*")?.has("auth.login")).toBe(true);
+    });
+
+    it("should handle multiple tasks with same pattern", () => {
+      const tasks = [
+        createTestFeature({
+          id: "auth.login",
+          module: "auth",
+        }),
+        createTestFeature({
+          id: "auth.logout",
+          module: "auth",
+        }),
+      ];
+
+      const index = buildFileTaskIndex(tasks);
+
+      const authTaskIds = index.get("**/auth/**/*");
+      expect(authTaskIds?.has("auth.login")).toBe(true);
+      expect(authTaskIds?.has("auth.logout")).toBe(true);
+    });
+
+    it("should handle tasks without any matching criteria", () => {
+      const tasks = [
+        createTestFeature({
+          id: "empty.task",
+          module: "",
+          affectedBy: undefined,
+          testRequirements: undefined,
+        }),
+      ];
+
+      const index = buildFileTaskIndex(tasks);
+
+      // When module is empty string, no patterns are added
+      // (empty string is falsy in JavaScript)
+      expect(index.size).toBe(0);
+    });
+  });
+
+  describe("testPatternToSourcePath conversion", () => {
+    it("should convert tests/ prefix to src/", async () => {
+      const features = [
+        createTestFeature({
+          id: "auth.login",
+          status: "failing",
+          testRequirements: {
+            unit: {
+              required: true,
+              pattern: "tests/auth/login.test.ts",
+            },
+          },
+        }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
+
+      const result = await getTaskImpact("/test/dir", ["src/auth/login.ts"]);
+
+      expect(result).toHaveLength(1);
+    });
+
+    it("should convert test/ prefix to src/", async () => {
+      const features = [
+        createTestFeature({
+          id: "auth.login",
+          status: "failing",
+          testRequirements: {
+            unit: {
+              required: true,
+              pattern: "test/auth/login.test.ts",
+            },
+          },
+        }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
+
+      const result = await getTaskImpact("/test/dir", ["src/auth/login.ts"]);
+
+      expect(result).toHaveLength(1);
+    });
+
+    it("should convert __tests__/ prefix to src/", async () => {
+      const features = [
+        createTestFeature({
+          id: "auth.login",
+          status: "failing",
+          testRequirements: {
+            unit: {
+              required: true,
+              pattern: "__tests__/auth/login.test.ts",
+            },
+          },
+        }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
+
+      const result = await getTaskImpact("/test/dir", ["src/auth/login.ts"]);
+
+      expect(result).toHaveLength(1);
+    });
+
+    it("should convert spec/ prefix to src/", async () => {
+      const features = [
+        createTestFeature({
+          id: "auth.login",
+          status: "failing",
+          testRequirements: {
+            unit: {
+              required: true,
+              pattern: "spec/auth/login.spec.ts",
+            },
+          },
+        }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
+
+      const result = await getTaskImpact("/test/dir", ["src/auth/login.ts"]);
+
+      expect(result).toHaveLength(1);
+    });
+
+    it("should handle .spec.ts suffix", async () => {
+      const features = [
+        createTestFeature({
+          id: "auth.login",
+          status: "failing",
+          testRequirements: {
+            unit: {
+              required: true,
+              pattern: "tests/auth/login.spec.ts",
+            },
+          },
+        }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
+
+      const result = await getTaskImpact("/test/dir", ["src/auth/login.ts"]);
+
+      expect(result).toHaveLength(1);
+    });
+
+    it("should handle .test.tsx suffix", async () => {
+      const features = [
+        createTestFeature({
+          id: "auth.login",
+          status: "failing",
+          testRequirements: {
+            unit: {
+              required: true,
+              pattern: "tests/auth/Login.test.tsx",
+            },
+          },
+        }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
+
+      const result = await getTaskImpact("/test/dir", ["src/auth/Login.tsx"]);
+
+      expect(result).toHaveLength(1);
+    });
+
+    it("should handle .spec.tsx suffix", async () => {
+      const features = [
+        createTestFeature({
+          id: "auth.login",
+          status: "failing",
+          testRequirements: {
+            unit: {
+              required: true,
+              pattern: "tests/auth/Login.spec.tsx",
+            },
+          },
+        }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
+
+      const result = await getTaskImpact("/test/dir", ["src/auth/Login.tsx"]);
+
+      expect(result).toHaveLength(1);
+    });
+
+    it("should handle .test.js suffix", async () => {
+      const features = [
+        createTestFeature({
+          id: "auth.login",
+          status: "failing",
+          testRequirements: {
+            unit: {
+              required: true,
+              pattern: "tests/auth/login.test.js",
+            },
+          },
+        }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
+
+      const result = await getTaskImpact("/test/dir", ["src/auth/login.js"]);
+
+      expect(result).toHaveLength(1);
+    });
+
+    it("should handle .spec.js suffix", async () => {
+      const features = [
+        createTestFeature({
+          id: "auth.login",
+          status: "failing",
+          testRequirements: {
+            unit: {
+              required: true,
+              pattern: "tests/auth/login.spec.js",
+            },
+          },
+        }),
+      ];
+      mockedLoadFeatureList.mockResolvedValue(createFeatureList(features));
+
+      const result = await getTaskImpact("/test/dir", ["src/auth/login.js"]);
+
+      expect(result).toHaveLength(1);
     });
   });
 });

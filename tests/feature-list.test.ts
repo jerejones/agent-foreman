@@ -1,7 +1,7 @@
 /**
  * Tests for src/feature-list.ts - Feature list operations
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -10,9 +10,12 @@ import {
   saveFeatureList,
   featureListExists,
   selectNextFeature,
+  selectNextFeatureQuick,
   findFeatureById,
   updateFeatureStatus,
+  updateFeatureStatusQuick,
   updateFeatureVerification,
+  getFeatureStatsQuick,
   findDependentFeatures,
   findSameModuleFeatures,
   mergeFeatures,
@@ -25,13 +28,9 @@ import {
   addFeature,
   createFeature,
   generateTestPattern,
-  generateTestRequirements,
   migrateToStrictTDD,
-  withOptimisticRetry,
-  loadFeatureListWithMetadata,
-} from "../src/feature-list.js";
+} from "../src/features/index.js";
 import type { Feature, FeatureList, DiscoveredFeature } from "../src/types.js";
-import { FeatureListConflictError, OptimisticLockError } from "../src/types.js";
 
 describe("Feature List Operations", () => {
   let tempDir: string;
@@ -107,6 +106,248 @@ describe("Feature List Operations", () => {
     });
   });
 
+  describe("loadFeatureList with modular format", () => {
+    it("should load from new modular format when index.json exists", async () => {
+      // Create modular format structure
+      const featuresDir = path.join(tempDir, "ai", "tasks");
+      await fs.mkdir(path.join(featuresDir, "test"), { recursive: true });
+
+      // Create index.json
+      const index = {
+        version: "2.0.0",
+        updatedAt: "2024-01-15T10:00:00Z",
+        metadata: {
+          projectGoal: "Test project",
+          createdAt: "2024-01-15T10:00:00Z",
+          updatedAt: "2024-01-15T10:00:00Z",
+          version: "1.0.0",
+        },
+        features: {
+          "test.modular": {
+            status: "passing",
+            priority: 5,
+            module: "test",
+            description: "Modular feature test",
+          },
+        },
+      };
+      await fs.writeFile(
+        path.join(featuresDir, "index.json"),
+        JSON.stringify(index, null, 2)
+      );
+
+      // Create feature markdown file
+      const featureMd = `---
+id: test.modular
+module: test
+priority: 5
+status: passing
+version: 1
+origin: manual
+dependsOn: []
+supersedes: []
+tags: []
+---
+
+# Modular feature test
+
+## Acceptance Criteria
+
+1. First criterion
+2. Second criterion
+
+## Notes
+
+This is a modular feature.
+`;
+      await fs.writeFile(path.join(featuresDir, "test", "modular.md"), featureMd);
+
+      // Load and verify
+      const loaded = await loadFeatureList(tempDir);
+
+      expect(loaded).not.toBeNull();
+      expect(loaded?.features).toHaveLength(1);
+      expect(loaded?.features[0].id).toBe("test.modular");
+      expect(loaded?.features[0].status).toBe("passing");
+      expect(loaded?.features[0].acceptance).toContain("First criterion");
+    });
+
+    it("should auto-migrate legacy format on load", async () => {
+      // Create legacy format
+      const legacyList = createTestFeatureList([
+        createTestFeature({ id: "legacy.feature", description: "Legacy feature" }),
+      ]);
+      await fs.mkdir(path.join(tempDir, "ai"), { recursive: true });
+      await fs.writeFile(
+        path.join(tempDir, "ai", "feature_list.json"),
+        JSON.stringify(legacyList, null, 2)
+      );
+
+      // Load - should trigger auto-migration
+      const loaded = await loadFeatureList(tempDir);
+
+      expect(loaded).not.toBeNull();
+      expect(loaded?.features).toHaveLength(1);
+      expect(loaded?.features[0].id).toBe("legacy.feature");
+
+      // Verify migration created new format
+      const indexPath = path.join(tempDir, "ai", "tasks", "index.json");
+      const indexExists = await fs
+        .access(indexPath)
+        .then(() => true)
+        .catch(() => false);
+      expect(indexExists).toBe(true);
+    });
+
+    it("should return null when neither format exists", async () => {
+      const loaded = await loadFeatureList(tempDir);
+      expect(loaded).toBeNull();
+    });
+
+    it("should return same FeatureList interface for both formats", async () => {
+      // Create legacy format first
+      const legacyList = createTestFeatureList([
+        createTestFeature({ id: "test.compat", description: "Compatibility test" }),
+      ]);
+      await fs.mkdir(path.join(tempDir, "ai"), { recursive: true });
+      await fs.writeFile(
+        path.join(tempDir, "ai", "feature_list.json"),
+        JSON.stringify(legacyList, null, 2)
+      );
+
+      const loaded = await loadFeatureList(tempDir);
+
+      // Verify same interface
+      expect(loaded).toHaveProperty("features");
+      expect(loaded).toHaveProperty("metadata");
+      expect(loaded?.metadata).toHaveProperty("projectGoal");
+      expect(loaded?.metadata).toHaveProperty("createdAt");
+      expect(loaded?.metadata).toHaveProperty("updatedAt");
+      expect(Array.isArray(loaded?.features)).toBe(true);
+    });
+
+    it("should create minimal feature when markdown file is missing in loadAllFeaturesFromMarkdown", async () => {
+      // Create index with feature but no markdown file
+      const featuresDir = path.join(tempDir, "ai", "tasks");
+      await fs.mkdir(featuresDir, { recursive: true });
+
+      const index = {
+        version: "2.0.0",
+        updatedAt: "2024-01-15T10:00:00Z",
+        metadata: {
+          projectGoal: "Test missing file",
+          createdAt: "2024-01-15T10:00:00Z",
+          updatedAt: "2024-01-15T10:00:00Z",
+          version: "1.0.0",
+        },
+        features: {
+          "missing.markdown": {
+            status: "failing",
+            priority: 5,
+            module: "missing",
+            description: "Feature without markdown file",
+          },
+        },
+      };
+      await fs.writeFile(
+        path.join(featuresDir, "index.json"),
+        JSON.stringify(index, null, 2)
+      );
+
+      // Load - should create minimal feature from index
+      const loaded = await loadFeatureList(tempDir);
+
+      expect(loaded).not.toBeNull();
+      expect(loaded?.features).toHaveLength(1);
+      expect(loaded?.features[0].id).toBe("missing.markdown");
+      expect(loaded?.features[0].description).toBe("Feature without markdown file");
+      expect(loaded?.features[0].status).toBe("failing");
+      expect(loaded?.features[0].acceptance).toEqual([]);
+      expect(loaded?.features[0].origin).toBe("manual");
+    });
+  });
+
+  describe("saveFeatureList with modular format", () => {
+    it("should create directory structure", async () => {
+      const list = createTestFeatureList([
+        createTestFeature({ id: "test.save", description: "Save test" }),
+      ]);
+
+      await saveFeatureList(tempDir, list);
+
+      // Verify directory structure
+      const featuresDir = path.join(tempDir, "ai", "tasks");
+      const stat = await fs.stat(featuresDir);
+      expect(stat.isDirectory()).toBe(true);
+
+      const testDir = path.join(featuresDir, "test");
+      const testStat = await fs.stat(testDir);
+      expect(testStat.isDirectory()).toBe(true);
+    });
+
+    it("should write each feature to markdown file", async () => {
+      const list = createTestFeatureList([
+        createTestFeature({ id: "auth.login", module: "auth", description: "User login" }),
+        createTestFeature({ id: "auth.logout", module: "auth", description: "User logout" }),
+      ]);
+
+      await saveFeatureList(tempDir, list);
+
+      // Verify markdown files exist
+      const loginFile = path.join(tempDir, "ai", "tasks", "auth", "login.md");
+      const logoutFile = path.join(tempDir, "ai", "tasks", "auth", "logout.md");
+
+      await expect(fs.access(loginFile)).resolves.toBeUndefined();
+      await expect(fs.access(logoutFile)).resolves.toBeUndefined();
+
+      // Verify content
+      const content = await fs.readFile(loginFile, "utf-8");
+      expect(content).toContain("id: auth.login");
+      expect(content).toContain("# User login");
+    });
+
+    it("should create index.json with feature entries", async () => {
+      const list = createTestFeatureList([
+        createTestFeature({
+          id: "core.feature",
+          module: "core",
+          description: "Core feature",
+          status: "passing",
+          priority: 5,
+        }),
+      ]);
+
+      await saveFeatureList(tempDir, list);
+
+      const indexPath = path.join(tempDir, "ai", "tasks", "index.json");
+      const indexContent = await fs.readFile(indexPath, "utf-8");
+      const index = JSON.parse(indexContent);
+
+      expect(index.version).toBe("2.0.0");
+      expect(index.features["core.feature"]).toEqual({
+        status: "passing",
+        priority: 5,
+        module: "core",
+        description: "Core feature",
+      });
+    });
+
+    it("should preserve FeatureList interface compatibility", async () => {
+      const originalList = createTestFeatureList([
+        createTestFeature({ id: "compat.test", description: "Compatibility" }),
+      ]);
+
+      await saveFeatureList(tempDir, originalList);
+      const loaded = await loadFeatureList(tempDir);
+
+      // Same interface
+      expect(loaded).toHaveProperty("features");
+      expect(loaded).toHaveProperty("metadata");
+      expect(loaded?.features[0].id).toBe("compat.test");
+      expect(loaded?.metadata.projectGoal).toBe("Test project");
+    });
+  });
+
   describe("featureListExists", () => {
     it("should return false for non-existent file", async () => {
       const exists = await featureListExists(tempDir);
@@ -116,6 +357,19 @@ describe("Feature List Operations", () => {
     it("should return true for existing file", async () => {
       const list = createTestFeatureList([]);
       await saveFeatureList(tempDir, list);
+
+      const exists = await featureListExists(tempDir);
+      expect(exists).toBe(true);
+    });
+
+    it("should return true for new modular format", async () => {
+      // Manually create the new format
+      const featuresDir = path.join(tempDir, "ai", "tasks");
+      await fs.mkdir(featuresDir, { recursive: true });
+      await fs.writeFile(
+        path.join(featuresDir, "index.json"),
+        JSON.stringify({ version: "2.0.0", features: {} })
+      );
 
       const exists = await featureListExists(tempDir);
       expect(exists).toBe(true);
@@ -196,6 +450,13 @@ describe("Feature List Operations", () => {
       expect(updated[1].status).toBe("failing");
     });
 
+    it("should return features unchanged if ID not found", () => {
+      const features = [createTestFeature({ id: "f1", status: "failing" })];
+      const updated = updateFeatureStatus(features, "nonexistent", "passing");
+
+      expect(updated[0].status).toBe("failing");
+    });
+
     it("should update notes if provided", () => {
       const features = [createTestFeature({ id: "f1", notes: "old" })];
       const updated = updateFeatureStatus(features, "f1", "passing", "new notes");
@@ -208,6 +469,40 @@ describe("Feature List Operations", () => {
       const updated = updateFeatureStatus(features, "f1", "passing");
 
       expect(updated[0].notes).toBe("keep this");
+    });
+  });
+
+  describe("updateFeatureVerification", () => {
+    it("should update verification of specified feature", () => {
+      const features = [
+        createTestFeature({ id: "f1" }),
+        createTestFeature({ id: "f2" }),
+      ];
+      const verification = {
+        verifiedAt: "2024-01-15T10:00:00Z",
+        verdict: "pass" as const,
+        verifiedBy: "test",
+        commitHash: "abc123",
+        summary: "All tests passed",
+      };
+      const updated = updateFeatureVerification(features, "f1", verification);
+
+      expect(updated[0].verification).toEqual(verification);
+      expect(updated[1].verification).toBeUndefined();
+    });
+
+    it("should return features unchanged if ID not found", () => {
+      const features = [createTestFeature({ id: "f1" })];
+      const verification = {
+        verifiedAt: "2024-01-15T10:00:00Z",
+        verdict: "pass" as const,
+        verifiedBy: "test",
+        commitHash: "abc123",
+        summary: "Test",
+      };
+      const updated = updateFeatureVerification(features, "nonexistent", verification);
+
+      expect(updated[0].verification).toBeUndefined();
     });
   });
 
@@ -346,13 +641,27 @@ describe("Feature List Operations", () => {
         createTestFeature({ id: "f5", status: "blocked" }),
         createTestFeature({ id: "f6", status: "deprecated" }),
       ];
-      const stats = getFeatureStats(features);
+      // Pass false to include deprecated features in count
+      const stats = getFeatureStats(features, false);
 
       expect(stats.failing).toBe(1);
       expect(stats.passing).toBe(2);
       expect(stats.needs_review).toBe(1);
       expect(stats.blocked).toBe(1);
       expect(stats.deprecated).toBe(1);
+    });
+
+    it("should exclude deprecated by default", () => {
+      const features = [
+        createTestFeature({ id: "f1", status: "failing" }),
+        createTestFeature({ id: "f2", status: "passing" }),
+        createTestFeature({ id: "f3", status: "deprecated" }),
+      ];
+      const stats = getFeatureStats(features);
+
+      expect(stats.failing).toBe(1);
+      expect(stats.passing).toBe(1);
+      expect(stats.deprecated).toBe(0); // Excluded by default
     });
 
     it("should return zeros for empty list", () => {
@@ -427,6 +736,13 @@ describe("Feature List Operations", () => {
       const updated = deprecateFeature(features, "f1", "f2");
 
       expect(updated[0].notes).toContain("Replaced by f2");
+    });
+
+    it("should return features unchanged if ID not found", () => {
+      const features = [createTestFeature({ id: "f1", status: "passing" })];
+      const updated = deprecateFeature(features, "nonexistent", "f2");
+
+      expect(updated[0].status).toBe("passing");
     });
   });
 
@@ -545,193 +861,287 @@ describe("Feature List Operations", () => {
     });
   });
 
-  describe("updateFeatureVerification", () => {
-    it("should update verification summary for specified feature", () => {
-      const features = [
-        createTestFeature({ id: "f1" }),
-        createTestFeature({ id: "f2" }),
-      ];
-      const verification = {
-        status: "pass" as const,
-        testsPassed: 10,
-        testsFailed: 0,
-        checksDone: ["test", "lint"],
-        duration: 5000,
-        timestamp: new Date().toISOString(),
-      };
-      const updated = updateFeatureVerification(features, "f1", verification);
-
-      expect(updated[0].verification).toEqual(verification);
-      expect(updated[1].verification).toBeUndefined();
-    });
-
-    it("should not modify other features", () => {
-      const features = [
-        createTestFeature({ id: "f1" }),
-        createTestFeature({ id: "f2" }),
-      ];
-      const verification = {
-        status: "fail" as const,
-        testsPassed: 5,
-        testsFailed: 2,
-        checksDone: ["test"],
-        duration: 3000,
-        timestamp: new Date().toISOString(),
-      };
-      const updated = updateFeatureVerification(features, "f1", verification);
-
-      expect(updated[1]).toEqual(features[1]);
-    });
-
-    it("should return new array (immutable)", () => {
-      const features = [createTestFeature({ id: "f1" })];
-      const verification = {
-        status: "pass" as const,
-        testsPassed: 1,
-        testsFailed: 0,
-        checksDone: [],
-        duration: 100,
-        timestamp: new Date().toISOString(),
-      };
-      const updated = updateFeatureVerification(features, "f1", verification);
-
-      expect(updated).not.toBe(features);
-    });
-  });
-
-  describe("generateTestRequirements", () => {
-    it("should generate default test requirements for a module", () => {
-      const requirements = generateTestRequirements("auth");
-
-      expect(requirements.unit.required).toBe(false);
-      expect(requirements.unit.pattern).toBe("tests/auth/**/*.test.*");
-    });
-
-    it("should sanitize module name in pattern", () => {
-      const requirements = generateTestRequirements("my-module");
-
-      expect(requirements.unit.pattern).toBe("tests/my-module/**/*.test.*");
-    });
-  });
-
-  describe("migrateToStrictTDD", () => {
-    it("should return unchanged list when tddMode is not strict", () => {
-      const list = createTestFeatureList([createTestFeature()]);
-      list.metadata.tddMode = "recommended";
-
-      const { list: migrated, migratedCount } = migrateToStrictTDD(list);
-
-      expect(migratedCount).toBe(0);
-      expect(migrated).toBe(list);
-    });
-
-    it("should migrate features to required tests when tddMode is strict", () => {
+  describe("updateFeatureStatusQuick", () => {
+    it("should update only index and single feature file", async () => {
+      // Set up modular format
       const list = createTestFeatureList([
-        createTestFeature({ id: "f1", testRequirements: { unit: { required: false, pattern: "tests/**" } } }),
+        createTestFeature({ id: "quick.test", module: "quick", status: "failing" }),
+        createTestFeature({ id: "quick.other", module: "quick", status: "failing" }),
       ]);
-      list.metadata.tddMode = "strict";
-
-      const { list: migrated, migratedCount } = migrateToStrictTDD(list);
-
-      expect(migratedCount).toBe(1);
-      expect(migrated.features[0].testRequirements?.unit?.required).toBe(true);
-    });
-
-    it("should skip features already with required tests", () => {
-      const list = createTestFeatureList([
-        createTestFeature({ id: "f1", testRequirements: { unit: { required: true, pattern: "tests/**" } } }),
-      ]);
-      list.metadata.tddMode = "strict";
-
-      const { list: migrated, migratedCount } = migrateToStrictTDD(list);
-
-      expect(migratedCount).toBe(0);
-    });
-
-    it("should preserve existing test cases during migration", () => {
-      const list = createTestFeatureList([
-        createTestFeature({
-          id: "f1",
-          testRequirements: {
-            unit: { required: false, pattern: "tests/**", cases: ["test1", "test2"] },
-          },
-        }),
-      ]);
-      list.metadata.tddMode = "strict";
-
-      const { list: migrated } = migrateToStrictTDD(list);
-
-      expect(migrated.features[0].testRequirements?.unit?.cases).toEqual(["test1", "test2"]);
-    });
-
-    it("should preserve e2e requirements during migration", () => {
-      const list = createTestFeatureList([
-        createTestFeature({
-          id: "f1",
-          testRequirements: {
-            unit: { required: false, pattern: "tests/**" },
-            e2e: { required: true, pattern: "e2e/**" },
-          },
-        }),
-      ]);
-      list.metadata.tddMode = "strict";
-
-      const { list: migrated } = migrateToStrictTDD(list);
-
-      expect(migrated.features[0].testRequirements?.e2e?.required).toBe(true);
-    });
-
-    it("should generate default pattern for features without testRequirements", () => {
-      const feature = createTestFeature({ id: "f1", module: "auth" });
-      delete (feature as Partial<Feature>).testRequirements;
-      const list = createTestFeatureList([feature]);
-      list.metadata.tddMode = "strict";
-
-      const { list: migrated } = migrateToStrictTDD(list);
-
-      expect(migrated.features[0].testRequirements?.unit?.required).toBe(true);
-      expect(migrated.features[0].testRequirements?.unit?.pattern).toBe("tests/auth/**/*.test.*");
-    });
-  });
-
-  describe("loadFeatureList error handling", () => {
-    it("should return null for invalid JSON content", async () => {
-      const aiDir = path.join(tempDir, "ai");
-      await fs.mkdir(aiDir, { recursive: true });
-      await fs.writeFile(path.join(aiDir, "feature_list.json"), "{ invalid json }");
-
-      await expect(loadFeatureList(tempDir)).rejects.toThrow();
-    });
-
-    it("should return null for invalid feature list schema", async () => {
-      const aiDir = path.join(tempDir, "ai");
-      await fs.mkdir(aiDir, { recursive: true });
-      await fs.writeFile(
-        path.join(aiDir, "feature_list.json"),
-        JSON.stringify({ invalid: "schema" })
-      );
-
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-      const loaded = await loadFeatureList(tempDir);
-
-      expect(loaded).toBeNull();
-      expect(consoleSpy).toHaveBeenCalledWith("Invalid feature list:", expect.anything());
-      consoleSpy.mockRestore();
-    });
-
-    it("should auto-migrate and save when strict TDD mode is enabled", async () => {
-      const list = createTestFeatureList([
-        createTestFeature({ id: "f1", testRequirements: { unit: { required: false, pattern: "tests/**" } } }),
-      ]);
-      list.metadata.tddMode = "strict";
       await saveFeatureList(tempDir, list);
 
-      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-      const loaded = await loadFeatureList(tempDir);
+      // Update status
+      const updated = await updateFeatureStatusQuick(tempDir, "quick.test", "passing");
 
-      expect(loaded?.features[0].testRequirements?.unit?.required).toBe(true);
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("TDD Migration"));
-      consoleSpy.mockRestore();
+      expect(updated.status).toBe("passing");
+
+      // Verify index was updated
+      const indexPath = path.join(tempDir, "ai", "tasks", "index.json");
+      const indexContent = await fs.readFile(indexPath, "utf-8");
+      const index = JSON.parse(indexContent);
+      expect(index.features["quick.test"].status).toBe("passing");
+      expect(index.features["quick.other"].status).toBe("failing"); // Unchanged
+
+      // Verify feature file was updated
+      const featurePath = path.join(tempDir, "ai", "tasks", "quick", "test.md");
+      const featureContent = await fs.readFile(featurePath, "utf-8");
+      expect(featureContent).toContain("status: passing");
+    });
+
+    it("should validate status value", async () => {
+      const list = createTestFeatureList([
+        createTestFeature({ id: "validate.test", module: "validate", status: "failing" }),
+      ]);
+      await saveFeatureList(tempDir, list);
+
+      await expect(
+        updateFeatureStatusQuick(tempDir, "validate.test", "invalid_status" as any)
+      ).rejects.toThrow("Invalid status");
+    });
+
+    it("should return updated feature", async () => {
+      const list = createTestFeatureList([
+        createTestFeature({
+          id: "return.test",
+          module: "return",
+          status: "failing",
+          description: "Return test",
+        }),
+      ]);
+      await saveFeatureList(tempDir, list);
+
+      const updated = await updateFeatureStatusQuick(tempDir, "return.test", "passing", "Updated notes");
+
+      expect(updated.id).toBe("return.test");
+      expect(updated.status).toBe("passing");
+      expect(updated.notes).toBe("Updated notes");
+      expect(updated.description).toBe("Return test");
+    });
+
+    it("should throw error for non-existent feature", async () => {
+      const list = createTestFeatureList([
+        createTestFeature({ id: "exists.test", module: "exists", status: "failing" }),
+      ]);
+      await saveFeatureList(tempDir, list);
+
+      await expect(
+        updateFeatureStatusQuick(tempDir, "nonexistent.feature", "passing")
+      ).rejects.toThrow("Feature not found");
+    });
+
+    it("should throw error when index does not exist", async () => {
+      await expect(
+        updateFeatureStatusQuick(tempDir, "any.feature", "passing")
+      ).rejects.toThrow("Feature index not found");
+    });
+
+    it("should throw error when feature file is missing but exists in index", async () => {
+      // Create index with feature but no markdown file
+      const featuresDir = path.join(tempDir, "ai", "tasks");
+      await fs.mkdir(featuresDir, { recursive: true });
+
+      const index = {
+        version: "2.0.0",
+        updatedAt: "2024-01-15T10:00:00Z",
+        metadata: {
+          projectGoal: "Test",
+          createdAt: "2024-01-15T10:00:00Z",
+          updatedAt: "2024-01-15T10:00:00Z",
+          version: "1.0.0",
+        },
+        features: {
+          "missing.file": {
+            status: "failing",
+            priority: 1,
+            module: "missing",
+            description: "Missing file test",
+          },
+        },
+      };
+      await fs.writeFile(
+        path.join(featuresDir, "index.json"),
+        JSON.stringify(index, null, 2)
+      );
+
+      // No markdown file exists - should throw error
+      await expect(
+        updateFeatureStatusQuick(tempDir, "missing.file", "passing")
+      ).rejects.toThrow("Feature file not found");
+    });
+  });
+
+  describe("getFeatureStatsQuick", () => {
+    it("should read only index.json for stats", async () => {
+      const list = createTestFeatureList([
+        createTestFeature({ id: "stats.a", module: "stats", status: "passing" }),
+        createTestFeature({ id: "stats.b", module: "stats", status: "passing" }),
+        createTestFeature({ id: "stats.c", module: "stats", status: "failing" }),
+        createTestFeature({ id: "stats.d", module: "stats", status: "blocked" }),
+        createTestFeature({ id: "stats.e", module: "stats", status: "needs_review" }),
+      ]);
+      await saveFeatureList(tempDir, list);
+
+      const stats = await getFeatureStatsQuick(tempDir);
+
+      expect(stats.passing).toBe(2);
+      expect(stats.failing).toBe(1);
+      expect(stats.blocked).toBe(1);
+      expect(stats.needs_review).toBe(1);
+      expect(stats.deprecated).toBe(0);
+    });
+
+    it("should return Record<FeatureStatus, number> type", async () => {
+      const list = createTestFeatureList([
+        createTestFeature({ id: "type.test", module: "type", status: "passing" }),
+      ]);
+      await saveFeatureList(tempDir, list);
+
+      const stats = await getFeatureStatsQuick(tempDir);
+
+      // Verify all status keys exist
+      expect(stats).toHaveProperty("passing");
+      expect(stats).toHaveProperty("failing");
+      expect(stats).toHaveProperty("blocked");
+      expect(stats).toHaveProperty("needs_review");
+      expect(stats).toHaveProperty("deprecated");
+
+      // Verify all values are numbers
+      expect(typeof stats.passing).toBe("number");
+      expect(typeof stats.failing).toBe("number");
+    });
+
+    it("should throw error when index does not exist", async () => {
+      await expect(getFeatureStatsQuick(tempDir)).rejects.toThrow(
+        "Feature index not found"
+      );
+    });
+
+    it("should return same results as getFeatureStats", async () => {
+      const list = createTestFeatureList([
+        createTestFeature({ id: "compare.a", module: "compare", status: "passing" }),
+        createTestFeature({ id: "compare.b", module: "compare", status: "failing" }),
+        createTestFeature({ id: "compare.c", module: "compare", status: "deprecated" }),
+      ]);
+      await saveFeatureList(tempDir, list);
+
+      const quickStats = await getFeatureStatsQuick(tempDir);
+      const regularStats = getFeatureStats(list.features);
+
+      expect(quickStats).toEqual(regularStats);
+    });
+  });
+
+  describe("selectNextFeatureQuick", () => {
+    it("should read index.json for selection", async () => {
+      const list = createTestFeatureList([
+        createTestFeature({ id: "next.a", module: "next", status: "passing", priority: 1 }),
+        createTestFeature({ id: "next.b", module: "next", status: "failing", priority: 2 }),
+        createTestFeature({ id: "next.c", module: "next", status: "failing", priority: 3 }),
+      ]);
+      await saveFeatureList(tempDir, list);
+
+      const next = await selectNextFeatureQuick(tempDir);
+
+      expect(next).not.toBeNull();
+      expect(next?.id).toBe("next.b"); // Lowest priority among failing
+    });
+
+    it("should return Feature or null", async () => {
+      // All passing - should return null
+      const allPassing = createTestFeatureList([
+        createTestFeature({ id: "null.test", module: "null", status: "passing" }),
+      ]);
+      await saveFeatureList(tempDir, allPassing);
+
+      const result = await selectNextFeatureQuick(tempDir);
+      expect(result).toBeNull();
+    });
+
+    it("should load full feature when selected", async () => {
+      const list = createTestFeatureList([
+        createTestFeature({
+          id: "full.load",
+          module: "full",
+          status: "failing",
+          description: "Full load test",
+          acceptance: ["First criterion", "Second criterion"],
+        }),
+      ]);
+      await saveFeatureList(tempDir, list);
+
+      const next = await selectNextFeatureQuick(tempDir);
+
+      expect(next).not.toBeNull();
+      expect(next?.id).toBe("full.load");
+      expect(next?.acceptance).toContain("First criterion");
+      expect(next?.acceptance).toContain("Second criterion");
+    });
+
+    it("should follow same priority logic as selectNextFeature", async () => {
+      const features = [
+        createTestFeature({ id: "prio.a", module: "prio", status: "failing", priority: 5 }),
+        createTestFeature({ id: "prio.b", module: "prio", status: "needs_review", priority: 10 }),
+        createTestFeature({ id: "prio.c", module: "prio", status: "failing", priority: 1 }),
+      ];
+      const list = createTestFeatureList(features);
+      await saveFeatureList(tempDir, list);
+
+      const quickNext = await selectNextFeatureQuick(tempDir);
+      const regularNext = selectNextFeature(features);
+
+      // Both should select needs_review first (higher priority than failing)
+      expect(quickNext?.id).toBe(regularNext?.id);
+      expect(quickNext?.id).toBe("prio.b");
+    });
+
+    it("should throw error when index does not exist", async () => {
+      await expect(selectNextFeatureQuick(tempDir)).rejects.toThrow(
+        "Feature index not found"
+      );
+    });
+
+    it("should fallback to minimal feature when markdown file is missing", async () => {
+      // Create index with feature but no markdown file
+      const featuresDir = path.join(tempDir, "ai", "tasks");
+      await fs.mkdir(featuresDir, { recursive: true });
+
+      const index = {
+        version: "2.0.0",
+        updatedAt: "2024-01-15T10:00:00Z",
+        metadata: {
+          projectGoal: "Test",
+          createdAt: "2024-01-15T10:00:00Z",
+          updatedAt: "2024-01-15T10:00:00Z",
+          version: "1.0.0",
+        },
+        features: {
+          "orphan.feature": {
+            status: "failing",
+            priority: 1,
+            module: "orphan",
+            description: "Orphan feature without markdown file",
+          },
+        },
+      };
+      await fs.writeFile(
+        path.join(featuresDir, "index.json"),
+        JSON.stringify(index, null, 2)
+      );
+
+      // Should return minimal feature from index when file is missing
+      const next = await selectNextFeatureQuick(tempDir);
+
+      expect(next).not.toBeNull();
+      expect(next?.id).toBe("orphan.feature");
+      expect(next?.description).toBe("Orphan feature without markdown file");
+      expect(next?.module).toBe("orphan");
+      expect(next?.status).toBe("failing");
+      expect(next?.priority).toBe(1);
+      // Minimal feature defaults
+      expect(next?.acceptance).toEqual([]);
+      expect(next?.dependsOn).toEqual([]);
+      expect(next?.version).toBe(1);
+      expect(next?.origin).toBe("manual");
     });
   });
 
@@ -740,6 +1150,7 @@ describe("Feature List Operations", () => {
       const list = createEmptyFeatureList("Test goal", "strict");
 
       expect(list.metadata.tddMode).toBe("strict");
+      expect(list.metadata.projectGoal).toBe("Test goal");
     });
 
     it("should create feature list with recommended TDD mode", () => {
@@ -754,208 +1165,117 @@ describe("Feature List Operations", () => {
       expect(list.metadata.tddMode).toBe("disabled");
     });
 
-    it("should create feature list without TDD mode when not specified", () => {
+    it("should create feature list without tddMode when not specified", () => {
       const list = createEmptyFeatureList("Test goal");
 
       expect(list.metadata.tddMode).toBeUndefined();
     });
   });
 
-  describe("deprecateFeature with existing notes", () => {
-    it("should append replacement to existing notes", () => {
-      const features = [createTestFeature({ id: "f1", notes: "existing note" })];
-      const updated = deprecateFeature(features, "f1", "f2");
-
-      expect(updated[0].notes).toBe("existing note; Replaced by f2");
-    });
-
-    it("should handle empty notes gracefully", () => {
-      const features = [createTestFeature({ id: "f1", notes: "" })];
-      const updated = deprecateFeature(features, "f1", "f2");
-
-      expect(updated[0].notes).toBe("Replaced by f2");
-    });
-  });
-
-  describe("withOptimisticRetry", () => {
-    it("should succeed on first try when no conflict", async () => {
-      let attempts = 0;
-      const result = await withOptimisticRetry(async () => {
-        attempts++;
-        return "success";
-      });
-
-      expect(result).toBe("success");
-      expect(attempts).toBe(1);
-    });
-
-    it("should retry on FeatureListConflictError", async () => {
-      let attempts = 0;
-      const result = await withOptimisticRetry(async () => {
-        attempts++;
-        if (attempts < 3) {
-          throw new FeatureListConflictError("old", "new");
-        }
-        return "success after retry";
-      }, { maxRetries: 3, baseDelay: 1 });
-
-      expect(result).toBe("success after retry");
-      expect(attempts).toBe(3);
-    });
-
-    it("should throw OptimisticLockError after max retries exhausted", async () => {
-      let attempts = 0;
-      await expect(
-        withOptimisticRetry(async () => {
-          attempts++;
-          throw new FeatureListConflictError("old", "new");
-        }, { maxRetries: 2, baseDelay: 1 })
-      ).rejects.toThrow(OptimisticLockError);
-
-      expect(attempts).toBe(3); // initial + 2 retries
-    });
-
-    it("should throw non-conflict errors immediately", async () => {
-      let attempts = 0;
-      await expect(
-        withOptimisticRetry(async () => {
-          attempts++;
-          throw new Error("some other error");
-        }, { maxRetries: 3 })
-      ).rejects.toThrow("some other error");
-
-      expect(attempts).toBe(1);
-    });
-
-    it("should use default options when not provided", async () => {
-      const result = await withOptimisticRetry(async () => "default options");
-      expect(result).toBe("default options");
-    });
-
-    it("should respect maxDelay option", async () => {
-      let attempts = 0;
-      const startTime = Date.now();
-
-      await expect(
-        withOptimisticRetry(async () => {
-          attempts++;
-          throw new FeatureListConflictError("old", "new");
-        }, { maxRetries: 2, baseDelay: 10, maxDelay: 20 })
-      ).rejects.toThrow(OptimisticLockError);
-
-      const elapsed = Date.now() - startTime;
-      // With maxDelay of 20ms and 2 retries, total delay should be capped
-      expect(elapsed).toBeLessThan(200);
-    });
-
-    it("should throw the conflict error after retries exhausted", async () => {
-      try {
-        await withOptimisticRetry(async () => {
-          throw new FeatureListConflictError("2024-01-01", "2024-01-02");
-        }, { maxRetries: 1, baseDelay: 1 });
-        expect.fail("Should have thrown");
-      } catch (err) {
-        // FeatureListConflictError extends OptimisticLockError
-        expect(err).toBeInstanceOf(OptimisticLockError);
-        expect(err).toBeInstanceOf(FeatureListConflictError);
-        expect((err as FeatureListConflictError).expectedUpdatedAt).toBe("2024-01-01");
-        expect((err as FeatureListConflictError).actualUpdatedAt).toBe("2024-01-02");
-      }
-    });
-  });
-
-  describe("loadFeatureListWithMetadata", () => {
-    it("should return null when feature list does not exist", async () => {
-      const result = await loadFeatureListWithMetadata(tempDir);
-      expect(result).toBeNull();
-    });
-
-    it("should return list with _loadedAt timestamp", async () => {
+  describe("migrateToStrictTDD", () => {
+    it("should return unchanged list when tddMode is not strict", () => {
       const list = createTestFeatureList([createTestFeature()]);
-      await saveFeatureList(tempDir, list);
+      list.metadata.tddMode = "recommended";
+      const { list: migrated, migratedCount } = migrateToStrictTDD(list);
 
-      const result = await loadFeatureListWithMetadata(tempDir);
-
-      expect(result).not.toBeNull();
-      expect(result?.list).toBeDefined();
-      expect(result?.list.features).toHaveLength(1);
-      expect(result?._loadedAt).toBe(result?.list.metadata.updatedAt);
+      expect(migratedCount).toBe(0);
+      expect(migrated).toBe(list);
     });
 
-    it("should use updatedAt as _loadedAt for optimistic locking", async () => {
-      const list = createTestFeatureList([]);
-      await saveFeatureList(tempDir, list);
-
-      const result = await loadFeatureListWithMetadata(tempDir);
-
-      expect(result?._loadedAt).toBeDefined();
-      expect(typeof result?._loadedAt).toBe("string");
-    });
-  });
-
-  describe("saveFeatureList with optimistic locking", () => {
-    it("should save successfully when _loadedAt matches current updatedAt", async () => {
+    it("should return unchanged list when tddMode is undefined", () => {
       const list = createTestFeatureList([createTestFeature()]);
-      await saveFeatureList(tempDir, list);
+      const { list: migrated, migratedCount } = migrateToStrictTDD(list);
 
-      const loaded = await loadFeatureListWithMetadata(tempDir);
-      expect(loaded).not.toBeNull();
-
-      // Save with the loaded timestamp - should succeed
-      await saveFeatureList(tempDir, loaded!.list, { _loadedAt: loaded!._loadedAt });
-
-      // Verify save succeeded
-      const reloaded = await loadFeatureList(tempDir);
-      expect(reloaded).not.toBeNull();
+      expect(migratedCount).toBe(0);
+      expect(migrated).toBe(list);
     });
 
-    it("should throw FeatureListConflictError when file was modified", async () => {
-      const list = createTestFeatureList([createTestFeature()]);
-      await saveFeatureList(tempDir, list);
+    it("should migrate features to required tests when tddMode is strict", () => {
+      const list = createTestFeatureList([
+        createTestFeature({
+          id: "f1",
+          module: "test",
+          testRequirements: { unit: { required: false, pattern: "tests/**" } },
+        }),
+      ]);
+      list.metadata.tddMode = "strict";
+      const { list: migrated, migratedCount } = migrateToStrictTDD(list);
 
-      const loaded = await loadFeatureListWithMetadata(tempDir);
-      expect(loaded).not.toBeNull();
-
-      // Simulate another process modifying the file
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      await saveFeatureList(tempDir, loaded!.list); // This updates updatedAt
-
-      // Now try to save with the old timestamp - should fail
-      await expect(
-        saveFeatureList(tempDir, loaded!.list, { _loadedAt: loaded!._loadedAt })
-      ).rejects.toThrow(FeatureListConflictError);
+      expect(migratedCount).toBe(1);
+      expect(migrated.features[0].testRequirements?.unit?.required).toBe(true);
     });
 
-    it("should skip version check when skipVersionCheck is true", async () => {
-      const list = createTestFeatureList([createTestFeature()]);
-      await saveFeatureList(tempDir, list);
+    it("should not migrate features that already have required: true", () => {
+      const list = createTestFeatureList([
+        createTestFeature({
+          id: "f1",
+          module: "test",
+          testRequirements: { unit: { required: true, pattern: "tests/**" } },
+        }),
+      ]);
+      list.metadata.tddMode = "strict";
+      const { list: migrated, migratedCount } = migrateToStrictTDD(list);
 
-      const loaded = await loadFeatureListWithMetadata(tempDir);
-      expect(loaded).not.toBeNull();
-
-      // Simulate modification
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      await saveFeatureList(tempDir, loaded!.list);
-
-      // Save with old timestamp but skipVersionCheck - should succeed
-      await saveFeatureList(tempDir, loaded!.list, {
-        _loadedAt: loaded!._loadedAt,
-        skipVersionCheck: true
-      });
-
-      // Verify save succeeded
-      const reloaded = await loadFeatureList(tempDir);
-      expect(reloaded).not.toBeNull();
+      expect(migratedCount).toBe(0);
+      expect(migrated.features[0].testRequirements?.unit?.required).toBe(true);
     });
 
-    it("should succeed when file does not exist yet", async () => {
-      const list = createTestFeatureList([createTestFeature()]);
+    it("should add testRequirements if not present", () => {
+      const list = createTestFeatureList([
+        createTestFeature({ id: "f1", module: "mymodule" }),
+      ]);
+      list.metadata.tddMode = "strict";
+      const { list: migrated, migratedCount } = migrateToStrictTDD(list);
 
-      // Save with _loadedAt on non-existent file - should succeed
-      await saveFeatureList(tempDir, list, { _loadedAt: "2024-01-01T00:00:00Z" });
+      expect(migratedCount).toBe(1);
+      expect(migrated.features[0].testRequirements?.unit?.required).toBe(true);
+      expect(migrated.features[0].testRequirements?.unit?.pattern).toBe(
+        "tests/mymodule/**/*.test.*"
+      );
+    });
 
-      const loaded = await loadFeatureList(tempDir);
-      expect(loaded).not.toBeNull();
+    it("should preserve existing e2e requirements", () => {
+      const list = createTestFeatureList([
+        createTestFeature({
+          id: "f1",
+          module: "test",
+          testRequirements: {
+            unit: { required: false, pattern: "tests/**" },
+            e2e: { required: true, pattern: "e2e/**" },
+          },
+        }),
+      ]);
+      list.metadata.tddMode = "strict";
+      const { list: migrated } = migrateToStrictTDD(list);
+
+      expect(migrated.features[0].testRequirements?.e2e?.required).toBe(true);
+      expect(migrated.features[0].testRequirements?.e2e?.pattern).toBe("e2e/**");
+    });
+
+    it("should migrate multiple features", () => {
+      const list = createTestFeatureList([
+        createTestFeature({
+          id: "f1",
+          module: "auth",
+          testRequirements: { unit: { required: false, pattern: "tests/auth/**" } },
+        }),
+        createTestFeature({
+          id: "f2",
+          module: "user",
+          testRequirements: { unit: { required: true, pattern: "tests/user/**" } },
+        }),
+        createTestFeature({
+          id: "f3",
+          module: "api",
+        }),
+      ]);
+      list.metadata.tddMode = "strict";
+      const { list: migrated, migratedCount } = migrateToStrictTDD(list);
+
+      expect(migratedCount).toBe(2); // f1 and f3 migrated, f2 already had required: true
+      expect(migrated.features[0].testRequirements?.unit?.required).toBe(true);
+      expect(migrated.features[1].testRequirements?.unit?.required).toBe(true);
+      expect(migrated.features[2].testRequirements?.unit?.required).toBe(true);
     });
   });
 });

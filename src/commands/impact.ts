@@ -1,10 +1,10 @@
 /**
- * Impact command - Analyze impact of changes to a feature
+ * 'impact' command implementation
+ * Analyze impact of changes to a task/feature
  */
-
 import chalk from "chalk";
 
-import { loadFeatureList, findFeatureById } from "../feature-list.js";
+import { loadFeatureList, findFeatureById } from "../features/index.js";
 
 /**
  * Run the impact command
@@ -14,20 +14,20 @@ export async function runImpact(featureId: string): Promise<void> {
 
   const featureList = await loadFeatureList(cwd);
   if (!featureList) {
-    console.log(chalk.red("✗ No feature list found."));
+    console.log(chalk.red("✗ No task list found."));
     return;
   }
 
   const feature = findFeatureById(featureList.features, featureId);
   if (!feature) {
-    console.log(chalk.red(`✗ Feature '${featureId}' not found.`));
+    console.log(chalk.red(`✗ Task '${featureId}' not found.`));
     return;
   }
 
-  // Find dependent features
+  // Find dependent tasks
   const dependents = featureList.features.filter((f) => f.dependsOn.includes(featureId));
 
-  // Find same-module features
+  // Find same-module tasks
   const sameModule = featureList.features.filter(
     (f) => f.module === feature.module && f.id !== featureId && f.status !== "deprecated"
   );
@@ -37,9 +37,9 @@ export async function runImpact(featureId: string): Promise<void> {
   console.log("");
 
   if (dependents.length > 0) {
-    console.log(chalk.bold.yellow("   ⚠ Directly Affected Features:"));
+    console.log(chalk.bold.yellow("   ⚠ Directly Affected Tasks:"));
     for (const f of dependents) {
-      console.log(chalk.yellow(`   → ${f.id} (${f.status}) - depends on this feature`));
+      console.log(chalk.yellow(`   → ${f.id} (${f.status}) - depends on this task`));
     }
     console.log("");
   }
@@ -56,16 +56,23 @@ export async function runImpact(featureId: string): Promise<void> {
   }
 
   if (dependents.length === 0 && sameModule.length === 0) {
-    console.log(chalk.green("   ✓ No other features appear to be affected"));
+    console.log(chalk.green("   ✓ No other tasks appear to be affected"));
     console.log("");
   }
 
-  // Recommendations
-  if (dependents.length > 0) {
-    console.log(chalk.bold("   Recommendations:"));
-    console.log(chalk.white("   1. Review and test dependent features"));
-    console.log(chalk.white("   2. Mark uncertain features as 'needs_review'"));
-    console.log(chalk.white("   3. Update feature notes with impact details"));
+  // Recommendations - always show when there are affected tasks
+  if (dependents.length > 0 || sameModule.length > 0) {
+    console.log(chalk.bold("   💡 Recommendations:"));
+    let recNum = 1;
+    if (dependents.length > 0) {
+      console.log(chalk.white(`   ${recNum++}. Review and test dependent tasks (highest priority)`));
+      console.log(chalk.white(`   ${recNum++}. Mark uncertain dependent tasks as 'needs_review'`));
+    }
+    if (sameModule.length > 0) {
+      console.log(chalk.white(`   ${recNum++}. Consider reviewing same-module tasks for side effects`));
+    }
+    console.log(chalk.white(`   ${recNum++}. Update task notes with impact details`));
+    console.log(chalk.white(`   ${recNum++}. Run 'agent-foreman check <task_id>' to verify affected tasks`));
     console.log("");
   }
 }

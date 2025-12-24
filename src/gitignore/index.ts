@@ -1,15 +1,8 @@
 /**
- * Gitignore generation module for agent-foreman
- *
- * Provides automatic .gitignore generation using:
- * - GitHub's official gitignore templates
- * - Local bundled templates for offline access
- * - Config file and language detection
- *
- * @module gitignore
+ * Gitignore module - templates and generator
  */
 
-// Bundled templates (offline access)
+// Re-export from bundled-templates
 export {
   BUNDLED_TEMPLATES,
   type BundledTemplateName,
@@ -20,28 +13,28 @@ export {
   verifyBundledTemplates,
 } from "./bundled-templates.js";
 
-// GitHub API client (with caching)
+// Re-export from github-api
 export {
-  type FetchResult,
   getCacheDir,
+  getCacheTTL,
   fetchGitignoreTemplate,
   listGitignoreTemplates,
   clearCache,
-  getCacheTTL,
+  getCacheStats,
+  type FetchResult,
 } from "./github-api.js";
 
-// Main generator
+// Re-export from generator
 export {
-  type GitignoreResult,
-  type GeneratorOptions,
   CONFIG_TO_TEMPLATE,
   LANGUAGE_TO_TEMPLATE,
   MINIMAL_GITIGNORE,
-  getTemplate,
   detectTemplatesFromConfigFiles,
   detectTemplatesFromLanguages,
+  getTemplate,
   generateGitignoreContent,
   generateGitignore,
   ensureMinimalGitignore,
   ensureComprehensiveGitignore,
+  type GitignoreResult,
 } from "./generator.js";

@@ -16,9 +16,23 @@ const __dirname = dirname(__filename);
 // Try to import embedded rules (available in compiled binary)
 // Falls back to file system access in development mode
 let EMBEDDED_RULES: Record<string, string> = {};
+
+// Synchronously try to load embedded rules if available
 try {
-  const embedded = await import("./embedded-rules.generated.js");
-  EMBEDDED_RULES = embedded.EMBEDDED_RULES;
+  // Use dynamic import wrapped in a self-executing async function
+  // This is evaluated at module load time
+  const loadEmbedded = async () => {
+    try {
+      const embedded = await import("../embedded-assets.generated.js");
+      return embedded.EMBEDDED_RULES || {};
+    } catch {
+      return {};
+    }
+  };
+  // Start loading but don't block module initialization
+  loadEmbedded().then((rules) => {
+    EMBEDDED_RULES = rules;
+  });
 } catch {
   // Not in compiled mode or generated file doesn't exist
 }
@@ -34,6 +48,7 @@ export const RULE_TEMPLATES = [
   "04-feature-schema",
   "05-tdd",
   "06-progress-log",
+  "07-strict-enforcement",
 ] as const;
 
 export type RuleTemplateName = (typeof RULE_TEMPLATES)[number];
@@ -214,23 +229,4 @@ export function hasRulesInstalled(cwd: string): boolean {
   }
 
   return false;
-}
-
-/**
- * Update project rules if they already exist
- * Used during CLI upgrade to keep rules in sync
- *
- * @param cwd - Project root directory
- * @returns Result with counts and file lists, or null if no rules were installed
- */
-export async function updateProjectRulesIfExists(
-  cwd: string
-): Promise<CopyRulesResult | null> {
-  // Only update if rules are already installed
-  if (!hasRulesInstalled(cwd)) {
-    return null;
-  }
-
-  // Force update all rule files
-  return copyRulesToProject(cwd, { force: true });
 }

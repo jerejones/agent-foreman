@@ -13,7 +13,7 @@ import {
   type TestFramework,
 } from "../src/tdd-guidance/index.js";
 import type { Feature } from "../src/types.js";
-import type { ExtendedCapabilities } from "../src/verifier/verification-types.js";
+import type { ExtendedCapabilities } from "../src/verifier/types/index.js";
 
 describe("criterionToTestCase", () => {
   it("should handle 'X can Y' pattern", () => {

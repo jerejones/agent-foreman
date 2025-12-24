@@ -1,199 +1,111 @@
 /**
- * GitHub Gitignore API client with local caching
- *
- * Fetches gitignore templates from GitHub's official API with:
- * - Local file caching (7-day TTL)
- * - ETag-based conditional requests
- * - Fallback to bundled templates on network errors
+ * GitHub API client for gitignore templates with caching
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { homedir } from "node:os";
 import { getBundledTemplate, isBundledTemplate } from "./bundled-templates.js";
 
-// ============================================================================
-// Constants
-// ============================================================================
+/** Cache directory for gitignore templates */
+const CACHE_DIR = path.join(homedir(), ".agent-foreman", "gitignore-cache");
 
+/** Cache TTL: 7 days in milliseconds */
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
+
+/** GitHub API base URL for gitignore templates */
 const GITHUB_API_BASE = "https://api.github.com/gitignore/templates";
-const CACHE_DIR_NAME = ".agent-foreman/gitignore-cache";
-const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
-
-// ============================================================================
-// Types
-// ============================================================================
-
-interface GitignoreApiResponse {
-  name: string;
-  source: string;
-}
-
-interface CachedTemplate {
-  name: string;
-  source: string;
-  etag?: string;
-  cachedAt: number;
-}
-
-interface CachedTemplateList {
-  templates: string[];
-  etag?: string;
-  cachedAt: number;
-}
-
-export interface FetchResult {
-  source: string;
-  fromCache: boolean;
-  fallback: boolean;
-}
-
-// ============================================================================
-// Cache Directory Management
-// ============================================================================
 
 /**
  * Get the cache directory path
  */
 export function getCacheDir(): string {
-  return join(homedir(), CACHE_DIR_NAME);
+  return CACHE_DIR;
 }
 
 /**
- * Ensure the cache directory exists
+ * Get the cache TTL in milliseconds
+ */
+export function getCacheTTL(): number {
+  return CACHE_TTL;
+}
+
+/**
+ * Cache entry structure
+ */
+interface CacheEntry {
+  source: string;
+  cachedAt: number;
+  etag?: string;
+}
+
+/**
+ * Result of fetching a gitignore template
+ */
+export interface FetchResult {
+  /** Template content */
+  source: string;
+  /** Whether the content came from cache */
+  fromCache: boolean;
+  /** Whether the content came from bundled fallback */
+  fallback: boolean;
+}
+
+/**
+ * Ensure cache directory exists
  */
 function ensureCacheDir(): void {
-  const cacheDir = getCacheDir();
-  if (!existsSync(cacheDir)) {
-    mkdirSync(cacheDir, { recursive: true });
+  if (!fs.existsSync(CACHE_DIR)) {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
   }
 }
 
 /**
- * Get the cache file path for a template
+ * Get cache file path for a template
  */
-function getTemplateCachePath(name: string): string {
-  return join(getCacheDir(), `${name}.json`);
+function getCachePath(name: string): string {
+  return path.join(CACHE_DIR, `${name}.json`);
 }
 
 /**
- * Get the cache file path for the template list
+ * Read cache entry if valid
  */
-function getTemplateListCachePath(): string {
-  return join(getCacheDir(), "templates.json");
-}
-
-// ============================================================================
-// Cache Operations
-// ============================================================================
-
-/**
- * Read a cached template
- */
-function readCachedTemplate(name: string): CachedTemplate | null {
-  const cachePath = getTemplateCachePath(name);
-
-  if (!existsSync(cachePath)) {
+function readCache(name: string): CacheEntry | null {
+  const cachePath = getCachePath(name);
+  if (!fs.existsSync(cachePath)) {
     return null;
   }
 
   try {
-    const content = readFileSync(cachePath, "utf-8");
-    return JSON.parse(content) as CachedTemplate;
+    const cached = JSON.parse(fs.readFileSync(cachePath, "utf-8")) as CacheEntry;
+    return cached;
   } catch {
     return null;
   }
 }
 
 /**
- * Write a template to cache
+ * Write cache entry
  */
-function writeCachedTemplate(
-  name: string,
-  source: string,
-  etag?: string
-): void {
+function writeCache(name: string, entry: CacheEntry): void {
   ensureCacheDir();
-  const cachePath = getTemplateCachePath(name);
-
-  const cached: CachedTemplate = {
-    name,
-    source,
-    etag,
-    cachedAt: Date.now(),
-  };
-
-  writeFileSync(cachePath, JSON.stringify(cached, null, 2));
+  const cachePath = getCachePath(name);
+  fs.writeFileSync(cachePath, JSON.stringify(entry, null, 2));
 }
 
 /**
- * Read the cached template list
+ * Fetch gitignore template from GitHub API with caching
+ * @param name - Template name (e.g., "Node", "Python")
+ * @returns Fetch result with source content and metadata
  */
-function readCachedTemplateList(): CachedTemplateList | null {
-  const cachePath = getTemplateListCachePath();
-
-  if (!existsSync(cachePath)) {
-    return null;
-  }
-
-  try {
-    const content = readFileSync(cachePath, "utf-8");
-    return JSON.parse(content) as CachedTemplateList;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Write the template list to cache
- */
-function writeCachedTemplateList(templates: string[], etag?: string): void {
-  ensureCacheDir();
-  const cachePath = getTemplateListCachePath();
-
-  const cached: CachedTemplateList = {
-    templates,
-    etag,
-    cachedAt: Date.now(),
-  };
-
-  writeFileSync(cachePath, JSON.stringify(cached, null, 2));
-}
-
-/**
- * Check if a cache entry is stale
- */
-function isCacheStale(cachedAt: number): boolean {
-  return Date.now() - cachedAt > CACHE_TTL_MS;
-}
-
-// ============================================================================
-// API Operations
-// ============================================================================
-
-/**
- * Fetch a gitignore template from GitHub API
- *
- * Priority:
- * 1. Return cached template if not stale
- * 2. Fetch from GitHub API with ETag validation
- * 3. Fallback to bundled template on network error
- */
-export async function fetchGitignoreTemplate(
-  name: string
-): Promise<FetchResult> {
+export async function fetchGitignoreTemplate(name: string): Promise<FetchResult> {
   // Check cache first
-  const cached = readCachedTemplate(name);
-
-  if (cached && !isCacheStale(cached.cachedAt)) {
-    return {
-      source: cached.source,
-      fromCache: true,
-      fallback: false,
-    };
+  const cached = readCache(name);
+  if (cached && Date.now() - cached.cachedAt < CACHE_TTL) {
+    return { source: cached.source, fromCache: true, fallback: false };
   }
 
-  // Try to fetch from GitHub API
+  // Try API with ETag for conditional request
   try {
     const headers: Record<string, string> = {
       Accept: "application/vnd.github.v3+json",
@@ -207,156 +119,115 @@ export async function fetchGitignoreTemplate(
 
     const response = await fetch(`${GITHUB_API_BASE}/${name}`, { headers });
 
-    // 304 Not Modified - cache is still valid
+    // 304 Not Modified - use cached version
     if (response.status === 304 && cached) {
       // Update cache timestamp
-      writeCachedTemplate(cached.name, cached.source, cached.etag);
-      return {
-        source: cached.source,
-        fromCache: true,
-        fallback: false,
-      };
+      writeCache(name, { ...cached, cachedAt: Date.now() });
+      return { source: cached.source, fromCache: true, fallback: false };
     }
 
-    // 404 Not Found - template doesn't exist
-    if (response.status === 404) {
-      // Try bundled template as fallback
-      const bundled = getBundledTemplate(name);
-      if (bundled) {
-        return {
-          source: bundled,
-          fromCache: false,
-          fallback: true,
-        };
-      }
-      throw new Error(`Template '${name}' not found`);
-    }
-
-    // Other errors
+    // Check for errors
     if (!response.ok) {
       throw new Error(`GitHub API error: ${response.status}`);
     }
 
     // Parse response
-    const data = (await response.json()) as GitignoreApiResponse;
+    const data = (await response.json()) as { source: string };
     const etag = response.headers.get("etag") || undefined;
 
     // Cache the result
-    writeCachedTemplate(name, data.source, etag);
-
-    return {
+    writeCache(name, {
       source: data.source,
-      fromCache: false,
-      fallback: false,
-    };
-  } catch (error) {
-    // Network error or API error - try fallback options
+      cachedAt: Date.now(),
+      etag,
+    });
 
-    // 1. Return stale cache if available
-    if (cached) {
-      return {
-        source: cached.source,
-        fromCache: true,
-        fallback: false,
-      };
-    }
-
-    // 2. Try bundled template
+    return { source: data.source, fromCache: false, fallback: false };
+  } catch {
+    // Fallback to bundled template
     if (isBundledTemplate(name)) {
       const bundled = getBundledTemplate(name);
       if (bundled) {
-        return {
-          source: bundled,
-          fromCache: false,
-          fallback: true,
-        };
+        return { source: bundled, fromCache: false, fallback: true };
       }
     }
 
-    // 3. No fallback available
-    throw error;
+    // If we have a stale cache, use it as last resort
+    if (cached) {
+      return { source: cached.source, fromCache: true, fallback: false };
+    }
+
+    throw new Error(`Template ${name} not found and no fallback available`);
   }
 }
 
 /**
- * List all available gitignore templates from GitHub API
- *
- * Priority:
- * 1. Return cached list if not stale
- * 2. Fetch from GitHub API with ETag validation
- * 3. Return empty array on error (graceful degradation)
+ * List available gitignore templates from GitHub API
+ * @returns Array of template names
  */
 export async function listGitignoreTemplates(): Promise<string[]> {
-  // Check cache first
-  const cached = readCachedTemplateList();
-
-  if (cached && !isCacheStale(cached.cachedAt)) {
-    return cached.templates;
-  }
-
-  // Try to fetch from GitHub API
   try {
-    const headers: Record<string, string> = {
-      Accept: "application/vnd.github.v3+json",
-      "User-Agent": "agent-foreman",
-    };
+    const response = await fetch(GITHUB_API_BASE, {
+      headers: {
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "agent-foreman",
+      },
+    });
 
-    // Add ETag for conditional request if we have a cached version
-    if (cached?.etag) {
-      headers["If-None-Match"] = cached.etag;
-    }
-
-    const response = await fetch(GITHUB_API_BASE, { headers });
-
-    // 304 Not Modified - cache is still valid
-    if (response.status === 304 && cached) {
-      // Update cache timestamp
-      writeCachedTemplateList(cached.templates, cached.etag);
-      return cached.templates;
-    }
-
-    // Other errors
     if (!response.ok) {
       throw new Error(`GitHub API error: ${response.status}`);
     }
 
-    // Parse response (array of template names)
     const templates = (await response.json()) as string[];
-    const etag = response.headers.get("etag") || undefined;
-
-    // Cache the result
-    writeCachedTemplateList(templates, etag);
-
     return templates;
   } catch {
-    // Return stale cache if available, otherwise empty array
-    if (cached) {
-      return cached.templates;
-    }
+    // Return empty array on error
     return [];
   }
 }
 
 /**
- * Clear the gitignore cache
+ * Clear all cached gitignore templates
  */
 export function clearCache(): void {
-  const cacheDir = getCacheDir();
-  if (existsSync(cacheDir)) {
-    // Remove all .json files in the cache directory
-    const fs = require("node:fs");
-    const files = fs.readdirSync(cacheDir);
-    for (const file of files) {
-      if (file.endsWith(".json")) {
-        fs.unlinkSync(join(cacheDir, file));
-      }
+  if (!fs.existsSync(CACHE_DIR)) return;
+
+  const files = fs.readdirSync(CACHE_DIR);
+  for (const file of files) {
+    if (file.endsWith(".json")) {
+      fs.unlinkSync(path.join(CACHE_DIR, file));
     }
   }
 }
 
 /**
- * Get the cache TTL in milliseconds
+ * Get cache statistics
+ * @returns Object with cache stats
  */
-export function getCacheTTL(): number {
-  return CACHE_TTL_MS;
+export function getCacheStats(): { count: number; totalSize: number; oldestFile?: string } {
+  if (!fs.existsSync(CACHE_DIR)) {
+    return { count: 0, totalSize: 0 };
+  }
+
+  const files = fs.readdirSync(CACHE_DIR).filter((f) => f.endsWith(".json"));
+  let totalSize = 0;
+  let oldestTime = Date.now();
+  let oldestFile: string | undefined;
+
+  for (const file of files) {
+    const filePath = path.join(CACHE_DIR, file);
+    const stats = fs.statSync(filePath);
+    totalSize += stats.size;
+
+    if (stats.mtimeMs < oldestTime) {
+      oldestTime = stats.mtimeMs;
+      oldestFile = file.replace(".json", "");
+    }
+  }
+
+  return {
+    count: files.length,
+    totalSize,
+    oldestFile,
+  };
 }

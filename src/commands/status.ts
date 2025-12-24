@@ -1,43 +1,60 @@
 /**
- * Status command - Show current harness status
+ * 'status' command implementation
+ * Show current task/feature harness status
  */
-
 import chalk from "chalk";
 
 import {
   loadFeatureList,
   selectNextFeature,
+  selectNextFeatureQuick,
   getFeatureStats,
   getCompletionPercentage,
-} from "../feature-list.js";
+} from "../features/index.js";
+import { loadFeatureIndex } from "../storage/index.js";
 import { getRecentEntries } from "../progress-log.js";
 
 /**
  * Run the status command
  */
-export async function runStatus(outputJson: boolean = false, quiet: boolean = false): Promise<void> {
+export async function runStatus(
+  outputJson: boolean = false,
+  quiet: boolean = false
+): Promise<void> {
   const cwd = process.cwd();
+
+  // Try to use quick operations if index exists
+  const index = await loadFeatureIndex(cwd);
 
   const featureList = await loadFeatureList(cwd);
   if (!featureList) {
     if (outputJson) {
-      console.log(JSON.stringify({ error: "No feature list found" }));
+      console.log(JSON.stringify({ error: "No task list found" }));
     } else {
-      console.log(chalk.red("✗ No feature list found. Run 'agent-foreman init <goal>' first."));
+      console.log(chalk.red("✗ No task list found. Run 'agent-foreman init <goal>' first."));
     }
     return;
   }
 
+  // Always use loaded features for stats to ensure consistency
+  // (index.json may be out of sync with actual task files)
   const stats = getFeatureStats(featureList.features);
-  const next = selectNextFeature(featureList.features);
+
+  // Use quick operations for next selection when index is available
+  let next;
+  if (index) {
+    next = await selectNextFeatureQuick(cwd);
+  } else {
+    next = selectNextFeature(featureList.features);
+  }
   const completion = getCompletionPercentage(featureList.features);
   const recentEntries = await getRecentEntries(cwd, 5);
 
   // JSON output mode
   if (outputJson) {
     const output = {
-      goal: featureList.metadata.projectGoal,
-      updatedAt: featureList.metadata.updatedAt,
+      goal: featureList.metadata?.projectGoal ?? "(no goal set)",
+      updatedAt: featureList.metadata?.updatedAt ?? null,
       stats: {
         passing: stats.passing,
         failing: stats.failing,
@@ -71,13 +88,16 @@ export async function runStatus(outputJson: boolean = false, quiet: boolean = fa
   }
 
   // Normal output
+  const projectGoal = featureList.metadata?.projectGoal ?? "(no goal set)";
+  const lastUpdated = featureList.metadata?.updatedAt ?? "unknown";
+
   console.log("");
   console.log(chalk.bold.blue("📊 Project Status"));
-  console.log(chalk.gray(`   Goal: ${featureList.metadata.projectGoal}`));
-  console.log(chalk.gray(`   Last updated: ${featureList.metadata.updatedAt}`));
+  console.log(chalk.gray(`   Goal: ${projectGoal}`));
+  console.log(chalk.gray(`   Last updated: ${lastUpdated}`));
   console.log("");
 
-  console.log(chalk.bold("   Feature Status:"));
+  console.log(chalk.bold("   Task Status:"));
   console.log(chalk.green(`   ✓ Passing: ${stats.passing}`));
   console.log(chalk.yellow(`   ⚠ Needs Review: ${stats.needs_review}`));
   console.log(chalk.red(`   ✗ Failing: ${stats.failing}`));

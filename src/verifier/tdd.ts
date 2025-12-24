@@ -1,32 +1,32 @@
 /**
  * TDD verification mode
- * Tests only, no AI analysis
+ * Verifies features using tests only, no AI analysis
  */
 
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import chalk from "chalk";
 
-import type { Feature } from "../types.js";
+import type { Feature } from "../types/index.js";
 import type {
+  AutomatedCheckResult,
   VerificationResult,
   CriterionResult,
   VerificationVerdict,
-  AutomatedCheckResult,
-} from "./verification-types.js";
-import type { TestDiscoveryResult } from "../test-discovery.js";
+} from "./types/index.js";
 import { detectCapabilities } from "../capabilities/index.js";
 import { saveVerificationResult } from "../verification-store/index.js";
 import {
   buildSelectiveTestCommand,
   buildE2ECommand,
   getE2ETagsForFeature,
+  type TestDiscoveryResult,
   type E2EMode,
-} from "../test-discovery.js";
+} from "../testing/index.js";
 import { createSpinner, createStepProgress } from "../progress.js";
 import { runCheckWithEnv } from "./check-executor.js";
-import type { TDDVerifyOptions } from "./types.js";
 import { verifyFeatureAutonomous } from "./autonomous.js";
+import type { TDDVerifyOptions } from "./types.js";
 
 const execAsync = promisify(exec);
 

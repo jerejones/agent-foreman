@@ -1,6 +1,7 @@
 /**
- * Verification Store - Persistence layer for verification results
+ * Verification Store
  *
+ * Persistence layer for verification results.
  * Stores verification data in per-feature subdirectories under ai/verification/
  *
  * New structure:
@@ -15,16 +16,9 @@
  *
  * Legacy structure (deprecated):
  *   ai/verification/results.json
- *
- * This module is split into focused submodules:
- * - constants: Store paths and version constants
- * - legacy-store: Legacy format support
- * - index-operations: Index management logic
- * - result-persistence: Result save/load functions
- * - migration: Migration logic
  */
 
-// Re-export constants
+// Constants
 export {
   VERIFICATION_STORE_DIR,
   VERIFICATION_STORE_FILE,
@@ -35,20 +29,20 @@ export {
   INDEX_VERSION,
 } from "./constants.js";
 
-// Re-export legacy store operations
+// Legacy Store Operations (for backward compatibility)
 export {
   createEmptyStore,
   loadVerificationStore,
 } from "./legacy-store.js";
 
-// Re-export index operations
+// Index Operations
 export {
   createEmptyIndex,
   loadVerificationIndex,
-  formatRunNumber,
+  getNextRunNumber,
 } from "./index-operations.js";
 
-// Re-export result persistence operations
+// Main Store Operations
 export {
   saveVerificationResult,
   getLastVerification,
@@ -58,9 +52,9 @@ export {
   hasVerification,
   getVerificationStats,
   getFeatureSummary,
-} from "./result-persistence.js";
+} from "./store-operations.js";
 
-// Re-export migration operations
+// Migration Operations
 export {
   needsMigration,
   migrateResultsJson,

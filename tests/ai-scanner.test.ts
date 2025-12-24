@@ -1,5 +1,5 @@
 /**
- * Tests for src/ai-scanner.ts - AI-powered project analysis
+ * Tests for src/scanner - AI-powered project analysis
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs/promises";
@@ -12,22 +12,14 @@ import {
   generateFeaturesFromGoal,
   aiScanProject,
   type AIAnalysisResult,
-} from "../src/ai-scanner.js";
+} from "../src/scanner/index.js";
 import type { DirectoryStructure, ProjectSurvey } from "../src/types.js";
 
 // Mock the agents module
 vi.mock("../src/agents.js", () => ({
   callAnyAvailableAgent: vi.fn(),
   checkAvailableAgents: vi.fn(() => [{ name: "gemini", available: true }]),
-  getAvailableAgent: vi.fn(() => ({ name: "gemini", command: ["gemini"], promptViaStdin: true })),
-}));
-
-// Mock progress module
-vi.mock("../src/progress.js", () => ({
-  isTTY: vi.fn(() => false),
-  createProgressBar: vi.fn(() => ({ start: vi.fn(), update: vi.fn(), complete: vi.fn() })),
-  createSpinner: vi.fn(() => ({ start: vi.fn(), succeed: vi.fn(), fail: vi.fn() })),
-  createStepProgress: vi.fn(() => ({ start: vi.fn(), completeStep: vi.fn() })),
+  getAvailableAgent: vi.fn(() => ({ name: "gemini", command: ["gemini"] })),
 }));
 
 import { callAnyAvailableAgent, checkAvailableAgents, getAvailableAgent } from "../src/agents.js";
@@ -578,6 +570,7 @@ describe("AI Scanner", () => {
         { name: "claude", available: false },
         { name: "codex", available: false },
       ]);
+      vi.mocked(getAvailableAgent).mockReturnValue({ name: "gemini", command: ["gemini"] });
     });
 
     it("should call agent with project path in prompt", async () => {
@@ -642,16 +635,13 @@ describe("AI Scanner", () => {
     });
 
     it("should return error when no agents available", async () => {
-      // Override the mock to return no available agent
+      // Override the mock to return no available agents
       vi.mocked(getAvailableAgent).mockReturnValue(null);
 
       const result = await aiScanProject("/test/path");
 
       expect(result.success).toBe(false);
       expect(result.error).toContain("No AI agents available");
-
-      // Restore the mock for other tests
-      vi.mocked(getAvailableAgent).mockReturnValue({ name: "gemini", command: ["gemini"], promptViaStdin: true });
     });
 
     it("should return parsed AI analysis result on success", async () => {
@@ -760,6 +750,129 @@ describe("AI Scanner", () => {
       expect(prompt).toContain("Explore");
       expect(prompt).toContain("/test/path");
       expect(prompt).toContain("JSON");
+    });
+
+    it("should pass verbose option to agent", async () => {
+      vi.mocked(callAnyAvailableAgent).mockResolvedValue({
+        success: true,
+        output: JSON.stringify({ features: [], modules: [], completion: { overall: 0, notes: [] }, commands: {} }),
+        agentUsed: "gemini",
+      });
+
+      // Suppress console output
+      vi.spyOn(console, "log").mockImplementation(() => {});
+      vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+      await aiScanProject("/test/path", { verbose: true });
+
+      expect(callAnyAvailableAgent).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          verbose: true,
+        })
+      );
+    });
+
+    it("should handle onAgentSelected callback", async () => {
+      vi.mocked(callAnyAvailableAgent).mockImplementation(async (_prompt, options) => {
+        // Simulate agent selection callback
+        if (options?.onAgentSelected) {
+          options.onAgentSelected("claude");
+        }
+        return {
+          success: true,
+          output: JSON.stringify({ features: [], modules: [], completion: { overall: 0, notes: [] }, commands: {} }),
+          agentUsed: "claude",
+        };
+      });
+
+      // Suppress console output
+      vi.spyOn(console, "log").mockImplementation(() => {});
+      vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+      const result = await aiScanProject("/test/path");
+
+      expect(result.success).toBe(true);
+      expect(result.agentUsed).toBe("claude");
+    });
+
+    it("should display progress in non-TTY mode", async () => {
+      // Mock isTTY to return false
+      vi.mock("../src/progress.js", () => ({
+        isTTY: vi.fn(() => false),
+      }));
+
+      vi.mocked(callAnyAvailableAgent).mockResolvedValue({
+        success: true,
+        output: JSON.stringify({ features: [], modules: [], completion: { overall: 0, notes: [] }, commands: {} }),
+        agentUsed: "gemini",
+      });
+
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      await aiScanProject("/test/path");
+
+      // Should have logged progress messages
+      expect(consoleSpy).toHaveBeenCalled();
+    });
+
+    it("should set showProgress to false in agent options", async () => {
+      vi.mocked(callAnyAvailableAgent).mockResolvedValue({
+        success: true,
+        output: JSON.stringify({ features: [], modules: [], completion: { overall: 0, notes: [] }, commands: {} }),
+        agentUsed: "gemini",
+      });
+
+      // Suppress console output
+      vi.spyOn(console, "log").mockImplementation(() => {});
+      vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+      await aiScanProject("/test/path");
+
+      expect(callAnyAvailableAgent).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          showProgress: false,
+        })
+      );
+    });
+
+    it("should display failure status when agent fails", async () => {
+      vi.mocked(callAnyAvailableAgent).mockResolvedValue({
+        success: false,
+        error: "Agent error",
+      });
+
+      vi.spyOn(console, "log").mockImplementation(() => {});
+      vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+      const result = await aiScanProject("/test/path");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("Agent error");
+    });
+
+    it("should include agentUsed in successful result", async () => {
+      vi.mocked(callAnyAvailableAgent).mockResolvedValue({
+        success: true,
+        output: JSON.stringify({
+          techStack: { language: "typescript" },
+          features: [],
+          modules: [],
+          completion: { overall: 50, notes: [] },
+          commands: {},
+        }),
+        agentUsed: "codex",
+      });
+
+      // Suppress console output
+      vi.spyOn(console, "log").mockImplementation(() => {});
+      vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+      const result = await aiScanProject("/test/path");
+
+      expect(result.success).toBe(true);
+      expect(result.agentUsed).toBe("codex");
     });
   });
 });

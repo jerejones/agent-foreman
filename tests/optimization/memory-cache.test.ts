@@ -23,7 +23,7 @@ import {
   loadCachedCapabilities,
   saveCapabilities,
 } from "../../src/capabilities/index.js";
-import type { ExtendedCapabilities } from "../../src/verifier/verification-types.js";
+import type { ExtendedCapabilities } from "../../src/verifier/types/index.js";
 
 describe("Memory Cache Optimization", () => {
   let testDir: string;

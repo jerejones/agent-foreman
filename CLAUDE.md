@@ -2,100 +2,89 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
-
-**agent-foreman** is a Long-Task Harness for AI agents - providing feature-driven development with external memory. It helps AI coding agents avoid common failure modes (doing too much at once, premature completion, superficial testing) by providing structured workflows, acceptance criteria, and verification.
-
-## Commands
+## Development Commands
 
 ```bash
+# Build
+pnpm run build              # Full build (embed assets + TypeScript compile)
+pnpm run build:embed        # Generate embedded assets only
+pnpm run build:bin          # Build standalone binary
+
+# Testing (always use CI=true)
+CI=true pnpm test                                  # Run all tests
+CI=true pnpm run test:watch                        # Watch mode
+CI=true npx vitest tests/path/to/file.test.ts     # Single test file
+
 # Development
-pnpm dev                          # Run CLI in dev mode (tsx)
-pnpm build                        # TypeScript compile + chmod +x
-pnpm test                         # Run all tests (vitest run)
-pnpm test:watch                   # Watch mode testing
-CI=true pnpm test -- tests/file.test.ts  # Run single test file
+pnpm run dev                # Run CLI directly via tsx (no build needed)
+pnpm run start              # Run compiled CLI from dist/
 
-# CLI Usage (after build or via pnpm dev)
-agent-foreman status              # View project status
-agent-foreman next [feature_id]   # Get next/specific feature to work on
-agent-foreman check [feature_id]  # Verify code changes or feature implementation
-agent-foreman done <feature_id>   # Mark complete + auto-commit
-agent-foreman fail <feature_id>   # Mark as failed and continue to next
-agent-foreman impact <feature_id> # Analyze impact of changes
-agent-foreman scan                # Scan project verification capabilities
-agent-foreman init [goal]         # Initialize harness
-agent-foreman analyze [output]    # Generate AI-powered project analysis
-agent-foreman tdd [mode]          # View or change TDD mode
-agent-foreman agents              # Show available AI agents status
-agent-foreman install             # Install Claude Code plugin
-agent-foreman uninstall           # Uninstall Claude Code plugin
-
-# Binary builds
-pnpm build:bin                    # Build standalone binary (current platform)
-pnpm build:all                    # Build npm + binary
+# Type checking
+npx tsc --noEmit            # Check types without emitting
 ```
 
-## Architecture
+## Architecture Overview
 
-### Core Flow
+CLI tool built with TypeScript + yargs for task-driven AI agent development.
+
+### Entry Point Flow
+
+```text
+src/index.ts → src/commands/index.ts (yargs) → src/commands/cli-commands.ts (registration)
 ```
-CLI (src/index.ts) → Commands (src/commands/*.ts) → Core Logic
-                                                   ↓
-                                    Verifier (src/verifier/*.ts)
-                                    Capabilities (src/capabilities/*.ts)
-                                    AI Agents (src/agents.ts)
-```
 
-### Key Modules
+### Core Modules
 
-- **`src/commands/`**: CLI command handlers (analyze, init, next, status, check, done, scan)
-- **`src/verifier/`**: Feature verification system (AI analysis, TDD checks, automated tests)
-  - `core.ts`: Main verification orchestration
-  - `autonomous.ts`: AI-powered autonomous verification
-  - `tdd.ts`: TDD mode verification
-  - `check-executor.ts`: Run tests/lint/typecheck/build
-- **`src/capabilities/`**: Project capability detection (caches in `ai/capabilities.json`)
-  - Uses AI discovery to detect test/lint/typecheck/build commands
-  - Two-tier caching: memory → disk → AI discovery
-- **`src/agents.ts`**: AI agent subprocess management (Claude, Codex, Gemini)
-- **`src/types.ts`**: Core type definitions (Feature, FeatureStatus, FeatureList)
-- **`src/feature-list.ts`**: Feature list CRUD operations
+| Module | Purpose |
+|--------|---------|
+| `src/commands/` | CLI commands: init, next, done, check, status, impact, fail, tdd, install, uninstall |
+| `src/features/` | Task CRUD, selection, mutations, statistics |
+| `src/storage/` | Markdown parsing/serialization for `ai/tasks/*.md` |
+| `src/strategies/` | Universal Verification Strategy (UVS) executors |
+| `src/verifier/` | Verification orchestration |
+| `src/agents/` | AI agent detection and orchestration |
+| `src/scanner/` | Project scanning and survey generation |
+| `src/capabilities/` | AI capability discovery and caching |
+| `src/tdd-guidance/` | TDD workflow guidance generation |
 
-### Data Files (generated in target project's `ai/` directory)
-- `ai/feature_list.json`: Feature backlog with status tracking
-- `ai/progress.log`: Session handoff audit log
-- `ai/capabilities.json`: Cached project capabilities
-- `ai/init.sh`: Environment bootstrap script
+### Verification Strategy Pattern
 
-### Plugin System
-- `plugins/agent-foreman/`: Claude Code plugin with slash commands and skills
-- `.claude-plugin/marketplace.json`: Plugin marketplace registration
+Registry pattern in `src/strategies/index.ts`:
 
-## Testing
+- Strategies implement `StrategyExecutor` interface from `src/strategy-executor.ts`
+- Auto-register via side-effect imports when module loads
+- Types: `test`, `e2e`, `script`, `http`, `file`, `command`, `manual`, `ai`, `composite`
+- Each strategy has its own directory (e.g., `src/strategies/ai-strategy/`) with executor, types, and output modules
 
-- Framework: Vitest with `pool: "forks"` for process isolation
-- Pattern: `tests/**/*.test.ts`
-- Always use `CI=true` when running tests to ensure non-interactive mode
-- Test timeout: 30s default, 5s teardown
+### Storage Format
 
-## Feature Status Values
+Tasks stored as Markdown with YAML frontmatter:
 
-- `failing`: Not yet implemented
-- `passing`: Acceptance criteria met
-- `blocked`: External dependency blocking
-- `needs_review`: May be affected by changes
-- `failed`: Implementation attempted but verification failed
-- `deprecated`: No longer needed
+- Index: `ai/tasks/index.json` (lightweight lookup)
+- Content: `ai/tasks/{module}/{id}.md` (full definition)
 
-## AI Agent Integration
+### Key Types
 
-Priority order: Claude > Codex > Gemini (configurable via `AGENT_FOREMAN_AGENTS` env var)
+`src/types/index.ts` exports:
 
-Agents are spawned as subprocesses with full automation flags:
-- Claude: `--permission-mode bypassPermissions`
-- Codex: `--full-auto`
-- Gemini: `--yolo`
+- `Feature`/`Task` - Task definition
+- `FeatureList` - Collection with metadata
+- `FeatureIndex` - Lightweight index
+
+### Schema Validation
+
+JSON schemas in `src/schemas/` with AJV validation:
+
+- `feature-list.ts` - Legacy JSON format validation
+- `feature-frontmatter.ts` - Markdown frontmatter validation
+- `feature-index.ts` - Index file validation
+
+## Testing Notes
+
+- Tests use vitest with `forks` pool for process isolation
+- 30s default timeout, 5s teardown timeout
+- Global setup in `tests/setup.ts` handles cleanup hooks
+- Coverage excludes `src/index.ts` (entry point)
 
 ## Release Process (Human Only)
 
@@ -104,3 +93,11 @@ npm version patch && git push origin main --tags
 ```
 
 Version auto-syncs across `package.json`, `marketplace.json`, and `plugin.json`.
+
+## Workflow Rules
+
+Agent workflow rules are in `.claude/rules/` (symlinked to `src/rules/templates/`).
+
+## Project Goal
+
+Long Task Harness for AI agents - task/feature-driven development with external memory

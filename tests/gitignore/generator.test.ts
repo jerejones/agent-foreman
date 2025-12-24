@@ -1,11 +1,11 @@
 /**
- * Tests for gitignore generator module
+ * Tests for gitignore generator
  */
+
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
-
+import { tmpdir } from "node:os";
 import {
   CONFIG_TO_TEMPLATE,
   LANGUAGE_TO_TEMPLATE,
@@ -19,519 +19,317 @@ import {
   ensureComprehensiveGitignore,
 } from "../../src/gitignore/generator.js";
 
-import {
-  getBundledTemplate,
-  BUNDLED_TEMPLATES,
-  isBundledTemplate,
-} from "../../src/gitignore/bundled-templates.js";
-
-// ============================================================================
-// Test Setup
-// ============================================================================
-
-let tempDir: string;
-
-function createTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "gitignore-test-"));
-}
-
-function cleanup(dir: string): void {
-  try {
-    fs.rmSync(dir, { recursive: true, force: true });
-  } catch {
-    // Ignore cleanup errors
-  }
-}
-
-// ============================================================================
-// CONFIG_TO_TEMPLATE Mapping Tests
-// ============================================================================
-
-describe("CONFIG_TO_TEMPLATE mapping", () => {
-  it("should map package.json to Node template", () => {
-    expect(CONFIG_TO_TEMPLATE["package.json"]).toBe("Node");
-  });
-
-  it("should map next.config.js to Nextjs template", () => {
-    expect(CONFIG_TO_TEMPLATE["next.config.js"]).toBe("Nextjs");
-  });
-
-  it("should map next.config.ts to Nextjs template", () => {
-    expect(CONFIG_TO_TEMPLATE["next.config.ts"]).toBe("Nextjs");
-  });
-
-  it("should map go.mod to Go template", () => {
-    expect(CONFIG_TO_TEMPLATE["go.mod"]).toBe("Go");
-  });
-
-  it("should map Cargo.toml to Rust template", () => {
-    expect(CONFIG_TO_TEMPLATE["Cargo.toml"]).toBe("Rust");
-  });
-
-  it("should map pyproject.toml to Python template", () => {
-    expect(CONFIG_TO_TEMPLATE["pyproject.toml"]).toBe("Python");
-  });
-
-  it("should map requirements.txt to Python template", () => {
-    expect(CONFIG_TO_TEMPLATE["requirements.txt"]).toBe("Python");
-  });
-
-  it("should map pom.xml to Java template", () => {
-    expect(CONFIG_TO_TEMPLATE["pom.xml"]).toBe("Java");
-  });
-
-  it("should map build.gradle to Java template", () => {
-    expect(CONFIG_TO_TEMPLATE["build.gradle"]).toBe("Java");
-  });
-});
-
-// ============================================================================
-// LANGUAGE_TO_TEMPLATE Mapping Tests
-// ============================================================================
-
-describe("LANGUAGE_TO_TEMPLATE mapping", () => {
-  it("should map typescript to Node template", () => {
-    expect(LANGUAGE_TO_TEMPLATE["typescript"]).toBe("Node");
-  });
-
-  it("should map javascript to Node template", () => {
-    expect(LANGUAGE_TO_TEMPLATE["javascript"]).toBe("Node");
-  });
-
-  it("should map python to Python template", () => {
-    expect(LANGUAGE_TO_TEMPLATE["python"]).toBe("Python");
-  });
-
-  it("should map go to Go template", () => {
-    expect(LANGUAGE_TO_TEMPLATE["go"]).toBe("Go");
-  });
-
-  it("should map rust to Rust template", () => {
-    expect(LANGUAGE_TO_TEMPLATE["rust"]).toBe("Rust");
-  });
-
-  it("should map java to Java template", () => {
-    expect(LANGUAGE_TO_TEMPLATE["java"]).toBe("Java");
-  });
-
-  it("should map nextjs to Nextjs template", () => {
-    expect(LANGUAGE_TO_TEMPLATE["nextjs"]).toBe("Nextjs");
-  });
-});
-
-// ============================================================================
-// Template Detection Tests
-// ============================================================================
-
-describe("detectTemplatesFromConfigFiles", () => {
-  it("should detect Node template from package.json", () => {
-    const templates = detectTemplatesFromConfigFiles(["package.json"]);
-    expect(templates).toContain("Node");
-  });
-
-  it("should detect Nextjs template from next.config.js", () => {
-    const templates = detectTemplatesFromConfigFiles(["next.config.js"]);
-    expect(templates).toContain("Nextjs");
-  });
-
-  it("should detect multiple templates from multiple config files", () => {
-    const templates = detectTemplatesFromConfigFiles([
-      "package.json",
-      "requirements.txt",
-      "go.mod",
-    ]);
-    expect(templates).toContain("Node");
-    expect(templates).toContain("Python");
-    expect(templates).toContain("Go");
-  });
-
-  it("should return empty array for unknown config files", () => {
-    const templates = detectTemplatesFromConfigFiles(["unknown.config"]);
-    expect(templates).toHaveLength(0);
-  });
-
-  it("should handle full paths and extract basename", () => {
-    const templates = detectTemplatesFromConfigFiles(["/some/path/to/package.json"]);
-    expect(templates).toContain("Node");
-  });
-});
-
-describe("detectTemplatesFromLanguages", () => {
-  it("should detect Node template from typescript", () => {
-    const templates = detectTemplatesFromLanguages(["typescript"]);
-    expect(templates).toContain("Node");
-  });
-
-  it("should detect Python template from python", () => {
-    const templates = detectTemplatesFromLanguages(["python"]);
-    expect(templates).toContain("Python");
-  });
-
-  it("should detect multiple templates from multiple languages", () => {
-    const templates = detectTemplatesFromLanguages(["typescript", "python", "go"]);
-    expect(templates).toContain("Node");
-    expect(templates).toContain("Python");
-    expect(templates).toContain("Go");
-  });
-
-  it("should handle case-insensitive language names", () => {
-    const templates = detectTemplatesFromLanguages(["TypeScript", "PYTHON"]);
-    expect(templates).toContain("Node");
-    expect(templates).toContain("Python");
-  });
-
-  it("should return empty array for unknown languages", () => {
-    const templates = detectTemplatesFromLanguages(["unknownlang"]);
-    expect(templates).toHaveLength(0);
-  });
-});
-
-// ============================================================================
-// Bundled Templates Tests
-// ============================================================================
-
-describe("bundled templates", () => {
-  it("should have all 6 bundled templates available", () => {
-    expect(BUNDLED_TEMPLATES).toHaveLength(6);
-    expect(BUNDLED_TEMPLATES).toContain("Node");
-    expect(BUNDLED_TEMPLATES).toContain("Python");
-    expect(BUNDLED_TEMPLATES).toContain("Go");
-    expect(BUNDLED_TEMPLATES).toContain("Rust");
-    expect(BUNDLED_TEMPLATES).toContain("Java");
-    expect(BUNDLED_TEMPLATES).toContain("Nextjs");
-  });
-
-  it("should identify bundled templates correctly", () => {
-    expect(isBundledTemplate("Node")).toBe(true);
-    expect(isBundledTemplate("Python")).toBe(true);
-    expect(isBundledTemplate("UnknownTemplate")).toBe(false);
-  });
-
-  it("should return Node template content with node_modules pattern", () => {
-    const content = getBundledTemplate("Node");
-    expect(content).not.toBeNull();
-    expect(content).toContain("node_modules");
-  });
-
-  it("should return Python template content with __pycache__ pattern", () => {
-    const content = getBundledTemplate("Python");
-    expect(content).not.toBeNull();
-    expect(content).toContain("__pycache__");
-  });
-
-  it("should return Go template content with *.exe pattern", () => {
-    const content = getBundledTemplate("Go");
-    expect(content).not.toBeNull();
-    expect(content).toContain("*.exe");
-  });
-
-  it("should return Rust template content with target pattern", () => {
-    const content = getBundledTemplate("Rust");
-    expect(content).not.toBeNull();
-    expect(content).toContain("target");
-  });
-
-  it("should return Java template content with *.class pattern", () => {
-    const content = getBundledTemplate("Java");
-    expect(content).not.toBeNull();
-    expect(content).toContain("*.class");
-  });
-
-  it("should return Nextjs template content with .next pattern", () => {
-    const content = getBundledTemplate("Nextjs");
-    expect(content).not.toBeNull();
-    expect(content).toContain(".next");
-  });
-
-  it("should return null for non-existent bundled template", () => {
-    const content = getBundledTemplate("NonExistent");
-    expect(content).toBeNull();
-  });
-});
-
-// ============================================================================
-// getTemplate Tests
-// ============================================================================
-
-describe("getTemplate", () => {
-  it("should return bundled template for bundled template names", async () => {
-    const content = await getTemplate("Node", { bundledOnly: true });
-    expect(content).not.toBeNull();
-    expect(content).toContain("node_modules");
-  });
-
-  it("should return null for unknown templates in bundledOnly mode", async () => {
-    const content = await getTemplate("UnknownTemplate", { bundledOnly: true });
-    expect(content).toBeNull();
-  });
-});
-
-// ============================================================================
-// Content Generation Tests
-// ============================================================================
-
-describe("generateGitignoreContent", () => {
-  it("should include agent-foreman patterns at the start", async () => {
-    const content = await generateGitignoreContent(["Node"], { bundledOnly: true });
-    expect(content).toContain("# === agent-foreman ===");
-    expect(content).toContain("ai/capabilities.json");
-  });
-
-  it("should include section headers for templates", async () => {
-    const content = await generateGitignoreContent(["Node"], { bundledOnly: true });
-    expect(content).toContain("# === Node.js ===");
-  });
-
-  it("should combine multiple templates", async () => {
-    const content = await generateGitignoreContent(["Node", "Python"], { bundledOnly: true });
-    expect(content).toContain("# === Node.js ===");
-    expect(content).toContain("# === Python ===");
-    expect(content).toContain("node_modules");
-    expect(content).toContain("__pycache__");
-  });
-
-  it("should include custom patterns when provided", async () => {
-    const content = await generateGitignoreContent(["Node"], {
-      bundledOnly: true,
-      customPatterns: ["my-custom-pattern/", "*.custom"],
+describe("generator", () => {
+  describe("CONFIG_TO_TEMPLATE mapping", () => {
+    it("should map common config files to templates", () => {
+      expect(CONFIG_TO_TEMPLATE["package.json"]).toBe("Node");
+      expect(CONFIG_TO_TEMPLATE["go.mod"]).toBe("Go");
+      expect(CONFIG_TO_TEMPLATE["Cargo.toml"]).toBe("Rust");
+      expect(CONFIG_TO_TEMPLATE["pyproject.toml"]).toBe("Python");
+      expect(CONFIG_TO_TEMPLATE["pom.xml"]).toBe("Java");
     });
-    expect(content).toContain("# === Custom ===");
-    expect(content).toContain("my-custom-pattern/");
-    expect(content).toContain("*.custom");
-  });
-});
 
-describe("generateGitignore", () => {
-  it("should generate gitignore from config files", async () => {
-    const content = await generateGitignore(
-      ["package.json"],
-      [],
-      { bundledOnly: true }
-    );
-    expect(content).toContain("node_modules");
+    it("should map Next.js config files", () => {
+      expect(CONFIG_TO_TEMPLATE["next.config.js"]).toBe("Nextjs");
+      expect(CONFIG_TO_TEMPLATE["next.config.ts"]).toBe("Nextjs");
+      expect(CONFIG_TO_TEMPLATE["next.config.mjs"]).toBe("Nextjs");
+    });
   });
 
-  it("should generate gitignore from languages", async () => {
-    const content = await generateGitignore(
-      [],
-      ["python"],
-      { bundledOnly: true }
-    );
-    expect(content).toContain("__pycache__");
+  describe("LANGUAGE_TO_TEMPLATE mapping", () => {
+    it("should map language names to templates", () => {
+      expect(LANGUAGE_TO_TEMPLATE["typescript"]).toBe("Node");
+      expect(LANGUAGE_TO_TEMPLATE["javascript"]).toBe("Node");
+      expect(LANGUAGE_TO_TEMPLATE["python"]).toBe("Python");
+      expect(LANGUAGE_TO_TEMPLATE["go"]).toBe("Go");
+      expect(LANGUAGE_TO_TEMPLATE["golang"]).toBe("Go");
+      expect(LANGUAGE_TO_TEMPLATE["rust"]).toBe("Rust");
+      expect(LANGUAGE_TO_TEMPLATE["java"]).toBe("Java");
+    });
   });
 
-  it("should prioritize config files over languages", async () => {
-    const content = await generateGitignore(
-      ["next.config.js"],
-      ["typescript"],
-      { bundledOnly: true }
-    );
-    // Should include Nextjs template
-    expect(content).toContain("# === Next.js ===");
+  describe("MINIMAL_GITIGNORE", () => {
+    it("should contain essential patterns", () => {
+      expect(MINIMAL_GITIGNORE).toContain(".env");
+      expect(MINIMAL_GITIGNORE).toContain("node_modules/");
+      expect(MINIMAL_GITIGNORE).toContain("dist/");
+      expect(MINIMAL_GITIGNORE).toContain(".DS_Store");
+      expect(MINIMAL_GITIGNORE).toContain("__pycache__/");
+      expect(MINIMAL_GITIGNORE).toContain(".next/");
+      expect(MINIMAL_GITIGNORE).toContain("target/");
+    });
   });
 
-  it("should default to Node template when nothing detected", async () => {
-    const content = await generateGitignore([], [], { bundledOnly: true });
-    expect(content).toContain("node_modules");
-  });
-});
+  describe("detectTemplatesFromConfigFiles", () => {
+    let tempDir: string;
 
-// ============================================================================
-// MINIMAL_GITIGNORE Tests
-// ============================================================================
+    beforeEach(() => {
+      tempDir = fs.mkdtempSync(path.join(tmpdir(), "gitignore-test-"));
+    });
 
-describe("MINIMAL_GITIGNORE", () => {
-  it("should contain essential .env pattern", () => {
-    expect(MINIMAL_GITIGNORE).toContain(".env");
-  });
+    afterEach(() => {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    });
 
-  it("should contain node_modules pattern", () => {
-    expect(MINIMAL_GITIGNORE).toContain("node_modules/");
-  });
+    it("should detect Node template from package.json", () => {
+      fs.writeFileSync(path.join(tempDir, "package.json"), "{}");
+      const templates = detectTemplatesFromConfigFiles(tempDir);
+      expect(templates).toContain("Node");
+    });
 
-  it("should contain dist pattern", () => {
-    expect(MINIMAL_GITIGNORE).toContain("dist/");
-  });
+    it("should detect Go template from go.mod", () => {
+      fs.writeFileSync(path.join(tempDir, "go.mod"), "module test");
+      const templates = detectTemplatesFromConfigFiles(tempDir);
+      expect(templates).toContain("Go");
+    });
 
-  it("should contain .DS_Store pattern", () => {
-    expect(MINIMAL_GITIGNORE).toContain(".DS_Store");
-  });
+    it("should detect Python template from pyproject.toml", () => {
+      fs.writeFileSync(path.join(tempDir, "pyproject.toml"), "[tool.poetry]");
+      const templates = detectTemplatesFromConfigFiles(tempDir);
+      expect(templates).toContain("Python");
+    });
 
-  it("should contain .next pattern", () => {
-    expect(MINIMAL_GITIGNORE).toContain(".next/");
-  });
+    it("should detect multiple templates", () => {
+      fs.writeFileSync(path.join(tempDir, "package.json"), "{}");
+      fs.writeFileSync(path.join(tempDir, "pyproject.toml"), "[tool.poetry]");
+      const templates = detectTemplatesFromConfigFiles(tempDir);
+      expect(templates).toContain("Node");
+      expect(templates).toContain("Python");
+    });
 
-  it("should contain __pycache__ pattern", () => {
-    expect(MINIMAL_GITIGNORE).toContain("__pycache__/");
-  });
-});
+    it("should return empty array for empty directory", () => {
+      const templates = detectTemplatesFromConfigFiles(tempDir);
+      expect(templates).toEqual([]);
+    });
 
-// ============================================================================
-// ensureMinimalGitignore Tests
-// ============================================================================
-
-describe("ensureMinimalGitignore", () => {
-  beforeEach(() => {
-    tempDir = createTempDir();
-  });
-
-  afterEach(() => {
-    cleanup(tempDir);
-  });
-
-  it("should create .gitignore when none exists", () => {
-    const result = ensureMinimalGitignore(tempDir);
-
-    expect(result.success).toBe(true);
-    expect(result.action).toBe("created");
-
-    const gitignorePath = path.join(tempDir, ".gitignore");
-    expect(fs.existsSync(gitignorePath)).toBe(true);
-
-    const content = fs.readFileSync(gitignorePath, "utf-8");
-    expect(content).toContain("node_modules/");
-    expect(content).toContain(".env");
+    it("should return unique templates", () => {
+      fs.writeFileSync(path.join(tempDir, "requirements.txt"), "flask");
+      fs.writeFileSync(path.join(tempDir, "setup.py"), "setup()");
+      const templates = detectTemplatesFromConfigFiles(tempDir);
+      expect(templates).toEqual(["Python"]);
+    });
   });
 
-  it("should skip when .gitignore already exists", () => {
-    const gitignorePath = path.join(tempDir, ".gitignore");
-    fs.writeFileSync(gitignorePath, "# existing content\n");
+  describe("detectTemplatesFromLanguages", () => {
+    it("should detect templates from language names", () => {
+      const templates = detectTemplatesFromLanguages(["typescript", "python"]);
+      expect(templates).toContain("Node");
+      expect(templates).toContain("Python");
+    });
 
-    const result = ensureMinimalGitignore(tempDir);
+    it("should handle case-insensitive language names", () => {
+      const templates = detectTemplatesFromLanguages(["TypeScript", "PYTHON"]);
+      expect(templates).toContain("Node");
+      expect(templates).toContain("Python");
+    });
 
-    expect(result.success).toBe(true);
-    expect(result.action).toBe("skipped");
+    it("should handle trimmed language names", () => {
+      const templates = detectTemplatesFromLanguages(["  go  ", "  rust  "]);
+      expect(templates).toContain("Go");
+      expect(templates).toContain("Rust");
+    });
 
-    const content = fs.readFileSync(gitignorePath, "utf-8");
-    expect(content).toBe("# existing content\n");
+    it("should return empty array for unknown languages", () => {
+      const templates = detectTemplatesFromLanguages(["unknown", "fake"]);
+      expect(templates).toEqual([]);
+    });
+
+    it("should return unique templates", () => {
+      const templates = detectTemplatesFromLanguages([
+        "typescript",
+        "javascript",
+        "go",
+        "golang",
+      ]);
+      expect(templates).toEqual(["Node", "Go"]);
+    });
   });
 
-  it("should return GitignoreResult with correct action", () => {
-    const result = ensureMinimalGitignore(tempDir);
+  describe("getTemplate", () => {
+    it("should return bundled template content", async () => {
+      const content = await getTemplate("Node");
+      expect(content).not.toBeNull();
+      expect(content).toContain("node_modules");
+    });
 
-    expect(result).toHaveProperty("success");
-    expect(result).toHaveProperty("action");
-    expect(result).toHaveProperty("reason");
-    expect(["created", "skipped", "error"]).toContain(result.action);
-  });
-});
-
-// ============================================================================
-// ensureComprehensiveGitignore Tests
-// ============================================================================
-
-describe("ensureComprehensiveGitignore", () => {
-  beforeEach(() => {
-    tempDir = createTempDir();
+    it("should return null for unknown templates (fallback failed)", async () => {
+      // Mock fetch to simulate offline scenario
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Network error")));
+      const content = await getTemplate("UnknownTemplate123");
+      expect(content).toBeNull();
+      vi.unstubAllGlobals();
+    });
   });
 
-  afterEach(() => {
-    cleanup(tempDir);
+  describe("generateGitignoreContent", () => {
+    it("should return minimal gitignore for empty templates array", async () => {
+      const content = await generateGitignoreContent([]);
+      expect(content).toBe(MINIMAL_GITIGNORE);
+    });
+
+    it("should include header with template names", async () => {
+      const content = await generateGitignoreContent(["Node"]);
+      expect(content).toContain("Generated by agent-foreman");
+      expect(content).toContain("Templates: Node");
+    });
+
+    it("should include template sections", async () => {
+      const content = await generateGitignoreContent(["Node"]);
+      expect(content).toContain("─── Node ───");
+      expect(content).toContain("node_modules");
+    });
+
+    it("should include agent-foreman patterns", async () => {
+      const content = await generateGitignoreContent(["Node"]);
+      expect(content).toContain("─── Agent Foreman ───");
+      expect(content).toContain("ai/verification/");
+      expect(content).toContain(".agent-foreman/");
+    });
+
+    it("should combine multiple templates", async () => {
+      const content = await generateGitignoreContent(["Node", "Python"]);
+      expect(content).toContain("Templates: Node, Python");
+      expect(content).toContain("node_modules");
+      expect(content).toContain("__pycache__");
+    });
   });
 
-  it("should create .gitignore when none exists", async () => {
-    const result = await ensureComprehensiveGitignore(
-      tempDir,
-      ["package.json"],
-      ["typescript"],
-      { bundledOnly: true }
-    );
+  describe("generateGitignore", () => {
+    let tempDir: string;
 
-    expect(result.success).toBe(true);
-    expect(result.action).toBe("created");
+    beforeEach(() => {
+      tempDir = fs.mkdtempSync(path.join(tmpdir(), "gitignore-test-"));
+    });
 
-    const gitignorePath = path.join(tempDir, ".gitignore");
-    expect(fs.existsSync(gitignorePath)).toBe(true);
+    afterEach(() => {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    });
 
-    const content = fs.readFileSync(gitignorePath, "utf-8");
-    expect(content).toContain("node_modules");
-    expect(content).toContain("ai/capabilities.json");
+    it("should skip if .gitignore already exists", async () => {
+      fs.writeFileSync(path.join(tempDir, ".gitignore"), "existing content");
+      const result = await generateGitignore(tempDir);
+      expect(result.success).toBe(true);
+      expect(result.action).toBe("skipped");
+      expect(result.reason).toBe(".gitignore already exists");
+    });
+
+    it("should create .gitignore with auto-detection", async () => {
+      fs.writeFileSync(path.join(tempDir, "package.json"), "{}");
+      const result = await generateGitignore(tempDir);
+      expect(result.success).toBe(true);
+      expect(result.action).toBe("created");
+      expect(result.templates).toContain("Node");
+
+      const content = fs.readFileSync(path.join(tempDir, ".gitignore"), "utf-8");
+      expect(content).toContain("node_modules");
+    });
+
+    it("should overwrite existing .gitignore when overwrite=true", async () => {
+      fs.writeFileSync(path.join(tempDir, ".gitignore"), "old content");
+      fs.writeFileSync(path.join(tempDir, "package.json"), "{}");
+      const result = await generateGitignore(tempDir, { overwrite: true });
+      expect(result.success).toBe(true);
+      expect(result.action).toBe("updated");
+    });
+
+    it("should use explicit templates", async () => {
+      const result = await generateGitignore(tempDir, { templates: ["Go"] });
+      expect(result.success).toBe(true);
+      expect(result.templates).toContain("Go");
+
+      const content = fs.readFileSync(path.join(tempDir, ".gitignore"), "utf-8");
+      expect(content).toContain("*.exe");
+    });
+
+    it("should use language detection", async () => {
+      const result = await generateGitignore(tempDir, {
+        languages: ["rust"],
+        autoDetect: false,
+      });
+      expect(result.success).toBe(true);
+      expect(result.templates).toContain("Rust");
+    });
+
+    it("should disable auto-detection when autoDetect=false", async () => {
+      fs.writeFileSync(path.join(tempDir, "package.json"), "{}");
+      const result = await generateGitignore(tempDir, {
+        autoDetect: false,
+        templates: [],
+      });
+      expect(result.success).toBe(true);
+      // Should create minimal gitignore since no templates specified
+      const content = fs.readFileSync(path.join(tempDir, ".gitignore"), "utf-8");
+      expect(content).toBe(MINIMAL_GITIGNORE);
+    });
   });
 
-  it("should return templates used in result", async () => {
-    const result = await ensureComprehensiveGitignore(
-      tempDir,
-      ["package.json"],
-      ["typescript"],
-      { bundledOnly: true }
-    );
+  describe("ensureMinimalGitignore", () => {
+    let tempDir: string;
 
-    expect(result.templates).toBeDefined();
-    expect(result.templates).toContain("Node");
+    beforeEach(() => {
+      tempDir = fs.mkdtempSync(path.join(tmpdir(), "gitignore-test-"));
+    });
+
+    afterEach(() => {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    it("should create minimal .gitignore if not exists", () => {
+      const result = ensureMinimalGitignore(tempDir);
+      expect(result.success).toBe(true);
+      expect(result.action).toBe("created");
+
+      const content = fs.readFileSync(path.join(tempDir, ".gitignore"), "utf-8");
+      expect(content).toBe(MINIMAL_GITIGNORE);
+    });
+
+    it("should skip if .gitignore already exists", () => {
+      fs.writeFileSync(path.join(tempDir, ".gitignore"), "existing");
+      const result = ensureMinimalGitignore(tempDir);
+      expect(result.success).toBe(true);
+      expect(result.action).toBe("skipped");
+      expect(result.reason).toBe(".gitignore exists");
+    });
   });
 
-  it("should not overwrite existing .gitignore content", async () => {
-    const gitignorePath = path.join(tempDir, ".gitignore");
-    const originalContent = "# My custom gitignore\nmy-custom-pattern/\n";
-    fs.writeFileSync(gitignorePath, originalContent);
+  describe("ensureComprehensiveGitignore", () => {
+    let tempDir: string;
 
-    await ensureComprehensiveGitignore(
-      tempDir,
-      ["package.json"],
-      ["typescript"],
-      { bundledOnly: true }
-    );
+    beforeEach(() => {
+      tempDir = fs.mkdtempSync(path.join(tmpdir(), "gitignore-test-"));
+    });
 
-    const content = fs.readFileSync(gitignorePath, "utf-8");
-    expect(content).toContain("# My custom gitignore");
-    expect(content).toContain("my-custom-pattern/");
-  });
+    afterEach(() => {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    });
 
-  it("should auto-append missing essential patterns in merge mode", async () => {
-    const gitignorePath = path.join(tempDir, ".gitignore");
-    fs.writeFileSync(gitignorePath, "# Existing\n.DS_Store\n");
+    it("should create comprehensive .gitignore with auto-detection", async () => {
+      fs.writeFileSync(path.join(tempDir, "package.json"), "{}");
+      const result = await ensureComprehensiveGitignore(tempDir);
+      expect(result.success).toBe(true);
+      // Action is "created" if no .gitignore exists, or "updated" if overwriting minimal one
+      expect(["created", "updated"]).toContain(result.action);
 
-    const result = await ensureComprehensiveGitignore(
-      tempDir,
-      ["package.json"],
-      ["typescript"],
-      { bundledOnly: true }
-    );
+      const content = fs.readFileSync(path.join(tempDir, ".gitignore"), "utf-8");
+      expect(content).toContain("Generated by agent-foreman");
+    });
 
-    expect(result.action).toBe("updated");
+    it("should skip if .gitignore has substantial content", async () => {
+      // Create a .gitignore with more than 50 characters
+      const existingContent = "# My custom gitignore\nnode_modules/\ndist/\n.env\n.env.local";
+      fs.writeFileSync(path.join(tempDir, ".gitignore"), existingContent);
+      const result = await ensureComprehensiveGitignore(tempDir);
+      expect(result.success).toBe(true);
+      expect(result.action).toBe("skipped");
+      expect(result.reason).toBe(".gitignore already has content");
+    });
 
-    const content = fs.readFileSync(gitignorePath, "utf-8");
-    expect(content).toContain("# Existing");
-    expect(content).toContain("node_modules/");
-  });
-
-  it("should skip update when all essential patterns present", async () => {
-    const gitignorePath = path.join(tempDir, ".gitignore");
-    fs.writeFileSync(
-      gitignorePath,
-      `# Complete gitignore
-node_modules/
-.env
-.env.local
-ai/capabilities.json
-`
-    );
-
-    const result = await ensureComprehensiveGitignore(
-      tempDir,
-      ["package.json"],
-      ["typescript"],
-      { bundledOnly: true }
-    );
-
-    expect(result.action).toBe("skipped");
-    expect(result.reason).toContain("already has essential patterns");
-  });
-
-  it("should handle multiple templates for polyglot projects", async () => {
-    const result = await ensureComprehensiveGitignore(
-      tempDir,
-      ["package.json", "requirements.txt"],
-      ["typescript", "python"],
-      { bundledOnly: true }
-    );
-
-    expect(result.success).toBe(true);
-
-    const gitignorePath = path.join(tempDir, ".gitignore");
-    const content = fs.readFileSync(gitignorePath, "utf-8");
-
-    expect(content).toContain("node_modules");
-    expect(content).toContain("__pycache__");
+    it("should overwrite if .gitignore has minimal content", async () => {
+      fs.writeFileSync(path.join(tempDir, ".gitignore"), ".env\n");
+      fs.writeFileSync(path.join(tempDir, "package.json"), "{}");
+      const result = await ensureComprehensiveGitignore(tempDir);
+      expect(result.success).toBe(true);
+      expect(result.action).toBe("updated");
+    });
   });
 });

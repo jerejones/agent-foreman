@@ -2,7 +2,7 @@
  * Impact analyzer for feature changes
  * Identifies features affected by changes to a given feature
  */
-import type { Feature, FeatureStatus, ImpactResult, ImpactRecommendation } from "./types.js";
+import type { Feature, FeatureStatus, ImpactResult, ImpactRecommendation } from "./types/index.js";
 
 /**
  * Analyze the impact of changes to a feature
@@ -46,6 +46,26 @@ export function analyzeImpact(
         featureId: feature.id,
         action: "update_notes",
         reason: `Same module as changed feature ${changedFeatureId}`,
+      });
+    }
+  }
+
+  // Find and recommend deprecation for features superseded by the changed feature
+  const supersededFeatures = features.filter(
+    (f) =>
+      f.supersedes?.includes(changedFeatureId) ||
+      (f.id !== changedFeatureId &&
+        f.supersedes?.length === 0 &&
+        f.status !== "deprecated" &&
+        features.some((other) => other.id === changedFeatureId && other.supersedes?.includes(f.id)))
+  );
+
+  for (const feature of supersededFeatures) {
+    if (feature.status !== "deprecated") {
+      recommendations.push({
+        featureId: feature.id,
+        action: "mark_deprecated",
+        reason: `Superseded by ${changedFeatureId}`,
       });
     }
   }
@@ -101,8 +121,8 @@ function appendNote(existing: string, newNote: string): string {
 }
 
 /**
- * Build a dependency graph for all features
- * Returns a map of feature ID -> IDs of features that depend on it
+ * Build a dependency graph for all tasks
+ * Returns a map of task ID -> IDs of tasks that depend on it
  */
 export function buildDependencyGraph(features: Feature[]): Map<string, string[]> {
   const graph = new Map<string, string[]>();

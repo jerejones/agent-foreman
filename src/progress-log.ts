@@ -3,7 +3,7 @@
  */
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import type { ProgressLogEntry, ProgressLogType, FeatureStatus } from "./types.js";
+import type { ProgressLogEntry, ProgressLogType, FeatureStatus } from "./types/index.js";
 
 /** Default path for progress log file */
 export const PROGRESS_LOG_PATH = "ai/progress.log";

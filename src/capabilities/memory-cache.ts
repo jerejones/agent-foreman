@@ -1,18 +1,10 @@
 /**
- * In-memory caching for capabilities
+ * Memory cache for capabilities
+ * Fast in-memory caching with TTL
  */
-
-import type { ExtendedCapabilities } from "../verifier/verification-types.js";
-
-/** Memory cache TTL in milliseconds (1 minute) */
-export const MEMORY_CACHE_TTL = 60000;
-
-/** Memory cache structure */
-interface MemoryCache {
-  cwd: string;
-  capabilities: ExtendedCapabilities;
-  timestamp: number;
-}
+import type { ExtendedCapabilities } from "../verifier/types/index.js";
+import type { MemoryCache } from "./types.js";
+import { MEMORY_CACHE_TTL } from "./constants.js";
 
 /** Module-level memory cache */
 let memoryCache: MemoryCache | null = null;

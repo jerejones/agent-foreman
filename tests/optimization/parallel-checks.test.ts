@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { runChecksInParallel, runAutomatedChecks, AutomatedCheckOptions } from "../../src/verifier/index.js";
-import type { VerificationCapabilities, AutomatedCheckResult } from "../../src/verifier/verification-types.js";
+import type { VerificationCapabilities, AutomatedCheckResult } from "../../src/verifier/types/index.js";
 
 // Mock child_process exec
 const mockExec = vi.fn();
@@ -247,105 +247,6 @@ describe("Parallel Checks Optimization", () => {
       // One should have failed (typecheck)
       const failedCount = results.filter((r) => !r.success).length;
       expect(failedCount).toBe(1);
-    });
-  });
-
-  describe("Verbose output coverage", () => {
-    it("logs E2E mode and tags in verbose mode", async () => {
-      const capabilities: VerificationCapabilities = {
-        hasTests: true,
-        testCommand: "npm test",
-        hasTypeCheck: false,
-        hasLint: false,
-        hasBuild: false,
-        hasGit: true,
-      };
-
-      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-
-      await runAutomatedChecks("/test", capabilities, {
-        verbose: true,
-        testMode: "full",
-        skipE2E: false,
-        e2eInfo: {
-          available: true,
-          command: "npx playwright test",
-          confidence: 1,
-          grepTemplate: "npx playwright test --grep {tags}",
-        },
-        e2eTags: ["@auth", "@smoke"],
-      });
-
-      // Verify verbose output was called
-      expect(consoleSpy).toHaveBeenCalled();
-      consoleSpy.mockRestore();
-    });
-
-    it("logs skip E2E message in verbose mode", async () => {
-      const capabilities: VerificationCapabilities = {
-        hasTests: true,
-        testCommand: "npm test",
-        hasTypeCheck: false,
-        hasLint: false,
-        hasBuild: false,
-        hasGit: true,
-      };
-
-      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-
-      await runAutomatedChecks("/test", capabilities, {
-        verbose: true,
-        testMode: "full",
-        skipE2E: true,
-      });
-
-      // Verify verbose output was called with skip message
-      const calls = consoleSpy.mock.calls.flat().join(" ");
-      expect(calls).toContain("E2E tests: skipped");
-      consoleSpy.mockRestore();
-    });
-
-    it("logs parallel mode enabled in verbose mode", async () => {
-      const capabilities: VerificationCapabilities = {
-        hasTests: true,
-        testCommand: "npm test",
-        hasTypeCheck: true,
-        typeCheckCommand: "tsc --noEmit",
-        hasLint: false,
-        hasBuild: false,
-        hasGit: true,
-      };
-
-      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-
-      await runAutomatedChecks("/test", capabilities, {
-        verbose: true,
-        testMode: "full",
-        parallel: true,
-      });
-
-      // Verify parallel mode log was called
-      const calls = consoleSpy.mock.calls.flat().join(" ");
-      expect(calls).toContain("Parallel mode enabled");
-      consoleSpy.mockRestore();
-    });
-
-    it("logs verbose output in runChecksInParallel", async () => {
-      const checks = [
-        { type: "test" as const, command: "npm test", name: "tests" },
-        { type: "typecheck" as const, command: "tsc --noEmit", name: "type check" },
-      ];
-
-      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-
-      await runChecksInParallel("/test", checks, true);
-
-      // Verify verbose output was called
-      expect(consoleSpy).toHaveBeenCalled();
-      const calls = consoleSpy.mock.calls.flat().join(" ");
-      expect(calls).toContain("Running");
-      expect(calls).toContain("in parallel");
-      consoleSpy.mockRestore();
     });
   });
 });

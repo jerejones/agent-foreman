@@ -1,10 +1,22 @@
 ---
-description: Initialize or upgrade the long-task harness for feature-driven development
-allowed-tools: Bash, Read, Glob, Grep, Write, Edit
-argument-hint: [--mode new|scan]
+description: Initialize task harness with ai/tasks/ directory structure
+allowed-tools: Bash, Read, Glob, Grep, Write, Edit, Skill
+argument-hint: "[--mode new|scan] [--task-type ops|data|infra|manual]"
 ---
 
-# EXECUTE NOW
+# STEP 0: INVOKE SKILL (MANDATORY)
+
+**BEFORE doing anything else, you MUST invoke the `init-harness` skill:**
+
+```
+Skill({ skill: "init-harness" })
+```
+
+The instructions below are a fallback only if the skill fails to load.
+
+---
+
+# FALLBACK: EXECUTE NOW
 
 Run this command immediately:
 
@@ -24,9 +36,10 @@ Wait for completion. Do not interrupt.
 | "recommended" / "optional tests" / "no strict" / (default) | `recommended` | Tests suggested but not enforced |
 | "disable TDD" / "no TDD" | `disabled` | No TDD guidance |
 
-When prompted "Enable strict TDD mode?":
-- Press **Y** for strict mode - tests required
-- Press **N** (default) for recommended mode - tests optional
+When prompted "Select TDD enforcement level":
+- Press **1** for strict mode - tests required
+- Press **2** (default) for recommended mode - tests optional
+- Press **3** for disabled - no TDD guidance
 - Wait 10s for auto-skip with recommended mode
 
 ## Context-Based Behavior
@@ -38,7 +51,7 @@ The command auto-detects and handles:
 | `docs/ARCHITECTURE.md` exists | Use it for fast init |
 | Source code exists | AI scan + auto-save ARCHITECTURE.md |
 | Empty project | Generate features from goal |
-| `ai/feature_list.json` exists | Merge mode (keep existing + add new) |
+| `ai/tasks/` exists | Merge mode (keep existing + add new) |
 
 ## If User Specifies Mode
 
@@ -48,23 +61,23 @@ The command auto-detects and handles:
 | "preview" / "scan" / "dry-run" | `agent-foreman init --mode scan` |
 | (default) | `agent-foreman init` |
 
+## Task Type Option
+
+For non-code projects, specify the task type:
+
+| User Says | Execute |
+|-----------|---------|
+| "ops" / "operational" / "runbook" | `agent-foreman init --task-type ops` |
+| "data" / "ETL" / "pipeline" | `agent-foreman init --task-type data` |
+| "infra" / "infrastructure" | `agent-foreman init --task-type infra` |
+| "manual" / "checklist" | `agent-foreman init --task-type manual` |
+| (default) | `agent-foreman init` (code type) |
+
 ## After Completion
 
 Report what was created:
 
-- `ai/feature_list.json` - Feature backlog (with tddMode in metadata)
+- `ai/tasks/` - Task backlog (modular markdown)
 - `ai/progress.log` - Session log
 - `ai/init.sh` - Bootstrap script
 - `CLAUDE.md` - AI instructions
-
-## Manual TDD Mode Change
-
-To change TDD mode after init, edit `ai/feature_list.json`:
-
-```json
-{
-  "metadata": {
-    "tddMode": "strict"  // or "recommended" or "disabled"
-  }
-}
-```

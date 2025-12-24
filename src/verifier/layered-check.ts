@@ -14,14 +14,14 @@ import * as path from "node:path";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 
-import type { Feature } from "../types.js";
-import type { AutomatedCheckResult } from "./verification-types.js";
-import { loadFeatureList } from "../feature-list.js";
+import type { Feature, FeatureList } from "../types/index.js";
+import type { AutomatedCheckResult, ExtendedCapabilities } from "./types/index.js";
+import { loadFeatureList } from "../features/index.js";
 import { detectCapabilities } from "../capabilities/index.js";
-import { getChangedFiles } from "../git-utils.js";
-import { discoverTestsForFeature } from "../test-discovery.js";
+import { getChangedFiles, discoverTestsForFeature } from "../testing/index.js";
 import { runAutomatedChecks } from "./check-executor.js";
 import { analyzeWithAI } from "./ai-analysis.js";
+import { createStepProgress } from "../progress.js";
 import { getTaskImpact, type TaskImpact } from "./task-impact.js";
 
 const execAsync = promisify(exec);
@@ -58,6 +58,16 @@ export interface LayeredCheckOptions {
   tddMode?: "strict" | "recommended" | "disabled";
   /** Skip Layer 2 task impact detection */
   skipTaskImpact?: boolean;
+}
+
+/**
+ * Result of a single check
+ */
+export interface CheckResult {
+  type: string;
+  success: boolean;
+  duration: number;
+  output?: string;
 }
 
 /**
@@ -117,7 +127,7 @@ export async function runLayeredCheck(
   // ═══════════════════════════════════════════════════════════════════════════
   // STEP 1: Get changed files from git
   // ═══════════════════════════════════════════════════════════════════════════
-  const changedFiles = getChangedFiles(cwd);
+  const changedFiles = await getChangedFiles(cwd);
 
   if (changedFiles.length === 0) {
     console.log(chalk.yellow("│ No changed files detected                             │"));
@@ -164,6 +174,8 @@ export async function runLayeredCheck(
         (f.endsWith(".ts") || f.endsWith(".tsx") || f.endsWith(".js") || f.endsWith(".jsx"))
     );
 
+    // TODO: Check if tests exist for each source file
+    // For now, just warn
     if (sourceFiles.length > 0) {
       console.log(chalk.magenta("│ TDD strict mode: Checking test coverage...           │"));
     }

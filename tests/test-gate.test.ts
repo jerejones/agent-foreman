@@ -523,8 +523,8 @@ describe("verifyTDDGate", () => {
 
   const createMetadata = (overrides: Partial<FeatureListMetadata> = {}): FeatureListMetadata => ({
     projectGoal: "Test project",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: "2024-01-15T10:00:00Z",
+    updatedAt: "2024-01-15T10:00:00Z",
     version: "1.0.0",
     ...overrides,
   });
@@ -532,7 +532,15 @@ describe("verifyTDDGate", () => {
   it("should pass when not in strict mode and no requirements", async () => {
     const feature = createFeature();
     const metadata = createMetadata({ tddMode: "recommended" });
+    const result = await verifyTDDGate(tempDir, feature, metadata);
 
+    expect(result.passed).toBe(true);
+    expect(result.strictMode).toBe(false);
+  });
+
+  it("should pass when tddMode is undefined and no requirements", async () => {
+    const feature = createFeature();
+    const metadata = createMetadata();
     const result = await verifyTDDGate(tempDir, feature, metadata);
 
     expect(result.passed).toBe(true);
@@ -542,7 +550,6 @@ describe("verifyTDDGate", () => {
   it("should fail in strict mode when tests are missing", async () => {
     const feature = createFeature({ module: "auth" });
     const metadata = createMetadata({ tddMode: "strict" });
-
     const result = await verifyTDDGate(tempDir, feature, metadata);
 
     expect(result.passed).toBe(false);
@@ -560,7 +567,6 @@ describe("verifyTDDGate", () => {
 
     const feature = createFeature({ module: "auth" });
     const metadata = createMetadata({ tddMode: "strict" });
-
     const result = await verifyTDDGate(tempDir, feature, metadata);
 
     expect(result.passed).toBe(true);
@@ -568,32 +574,7 @@ describe("verifyTDDGate", () => {
     expect(result.foundTestFiles).toContain("tests/auth/login.test.ts");
   });
 
-  it("should use feature testRequirements pattern in strict mode", async () => {
-    // Create test file matching custom pattern
-    await fs.mkdir(path.join(tempDir, "spec/auth"), { recursive: true });
-    await fs.writeFile(
-      path.join(tempDir, "spec/auth/login.spec.ts"),
-      "test content"
-    );
-
-    const feature = createFeature({
-      module: "auth",
-      testRequirements: {
-        unit: {
-          required: false, // Even though false, strict mode overrides
-          pattern: "spec/auth/**/*.spec.ts",
-        },
-      },
-    });
-    const metadata = createMetadata({ tddMode: "strict" });
-
-    const result = await verifyTDDGate(tempDir, feature, metadata);
-
-    expect(result.passed).toBe(true);
-    expect(result.foundTestFiles).toContain("spec/auth/login.spec.ts");
-  });
-
-  it("should check explicit unit requirements in non-strict mode", async () => {
+  it("should check unit tests when testRequirements.unit.required is true", async () => {
     const feature = createFeature({
       testRequirements: {
         unit: {
@@ -603,7 +584,6 @@ describe("verifyTDDGate", () => {
       },
     });
     const metadata = createMetadata({ tddMode: "recommended" });
-
     const result = await verifyTDDGate(tempDir, feature, metadata);
 
     expect(result.passed).toBe(false);
@@ -611,7 +591,7 @@ describe("verifyTDDGate", () => {
     expect(result.missingUnitTests).toContain("tests/auth/**/*.test.ts");
   });
 
-  it("should check E2E requirements when explicitly required", async () => {
+  it("should check e2e tests when testRequirements.e2e.required is true", async () => {
     const feature = createFeature({
       testRequirements: {
         e2e: {
@@ -621,20 +601,94 @@ describe("verifyTDDGate", () => {
       },
     });
     const metadata = createMetadata({ tddMode: "recommended" });
-
     const result = await verifyTDDGate(tempDir, feature, metadata);
 
     expect(result.passed).toBe(false);
+    expect(result.strictMode).toBe(false);
     expect(result.missingE2ETests).toContain("e2e/auth/**/*.spec.ts");
   });
 
-  it("should include checked patterns in result", async () => {
-    const feature = createFeature({ module: "auth" });
-    const metadata = createMetadata({ tddMode: "strict" });
+  it("should use feature pattern when available in strict mode", async () => {
+    // Create test file matching custom pattern
+    await fs.mkdir(path.join(tempDir, "custom/tests"), { recursive: true });
+    await fs.writeFile(
+      path.join(tempDir, "custom/tests/login.spec.ts"),
+      "test content"
+    );
 
+    const feature = createFeature({
+      testRequirements: {
+        unit: {
+          required: false,
+          pattern: "custom/tests/**/*.spec.ts",
+        },
+      },
+    });
+    const metadata = createMetadata({ tddMode: "strict" });
     const result = await verifyTDDGate(tempDir, feature, metadata);
 
-    expect(result.checkedPatterns.length).toBeGreaterThan(0);
-    expect(result.checkedPatterns[0]).toContain("tests/auth");
+    expect(result.passed).toBe(true);
+    expect(result.foundTestFiles).toContain("custom/tests/login.spec.ts");
+  });
+
+  it("should track checked patterns", async () => {
+    const feature = createFeature({
+      testRequirements: {
+        unit: {
+          required: true,
+          pattern: "tests/custom/**/*.test.ts",
+        },
+        e2e: {
+          required: true,
+          pattern: "e2e/custom/**/*.spec.ts",
+        },
+      },
+    });
+    const metadata = createMetadata({ tddMode: "recommended" });
+    const result = await verifyTDDGate(tempDir, feature, metadata);
+
+    expect(result.checkedPatterns).toContain("tests/custom/**/*.test.ts");
+    expect(result.checkedPatterns).toContain("e2e/custom/**/*.spec.ts");
+  });
+
+  it("should not check E2E in strict mode unless explicitly required", async () => {
+    // Create only unit test
+    await fs.mkdir(path.join(tempDir, "tests/auth"), { recursive: true });
+    await fs.writeFile(
+      path.join(tempDir, "tests/auth/login.test.ts"),
+      "test content"
+    );
+
+    const feature = createFeature({ module: "auth" });
+    const metadata = createMetadata({ tddMode: "strict" });
+    const result = await verifyTDDGate(tempDir, feature, metadata);
+
+    // Should pass because E2E is not required (only checked when explicitly required)
+    expect(result.passed).toBe(true);
+    expect(result.missingE2ETests).toHaveLength(0);
+  });
+
+  it("should fail when both strict mode and explicit E2E required but E2E missing", async () => {
+    // Create only unit test
+    await fs.mkdir(path.join(tempDir, "tests/auth"), { recursive: true });
+    await fs.writeFile(
+      path.join(tempDir, "tests/auth/login.test.ts"),
+      "test content"
+    );
+
+    const feature = createFeature({
+      module: "auth",
+      testRequirements: {
+        e2e: {
+          required: true,
+          pattern: "e2e/auth/**/*.spec.ts",
+        },
+      },
+    });
+    const metadata = createMetadata({ tddMode: "strict" });
+    const result = await verifyTDDGate(tempDir, feature, metadata);
+
+    expect(result.passed).toBe(false);
+    expect(result.missingE2ETests.length).toBeGreaterThan(0);
   });
 });

@@ -5,7 +5,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { glob } from "glob";
-import type { DirectoryStructure } from "./types.js";
+import type { DirectoryStructure } from "./types/index.js";
 import { debugScanner } from "./debug.js";
 import { isDirectory } from "./file-utils.js";
 

@@ -4,10 +4,8 @@
 
 import chalk from "chalk";
 
-import {
-  loadFeatureList,
-  saveFeatureList,
-} from "../feature-list.js";
+import { loadFeatureList } from "../features/index.js";
+import { loadFeatureIndex, saveFeatureIndex } from "../storage/index.js";
 import {
   appendProgressLog,
   createChangeEntry,
@@ -24,7 +22,7 @@ export async function runTDD(mode?: string): Promise<void> {
 
   const featureList = await loadFeatureList(cwd);
   if (!featureList) {
-    console.log(chalk.red("✗ No feature list found. Run 'agent-foreman init' first."));
+    console.log(chalk.red("✗ No task list found. Run 'agent-foreman init' first."));
     process.exit(1);
   }
 
@@ -61,12 +59,13 @@ export async function runTDD(mode?: string): Promise<void> {
     return;
   }
 
-  // Update mode
-  featureList.metadata.tddMode = newMode;
-  featureList.metadata.updatedAt = new Date().toISOString();
-
-  // Save
-  await saveFeatureList(cwd, featureList);
+  // Update only index.json metadata (don't touch task MD files)
+  const index = await loadFeatureIndex(cwd);
+  if (index) {
+    index.metadata.tddMode = newMode;
+    index.metadata.updatedAt = new Date().toISOString();
+    await saveFeatureIndex(cwd, index);
+  }
 
   // Log change
   await appendProgressLog(
@@ -83,14 +82,14 @@ export async function runTDD(mode?: string): Promise<void> {
   // Show implications
   if (newMode === "strict") {
     console.log(chalk.bold.red("   ⚠ STRICT MODE ACTIVE"));
-    console.log(chalk.white("   • Tests are REQUIRED for all features"));
+    console.log(chalk.white("   • Tests are REQUIRED for all tasks"));
     console.log(chalk.white("   • check/done will FAIL without test files"));
     console.log(chalk.white("   • MUST follow TDD: RED → GREEN → REFACTOR"));
   } else if (newMode === "recommended") {
     console.log(chalk.bold.yellow("   📋 RECOMMENDED MODE"));
     console.log(chalk.white("   • Tests are suggested but not required"));
     console.log(chalk.white("   • TDD guidance shown in 'next' output"));
-    console.log(chalk.white("   • Features can complete without tests"));
+    console.log(chalk.white("   • Tasks can complete without tests"));
   } else {
     console.log(chalk.bold.gray("   ○ TDD DISABLED"));
     console.log(chalk.white("   • No TDD guidance shown"));

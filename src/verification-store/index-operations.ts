@@ -1,23 +1,19 @@
 /**
- * Index management operations for verification store
+ * Index Operations for verification store
  */
-
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import type {
-  VerificationIndex,
-  VerificationResult,
-  VerificationMetadata,
-} from "../verifier/verification-types.js";
+import type { VerificationIndex, VerificationResult } from "../verifier/types/index.js";
+import {
+  generateVerificationReport,
+} from "../verification-report.js";
 import {
   VERIFICATION_STORE_DIR,
   VERIFICATION_INDEX_PATH,
   INDEX_VERSION,
 } from "./constants.js";
-import { ensureVerificationDir, loadVerificationStore } from "./legacy-store.js";
-import {
-  generateVerificationReport,
-} from "../verifier/report.js";
+import { loadVerificationStore, createEmptyStore } from "./legacy-store.js";
+import { ensureVerificationDir, formatRunNumber, toMetadata, saveIndex } from "./helpers.js";
 
 /**
  * Create an empty verification index
@@ -28,227 +24,6 @@ export function createEmptyIndex(): VerificationIndex {
     updatedAt: new Date().toISOString(),
     version: INDEX_VERSION,
   };
-}
-
-/**
- * Save the index to disk
- */
-export async function saveIndex(cwd: string, index: VerificationIndex): Promise<void> {
-  await ensureVerificationDir(cwd);
-  const indexPath = path.join(cwd, VERIFICATION_INDEX_PATH);
-  const content = JSON.stringify(index, null, 2);
-  await fs.writeFile(indexPath, content, "utf-8");
-}
-
-/**
- * Ensure a feature subdirectory exists
- */
-export async function ensureFeatureDir(cwd: string, featureId: string): Promise<string> {
-  const featureDir = path.join(cwd, VERIFICATION_STORE_DIR, featureId);
-  await fs.mkdir(featureDir, { recursive: true });
-  return featureDir;
-}
-
-/**
- * Format run number to padded string (001, 002, etc.)
- */
-export function formatRunNumber(num: number): string {
-  return String(num).padStart(3, "0");
-}
-
-/**
- * Convert VerificationResult to full VerificationMetadata
- * Stores all fields for programmatic access (no longer compact)
- */
-export function toMetadata(result: VerificationResult, runNumber: number): VerificationMetadata {
-  return {
-    featureId: result.featureId,
-    runNumber,
-    timestamp: result.timestamp,
-    commitHash: result.commitHash,
-    changedFiles: result.changedFiles,
-    diffSummary: result.diffSummary,
-    automatedChecks: result.automatedChecks.map((c) => ({
-      type: c.type,
-      success: c.success,
-      duration: c.duration,
-      errorCount: c.errorCount,
-      output: c.output,
-    })),
-    criteriaResults: result.criteriaResults.map((c) => ({
-      criterion: c.criterion,
-      index: c.index,
-      satisfied: c.satisfied,
-      confidence: c.confidence,
-      reasoning: c.reasoning,
-      evidence: c.evidence,
-    })),
-    verdict: result.verdict,
-    verifiedBy: result.verifiedBy,
-    overallReasoning: result.overallReasoning,
-    suggestions: result.suggestions,
-    codeQualityNotes: result.codeQualityNotes,
-    relatedFilesAnalyzed: result.relatedFilesAnalyzed,
-  };
-}
-
-/**
- * Update the feature summary in the index
- * Includes enhanced fields for fast queries (v3.0.0)
- */
-export function updateFeatureSummary(
-  index: VerificationIndex,
-  result: VerificationResult,
-  runNumber: number
-): void {
-  const existing = index.features[result.featureId];
-
-  // Calculate enhanced fields
-  const automatedChecksPassed = result.automatedChecks.every((c) => c.success);
-  const criteriaCount = result.criteriaResults.length;
-  const criteriaSatisfied = result.criteriaResults.filter((c) => c.satisfied).length;
-  const hasWarnings =
-    (result.suggestions && result.suggestions.length > 0) ||
-    (result.codeQualityNotes && result.codeQualityNotes.length > 0);
-
-  if (existing) {
-    // Update existing summary
-    existing.latestRun = runNumber;
-    existing.latestTimestamp = result.timestamp;
-    existing.latestVerdict = result.verdict;
-    existing.totalRuns = runNumber;
-    if (result.verdict === "pass") {
-      existing.passCount++;
-    } else if (result.verdict === "fail") {
-      existing.failCount++;
-    }
-    // Enhanced fields
-    existing.latestCommitHash = result.commitHash;
-    existing.automatedChecksPassed = automatedChecksPassed;
-    existing.criteriaCount = criteriaCount;
-    existing.criteriaSatisfied = criteriaSatisfied;
-    existing.hasWarnings = hasWarnings;
-  } else {
-    // Create new summary
-    index.features[result.featureId] = {
-      featureId: result.featureId,
-      latestRun: runNumber,
-      latestTimestamp: result.timestamp,
-      latestVerdict: result.verdict,
-      totalRuns: 1,
-      passCount: result.verdict === "pass" ? 1 : 0,
-      failCount: result.verdict === "fail" ? 1 : 0,
-      // Enhanced fields
-      latestCommitHash: result.commitHash,
-      automatedChecksPassed,
-      criteriaCount,
-      criteriaSatisfied,
-      hasWarnings,
-    };
-  }
-
-  index.updatedAt = new Date().toISOString();
-}
-
-/**
- * Internal auto-migration helper (called during loadVerificationIndex)
- * Performs migration if old results.json exists and index.json doesn't
- * Migrates to v3.0.0 format with full data in individual files and enhanced index
- */
-async function performAutoMigration(cwd: string): Promise<void> {
-  const storePath = path.join(cwd, VERIFICATION_STORE_DIR, "results.json");
-
-  try {
-    // Check if old store exists
-    await fs.access(storePath);
-
-    // Old store exists - perform migration
-    // We call the migration logic directly to avoid circular dependency
-    const store = await loadVerificationStore(cwd);
-    if (!store || Object.keys(store.results).length === 0) {
-      return;
-    }
-
-    // Create new index
-    const index = createEmptyIndex();
-    let migratedCount = 0;
-
-    for (const [featureId, result] of Object.entries(store.results)) {
-      try {
-        // Create feature directory
-        const featureDir = path.join(cwd, VERIFICATION_STORE_DIR, featureId);
-        await fs.mkdir(featureDir, { recursive: true });
-
-        // Run number is 1 for migrated data
-        const runNumber = 1;
-        const runStr = String(runNumber).padStart(3, "0");
-
-        // Write FULL metadata JSON (v3.0.0 - includes all fields)
-        const metadata = toMetadata(result, runNumber);
-        const jsonPath = path.join(featureDir, `${runStr}.json`);
-        await fs.writeFile(jsonPath, JSON.stringify(metadata, null, 2), "utf-8");
-
-        // Write markdown report
-        const report = generateVerificationReport(result, runNumber);
-        const mdPath = path.join(featureDir, `${runStr}.md`);
-        await fs.writeFile(mdPath, report, "utf-8");
-
-        // Calculate enhanced fields for index
-        const automatedChecksPassed = result.automatedChecks.every((c) => c.success);
-        const criteriaCount = result.criteriaResults.length;
-        const criteriaSatisfied = result.criteriaResults.filter((c) => c.satisfied).length;
-        const hasWarnings =
-          (result.suggestions && result.suggestions.length > 0) ||
-          (result.codeQualityNotes && result.codeQualityNotes.length > 0);
-
-        // Update index with enhanced fields
-        index.features[featureId] = {
-          featureId,
-          latestRun: runNumber,
-          latestTimestamp: result.timestamp,
-          latestVerdict: result.verdict,
-          totalRuns: 1,
-          passCount: result.verdict === "pass" ? 1 : 0,
-          failCount: result.verdict === "fail" ? 1 : 0,
-          // Enhanced fields (v3.0.0)
-          latestCommitHash: result.commitHash,
-          automatedChecksPassed,
-          criteriaCount,
-          criteriaSatisfied,
-          hasWarnings,
-        };
-
-        migratedCount++;
-      } catch (err) {
-        console.warn(
-          `[verification-store] Auto-migration: Failed to migrate ${featureId}: ${err}`
-        );
-      }
-    }
-
-    // Save new index
-    await ensureVerificationDir(cwd);
-    const indexPath = path.join(cwd, VERIFICATION_INDEX_PATH);
-    await fs.writeFile(indexPath, JSON.stringify(index, null, 2), "utf-8");
-
-    // Backup old results.json (no longer needed after migration)
-    const backupPath = path.join(cwd, VERIFICATION_STORE_DIR, "results.json.bak");
-    try {
-      await fs.copyFile(storePath, backupPath);
-      // Remove original results.json after successful backup
-      await fs.unlink(storePath);
-    } catch {
-      // Ignore backup/delete errors
-    }
-
-    if (migratedCount > 0) {
-      console.log(
-        `[verification-store] Auto-migrated ${migratedCount} verification results to v3.0.0 format`
-      );
-    }
-  } catch {
-    // Old store doesn't exist, nothing to migrate
-  }
 }
 
 /**
@@ -297,6 +72,90 @@ export async function loadVerificationIndex(
       `[verification-store] Error loading index: ${error}, returning empty index`
     );
     return createEmptyIndex();
+  }
+}
+
+/**
+ * Internal auto-migration helper (called during loadVerificationIndex)
+ * Performs migration if old results.json exists and index.json doesn't
+ */
+async function performAutoMigration(cwd: string): Promise<void> {
+  const storePath = path.join(cwd, `${VERIFICATION_STORE_DIR}/results.json`);
+
+  try {
+    // Check if old store exists
+    await fs.access(storePath);
+
+    // Old store exists - perform migration
+    // We call the migration logic directly to avoid circular dependency
+    const store = await loadVerificationStore(cwd);
+    if (!store || Object.keys(store.results).length === 0) {
+      return;
+    }
+
+    // Create new index
+    const index = createEmptyIndex();
+    let migratedCount = 0;
+
+    for (const [featureId, result] of Object.entries(store.results)) {
+      try {
+        // Create feature directory
+        const featureDir = path.join(cwd, VERIFICATION_STORE_DIR, featureId);
+        await fs.mkdir(featureDir, { recursive: true });
+
+        // Run number is 1 for migrated data
+        const runNumber = 1;
+        const runStr = formatRunNumber(runNumber);
+
+        // Write metadata JSON
+        const metadata = toMetadata(result, runNumber);
+        const jsonPath = path.join(featureDir, `${runStr}.json`);
+        await fs.writeFile(jsonPath, JSON.stringify(metadata, null, 2), "utf-8");
+
+        // Write markdown report
+        const report = generateVerificationReport(result, runNumber);
+        const mdPath = path.join(featureDir, `${runStr}.md`);
+        await fs.writeFile(mdPath, report, "utf-8");
+
+        // Update index
+        index.features[featureId] = {
+          featureId,
+          latestRun: runNumber,
+          latestTimestamp: result.timestamp,
+          latestVerdict: result.verdict,
+          totalRuns: 1,
+          passCount: result.verdict === "pass" ? 1 : 0,
+          failCount: result.verdict === "fail" ? 1 : 0,
+        };
+
+        migratedCount++;
+      } catch (err) {
+        console.warn(
+          `[verification-store] Auto-migration: Failed to migrate ${featureId}: ${err}`
+        );
+      }
+    }
+
+    // Save new index
+    await ensureVerificationDir(cwd);
+    const indexPath = path.join(cwd, VERIFICATION_INDEX_PATH);
+    await fs.writeFile(indexPath, JSON.stringify(index, null, 2), "utf-8");
+
+    // Backup old results.json
+    const backupPath = path.join(cwd, VERIFICATION_STORE_DIR, "results.json.bak");
+    try {
+      await fs.copyFile(storePath, backupPath);
+    } catch {
+      // Ignore backup errors
+    }
+
+    if (migratedCount > 0) {
+      console.log(
+        `[verification-store] Auto-migrated ${migratedCount} verification results to new format`
+      );
+    }
+  } catch {
+    // Old store doesn't exist, nothing to migrate
   }
 }
 

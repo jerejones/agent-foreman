@@ -4,11 +4,15 @@
 import { describe, it, expect } from "vitest";
 import {
   validateFeatureList,
+  validateFeatureIndex,
+  validateFeatureFrontmatter,
   parseFeatureList,
   isValidFeatureId,
   isValidStatus,
   featureListSchema,
-} from "../src/schema.js";
+  featureIndexSchema,
+  featureFrontmatterSchema,
+} from "../src/schemas/index.js";
 import type { FeatureList } from "../src/types.js";
 
 describe("Feature List Schema", () => {
@@ -69,7 +73,7 @@ describe("Feature List Schema", () => {
       expect(result.errors.some((e) => e.includes("status"))).toBe(true);
     });
 
-    it("should accept flexible feature ID formats", () => {
+    it("should accept flexible task ID formats", () => {
       // Now accepts any non-empty string
       const valid = {
         ...validFeatureList,
@@ -84,7 +88,7 @@ describe("Feature List Schema", () => {
       expect(result.valid).toBe(true);
     });
 
-    it("should reject empty feature ID", () => {
+    it("should reject empty task ID", () => {
       const invalid = {
         ...validFeatureList,
         features: [
@@ -112,8 +116,22 @@ describe("Feature List Schema", () => {
       expect(result.valid).toBe(false);
     });
 
-    it("should reject priority less than 1", () => {
+    it("should reject negative priority", () => {
       const invalid = {
+        ...validFeatureList,
+        features: [
+          {
+            ...validFeatureList.features[0],
+            priority: -1,
+          },
+        ],
+      };
+      const result = validateFeatureList(invalid);
+      expect(result.valid).toBe(false);
+    });
+
+    it("should accept priority of 0", () => {
+      const valid = {
         ...validFeatureList,
         features: [
           {
@@ -122,12 +140,12 @@ describe("Feature List Schema", () => {
           },
         ],
       };
-      const result = validateFeatureList(invalid);
-      expect(result.valid).toBe(false);
+      const result = validateFeatureList(valid);
+      expect(result.valid).toBe(true);
     });
 
     it("should accept all valid status values", () => {
-      const statuses = ["failing", "passing", "blocked", "needs_review", "deprecated"];
+      const statuses = ["failing", "passing", "blocked", "needs_review", "failed", "deprecated"];
       for (const status of statuses) {
         const list = {
           ...validFeatureList,
@@ -246,6 +264,294 @@ describe("Feature List Schema", () => {
       expect(featureListSchema.type).toBe("object");
       expect(featureListSchema.required).toContain("features");
       expect(featureListSchema.required).toContain("metadata");
+    });
+  });
+});
+
+describe("Feature Index Schema", () => {
+  const validFeatureIndex = {
+    version: "2.0.0",
+    updatedAt: "2024-01-15T10:00:00Z",
+    metadata: {
+      projectGoal: "Build auth system",
+      createdAt: "2024-01-15T10:00:00Z",
+      updatedAt: "2024-01-15T10:00:00Z",
+      version: "1.0.0",
+    },
+    features: {
+      "auth.login": {
+        status: "failing",
+        priority: 1,
+        module: "auth",
+        description: "User can log in",
+      },
+    },
+  };
+
+  describe("featureIndexSchema", () => {
+    it("should be defined in src/schema.ts", () => {
+      expect(featureIndexSchema).toBeDefined();
+      expect(featureIndexSchema.$schema).toBe("http://json-schema.org/draft-07/schema#");
+    });
+
+    it("should have required fields: version, updatedAt, metadata, features", () => {
+      expect(featureIndexSchema.required).toContain("version");
+      expect(featureIndexSchema.required).toContain("updatedAt");
+      expect(featureIndexSchema.required).toContain("metadata");
+      expect(featureIndexSchema.required).toContain("features");
+    });
+  });
+
+  describe("validateFeatureIndex", () => {
+    it("should validate correct index structure", () => {
+      const result = validateFeatureIndex(validFeatureIndex);
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it("should validate version, updatedAt, metadata, features fields", () => {
+      const result = validateFeatureIndex(validFeatureIndex);
+      expect(result.valid).toBe(true);
+    });
+
+    it("should validate FeatureIndexEntry structure within features", () => {
+      // Valid entry
+      const result = validateFeatureIndex(validFeatureIndex);
+      expect(result.valid).toBe(true);
+
+      // Invalid entry - missing required field
+      const invalidEntry = {
+        ...validFeatureIndex,
+        features: {
+          "test.feature": {
+            status: "failing",
+            priority: 1,
+            // missing module and description
+          },
+        },
+      };
+      const invalidResult = validateFeatureIndex(invalidEntry);
+      expect(invalidResult.valid).toBe(false);
+    });
+
+    it("should return ValidationResult type", () => {
+      const result = validateFeatureIndex(validFeatureIndex);
+      expect(result).toHaveProperty("valid");
+      expect(result).toHaveProperty("errors");
+      expect(typeof result.valid).toBe("boolean");
+      expect(Array.isArray(result.errors)).toBe(true);
+    });
+
+    it("should reject missing required fields", () => {
+      const invalid = {
+        version: "2.0.0",
+        // missing updatedAt, metadata, features
+      };
+      const result = validateFeatureIndex(invalid);
+      expect(result.valid).toBe(false);
+      expect(result.errors.length).toBeGreaterThan(0);
+    });
+
+    it("should reject invalid status in FeatureIndexEntry", () => {
+      const invalid = {
+        ...validFeatureIndex,
+        features: {
+          "test.feature": {
+            status: "invalid_status",
+            priority: 1,
+            module: "test",
+            description: "Test feature",
+          },
+        },
+      };
+      const result = validateFeatureIndex(invalid);
+      expect(result.valid).toBe(false);
+    });
+
+    it("should reject negative priority in FeatureIndexEntry", () => {
+      const invalid = {
+        ...validFeatureIndex,
+        features: {
+          "test.feature": {
+            status: "failing",
+            priority: -1, // must be >= 0
+            module: "test",
+            description: "Test feature",
+          },
+        },
+      };
+      const result = validateFeatureIndex(invalid);
+      expect(result.valid).toBe(false);
+    });
+
+    it("should accept priority of 0 in FeatureIndexEntry", () => {
+      const valid = {
+        ...validFeatureIndex,
+        features: {
+          "test.feature": {
+            status: "failing",
+            priority: 0,
+            module: "test",
+            description: "Test feature",
+          },
+        },
+      };
+      const result = validateFeatureIndex(valid);
+      expect(result.valid).toBe(true);
+    });
+
+    it("should accept all valid status values in entries", () => {
+      const statuses = ["failing", "passing", "blocked", "needs_review", "failed", "deprecated"];
+      for (const status of statuses) {
+        const index = {
+          ...validFeatureIndex,
+          features: {
+            "test.feature": {
+              status,
+              priority: 1,
+              module: "test",
+              description: "Test feature",
+            },
+          },
+        };
+        const result = validateFeatureIndex(index);
+        expect(result.valid).toBe(true);
+      }
+    });
+
+    it("should validate empty features object", () => {
+      const emptyFeatures = {
+        ...validFeatureIndex,
+        features: {},
+      };
+      const result = validateFeatureIndex(emptyFeatures);
+      expect(result.valid).toBe(true);
+    });
+  });
+});
+
+describe("Feature Frontmatter Schema", () => {
+  const validFrontmatter = {
+    id: "auth.login",
+    module: "auth",
+    priority: 1,
+    status: "failing",
+    version: 1,
+    origin: "manual",
+    dependsOn: [],
+    supersedes: [],
+    tags: ["auth"],
+  };
+
+  describe("featureFrontmatterSchema", () => {
+    it("should be defined for YAML frontmatter validation", () => {
+      expect(featureFrontmatterSchema).toBeDefined();
+      expect(featureFrontmatterSchema.$schema).toBe("http://json-schema.org/draft-07/schema#");
+    });
+
+    it("should have required fields: id, version, origin, dependsOn, supersedes, tags", () => {
+      expect(featureFrontmatterSchema.required).toContain("id");
+      expect(featureFrontmatterSchema.required).toContain("version");
+      expect(featureFrontmatterSchema.required).toContain("origin");
+      // Note: dependsOn, supersedes, tags are optional with defaults
+    });
+  });
+
+  describe("validateFeatureFrontmatter", () => {
+    it("should validate id, version, origin, dependsOn, supersedes, tags", () => {
+      const result = validateFeatureFrontmatter(validFrontmatter);
+      expect(result.valid).toBe(true);
+    });
+
+    it("should validate optional testRequirements", () => {
+      const withTestRequirements = {
+        ...validFrontmatter,
+        testRequirements: {
+          unit: {
+            required: true,
+            pattern: "tests/auth/**/*.test.ts",
+          },
+        },
+      };
+      const result = validateFeatureFrontmatter(withTestRequirements);
+      expect(result.valid).toBe(true);
+    });
+
+    it("should validate optional verification", () => {
+      const withVerification = {
+        ...validFrontmatter,
+        verification: {
+          verifiedAt: "2024-01-15T10:00:00Z",
+          verdict: "pass",
+          verifiedBy: "codex",
+          summary: "All criteria met",
+        },
+      };
+      const result = validateFeatureFrontmatter(withVerification);
+      expect(result.valid).toBe(true);
+    });
+
+    it("should validate optional e2eTags", () => {
+      const withE2eTags = {
+        ...validFrontmatter,
+        e2eTags: ["@auth", "@smoke"],
+      };
+      const result = validateFeatureFrontmatter(withE2eTags);
+      expect(result.valid).toBe(true);
+    });
+
+    it("should return ValidationResult type", () => {
+      const result = validateFeatureFrontmatter(validFrontmatter);
+      expect(result).toHaveProperty("valid");
+      expect(result).toHaveProperty("errors");
+      expect(typeof result.valid).toBe("boolean");
+      expect(Array.isArray(result.errors)).toBe(true);
+    });
+
+    it("should reject missing required fields", () => {
+      const invalid = {
+        id: "test.feature",
+        // missing other required fields
+      };
+      const result = validateFeatureFrontmatter(invalid);
+      expect(result.valid).toBe(false);
+      expect(result.errors.length).toBeGreaterThan(0);
+    });
+
+    it("should reject invalid status", () => {
+      const invalid = {
+        ...validFrontmatter,
+        status: "invalid_status",
+      };
+      const result = validateFeatureFrontmatter(invalid);
+      expect(result.valid).toBe(false);
+    });
+
+    it("should reject invalid origin", () => {
+      const invalid = {
+        ...validFrontmatter,
+        origin: "invalid_origin",
+      };
+      const result = validateFeatureFrontmatter(invalid);
+      expect(result.valid).toBe(false);
+    });
+
+    it("should accept all valid status values", () => {
+      const statuses = ["failing", "passing", "blocked", "needs_review", "failed", "deprecated"];
+      for (const status of statuses) {
+        const frontmatter = { ...validFrontmatter, status };
+        const result = validateFeatureFrontmatter(frontmatter);
+        expect(result.valid).toBe(true);
+      }
+    });
+
+    it("should accept all valid origin values", () => {
+      const origins = ["init-auto", "init-from-routes", "init-from-tests", "manual", "replan"];
+      for (const origin of origins) {
+        const frontmatter = { ...validFrontmatter, origin };
+        const result = validateFeatureFrontmatter(frontmatter);
+        expect(result.valid).toBe(true);
+      }
     });
   });
 });

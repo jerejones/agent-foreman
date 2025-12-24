@@ -2,50 +2,35 @@
  * Verifier module - Core verification logic
  * Orchestrates automated checks and AI analysis for feature verification
  *
- * This module is split into focused submodules:
- * - verification-types: All verification-related type definitions
- * - prompts: AI prompt templates and response parsing
- * - report: Markdown report generation
- * - git-operations: Git diff and commit hash operations
- * - check-executor: Run automated checks (tests, lint, typecheck, build)
- * - ai-analysis: AI analysis with retry logic
- * - autonomous: Autonomous verification mode
- * - tdd: TDD verification mode
- * - core: Main verification orchestration
- * - results: Result formatting utilities
- * - types: Shared types for this module
+ * This module has been split from a single 2,018-line file into focused submodules:
+ * - git-operations.ts: Git diff and commit hash retrieval
+ * - mode-selection.ts: Verification mode determination (TDD vs AI)
+ * - check-executor.ts: Automated check execution (tests, typecheck, lint, build)
+ * - related-files.ts: Related file reading for context
+ * - ai-analysis.ts: AI analysis with retry logic
+ * - autonomous.ts: Autonomous AI verification mode
+ * - tdd.ts: TDD verification mode
+ * - report.ts: Result formatting and reporting
+ * - strategy-conversion.ts: UVS strategy conversion utilities
+ * - strategy-execution.ts: UVS strategy execution
+ * - core.ts: Main verification orchestration
  */
 
-// Re-export all verification types
-export * from "./verification-types.js";
-
-// Re-export prompts
-export {
-  DEFAULT_MAX_DIFF_SIZE,
-  truncateDiffIntelligently,
-  buildVerificationPrompt,
-  parseVerificationResponse,
-  buildQuickCheckPrompt,
-  type DiffTruncationOptions,
-} from "./prompts.js";
-
-// Re-export report generation
-export {
-  generateVerificationReport,
-  generateVerificationSummary,
-} from "./report.js";
-
-// Re-export local types
+// Re-export types from local types file
 export type {
   AutomatedCheckOptions,
   CheckDefinition,
   TDDVerifyOptions,
+  StrategyExecutionResult,
 } from "./types.js";
 
-// Re-export git operations
+// Git Operations
 export { getGitDiffForFeature, getGitCommitHash } from "./git-operations.js";
 
-// Re-export check executor
+// Mode Selection
+export { determineVerificationMode } from "./mode-selection.js";
+
+// Check Executor
 export {
   runCheck,
   runCheckWithEnv,
@@ -53,42 +38,43 @@ export {
   runAutomatedChecks,
 } from "./check-executor.js";
 
-// Re-export AI analysis
+// Related Files
+export { readRelatedFiles } from "./related-files.js";
+
+// AI Analysis
 export {
   RETRY_CONFIG,
   isTransientError,
   calculateBackoff,
-  readRelatedFiles,
   analyzeWithAI,
 } from "./ai-analysis.js";
 
-// Re-export autonomous verification
+// Autonomous Verification
 export {
   buildAutonomousVerificationPrompt,
+  parseAutonomousVerificationResponse,
   verifyFeatureAutonomous,
 } from "./autonomous.js";
 
-// Re-export TDD verification
+// TDD Verification
 export { verifyFeatureTDD } from "./tdd.js";
 
-// Re-export core verification
-export { determineVerificationMode, verifyFeature } from "./core.js";
+// Report
+export { createVerificationSummary, formatVerificationResult } from "./report.js";
 
-// Re-export result utilities
-export { createVerificationSummary, formatVerificationResult } from "./results.js";
-
-// Re-export layered check mode
+// Strategy Conversion (UVS)
 export {
-  runLayeredCheck,
-  isHighRiskChange,
-  type LayeredCheckOptions,
-  type LayeredCheckResult,
-} from "./layered-check.js";
+  convertTestRequirementsToStrategies,
+  getDefaultStrategiesForTaskType,
+  getVerificationStrategies,
+  shouldUseStrategyVerification,
+} from "./strategy-conversion.js";
 
-// Re-export task impact detection
+// Strategy Execution (UVS Phase 4)
 export {
-  getTaskImpact,
-  testPatternToSourcePath,
-  buildFileTaskIndex,
-  type TaskImpact,
-} from "./task-impact.js";
+  executeVerificationStrategies,
+  verifyWithStrategies,
+} from "./strategy-execution.js";
+
+// Core - Main verification function
+export { verifyFeature } from "./core.js";

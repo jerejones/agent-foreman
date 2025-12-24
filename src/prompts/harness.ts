@@ -1,0 +1,24 @@
+/**
+ * Harness documentation prompt templates
+ *
+ * With the modular .claude/rules/ approach, this module only provides
+ * minimal CLAUDE.md generation. The harness documentation is now in
+ * separate rule files that Claude Code loads automatically.
+ */
+
+/**
+ * Generate minimal CLAUDE.md content (used with modular rules)
+ * When rules are in .claude/rules/, CLAUDE.md only needs project-specific content
+ */
+export function generateMinimalClaudeMd(goal: string): string {
+  return `# Project Instructions
+
+## Project Goal
+
+${goal}
+
+---
+
+*Harness documentation is in \`.claude/rules/\` - loaded automatically by Claude Code*
+`;
+}

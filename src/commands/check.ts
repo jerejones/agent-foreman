@@ -11,11 +11,11 @@ import chalk from "chalk";
 
 import {
   loadFeatureList,
-  saveFeatureList,
   findFeatureById,
-  updateFeatureVerification,
+  updateFeatureVerificationQuick,
   selectNextFeature,
-} from "../feature-list.js";
+  isBreakdownTask,
+} from "../features/index.js";
 import {
   verifyFeature,
   verifyFeatureAutonomous,
@@ -75,7 +75,7 @@ export async function runCheck(
   // Load task list
   const featureList = await loadFeatureList(cwd);
   if (!featureList) {
-    console.log(chalk.red("✗ No feature list found. Run 'agent-foreman init' first."));
+    console.log(chalk.red("✗ No task list found. Run 'agent-foreman init' first."));
     process.exit(1);
   }
 
@@ -100,9 +100,19 @@ export async function runCheck(
   }
 
   // ─────────────────────────────────────────────────────────────────
+  // Skip BREAKDOWN tasks - they don't need code verification
+  // ─────────────────────────────────────────────────────────────────
+  if (isBreakdownTask(feature.id)) {
+    console.log(chalk.yellow(`\n⚠ BREAKDOWN tasks don't need 'check' verification.`));
+    console.log(chalk.gray(`   BREAKDOWN tasks verify task decomposition, not code.`));
+    console.log(chalk.cyan(`\n   Use 'agent-foreman done ${targetFeatureId}' to complete the BREAKDOWN task.`));
+    return;
+  }
+
+  // ─────────────────────────────────────────────────────────────────
   // TDD Gate: Verify test files exist before verification
   // ─────────────────────────────────────────────────────────────────
-  const strictMode = featureList.metadata.tddMode === "strict";
+  const strictMode = featureList.metadata?.tddMode === "strict";
   const hasRequiredTests =
     feature.testRequirements?.unit?.required ||
     feature.testRequirements?.e2e?.required;
@@ -179,7 +189,7 @@ export async function runCheck(
   }
 
   console.log(chalk.bold.blue("\n═══════════════════════════════════════════════════════════════"));
-  console.log(chalk.bold.blue("                    FEATURE VERIFICATION"));
+  console.log(chalk.bold.blue("                      TASK VERIFICATION"));
   console.log(chalk.bold.blue("═══════════════════════════════════════════════════════════════\n"));
 
   console.log(chalk.bold(`📋 Task: ${chalk.cyan(feature.id)}`));
@@ -217,16 +227,9 @@ export async function runCheck(
   // Display result
   console.log(formatVerificationResult(result, verbose));
 
-  // Update feature with verification summary
+  // Update feature with verification summary (quick operation - only updates single feature file)
   const summary = createVerificationSummary(result);
-  featureList.features = updateFeatureVerification(
-    featureList.features,
-    targetFeatureId,
-    summary
-  );
-
-  // Save feature list
-  await saveFeatureList(cwd, featureList);
+  await updateFeatureVerificationQuick(cwd, targetFeatureId, summary);
 
   // Log to progress
   await appendProgressLog(

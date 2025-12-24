@@ -8,7 +8,7 @@ import {
   generateTDDGuidanceWithAI,
 } from "../src/tdd-ai-generator.js";
 import type { Feature, CachedTDDGuidance } from "../src/types.js";
-import type { ExtendedCapabilities } from "../src/verifier/verification-types.js";
+import type { ExtendedCapabilities } from "../src/verifier/types/index.js";
 
 // Mock the agents module
 vi.mock("../src/agents.js", () => ({
@@ -93,9 +93,9 @@ describe("TDD AI Generator", () => {
   });
 
   describe("buildTDDPrompt", () => {
-    it("should include feature ID in prompt", () => {
+    it("should include task ID in prompt", () => {
       const prompt = buildTDDPrompt(mockFeature, mockCapabilities);
-      expect(prompt).toContain("Feature ID: auth.login");
+      expect(prompt).toContain("Task ID: auth.login");
     });
 
     it("should include feature description in prompt", () => {
@@ -328,7 +328,7 @@ describe("TDD AI Generator", () => {
 
       expect(callAnyAvailableAgent).toHaveBeenCalledTimes(1);
       expect(callAnyAvailableAgent).toHaveBeenCalledWith(
-        expect.stringContaining("Feature ID: auth.login"),
+        expect.stringContaining("Task ID: auth.login"),
         expect.objectContaining({
           verbose: false,
           cwd: "/test/path",

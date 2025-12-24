@@ -1,364 +1,160 @@
-/**
- * Tests for src/rules/index.ts - Rule templates for .claude/rules/ directory
- */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { tmpdir } from "node:os";
+
 import {
   RULE_TEMPLATES,
   isRuleTemplate,
   getRuleTemplate,
-  getRuleTemplatePath,
   getAllRuleTemplates,
   copyRulesToProject,
-  verifyRuleTemplates,
   hasRulesInstalled,
-  updateProjectRulesIfExists,
+  verifyRuleTemplates,
+  type RuleTemplateName,
 } from "../src/rules/index.js";
 
-describe("Rules", () => {
+describe("Rules Module", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await fs.mkdtemp(path.join(tmpdir(), "rules-test-"));
+  });
+
+  afterEach(async () => {
+    await fs.rm(testDir, { recursive: true, force: true });
+  });
+
   describe("RULE_TEMPLATES", () => {
-    it("should have all expected rule templates", () => {
-      expect(RULE_TEMPLATES).toContain("00-overview");
-      expect(RULE_TEMPLATES).toContain("01-workflow");
-      expect(RULE_TEMPLATES).toContain("02-rules");
-      expect(RULE_TEMPLATES).toContain("03-commands");
-      expect(RULE_TEMPLATES).toContain("04-feature-schema");
-      expect(RULE_TEMPLATES).toContain("05-tdd");
-      expect(RULE_TEMPLATES).toContain("06-progress-log");
+    it("should contain 8 rule templates", () => {
+      expect(RULE_TEMPLATES).toHaveLength(8);
     });
 
-    it("should have 7 rule templates", () => {
-      expect(RULE_TEMPLATES.length).toBe(7);
+    it("should have templates in correct order", () => {
+      expect(RULE_TEMPLATES[0]).toBe("00-overview");
+      expect(RULE_TEMPLATES[1]).toBe("01-workflow");
+      expect(RULE_TEMPLATES[2]).toBe("02-rules");
+      expect(RULE_TEMPLATES[3]).toBe("03-commands");
+      expect(RULE_TEMPLATES[4]).toBe("04-feature-schema");
+      expect(RULE_TEMPLATES[5]).toBe("05-tdd");
+      expect(RULE_TEMPLATES[6]).toBe("06-progress-log");
+      expect(RULE_TEMPLATES[7]).toBe("07-strict-enforcement");
     });
   });
 
   describe("isRuleTemplate", () => {
-    it("should return true for valid rule template names", () => {
+    it("should return true for valid template names", () => {
       expect(isRuleTemplate("00-overview")).toBe(true);
       expect(isRuleTemplate("01-workflow")).toBe(true);
       expect(isRuleTemplate("06-progress-log")).toBe(true);
     });
 
-    it("should return false for invalid rule template names", () => {
+    it("should return false for invalid template names", () => {
       expect(isRuleTemplate("invalid")).toBe(false);
+      expect(isRuleTemplate("08-nonexistent")).toBe(false);
       expect(isRuleTemplate("")).toBe(false);
-      expect(isRuleTemplate("overview")).toBe(false);
     });
   });
 
   describe("getRuleTemplate", () => {
-    it("should return content for valid template", () => {
+    it("should return template content for valid names", () => {
       const content = getRuleTemplate("00-overview");
       expect(content).not.toBeNull();
       expect(content).toContain("Long-Task Harness");
     });
 
-    it("should return null for invalid template", () => {
-      const content = getRuleTemplate("invalid");
-      expect(content).toBeNull();
-    });
-
-    it("should return content with expected sections for each template", () => {
-      // 00-overview
-      const overview = getRuleTemplate("00-overview");
-      expect(overview).toContain("Core Files");
-      expect(overview).toContain("Feature Status Values");
-
-      // 01-workflow
-      const workflow = getRuleTemplate("01-workflow");
-      expect(workflow).toContain("Workflow");
-      expect(workflow).toContain("agent-foreman done");
-      expect(workflow).toContain("agent-foreman check");
-
-      // 02-rules
-      const rules = getRuleTemplate("02-rules");
-      expect(rules).toContain("Rules");
-      expect(rules).toContain("One feature per session");
-
-      // 03-commands
-      const commands = getRuleTemplate("03-commands");
-      expect(commands).toContain("Commands");
-      expect(commands).toContain("agent-foreman");
-
-      // 04-feature-schema
-      const schema = getRuleTemplate("04-feature-schema");
-      expect(schema).toContain("Feature JSON Schema");
-      expect(schema).toContain("acceptance");
-
-      // 05-tdd
-      const tdd = getRuleTemplate("05-tdd");
-      expect(tdd).toContain("TDD");
-      expect(tdd).toContain("strict");
-
-      // 06-progress-log
-      const progressLog = getRuleTemplate("06-progress-log");
-      expect(progressLog).toContain("Progress Log");
-      expect(progressLog).toContain("STEP");
+    it("should return null for invalid names", () => {
+      expect(getRuleTemplate("invalid")).toBeNull();
     });
   });
 
   describe("getAllRuleTemplates", () => {
-    it("should return all rule templates", () => {
+    it("should return all templates as a map", () => {
       const templates = getAllRuleTemplates();
-      expect(templates.size).toBe(7);
-    });
+      expect(templates.size).toBe(8);
 
-    it("should have content for each template", () => {
-      const templates = getAllRuleTemplates();
-      for (const [name, content] of templates) {
-        expect(content.length).toBeGreaterThan(0);
+      for (const name of RULE_TEMPLATES) {
+        expect(templates.has(name)).toBe(true);
+        expect(templates.get(name)).not.toBeNull();
       }
     });
   });
 
-  describe("verifyRuleTemplates", () => {
-    it("should report all templates as available", () => {
-      const { available, missing } = verifyRuleTemplates();
-      expect(available.length).toBe(7);
-      expect(missing.length).toBe(0);
-    });
-  });
-
   describe("copyRulesToProject", () => {
-    let tempDir: string;
+    it("should copy all rule templates to project", async () => {
+      const result = await copyRulesToProject(testDir);
 
-    beforeEach(async () => {
-      tempDir = await fs.mkdtemp(path.join(tmpdir(), "rules-test-"));
-    });
-
-    afterEach(async () => {
-      await fs.rm(tempDir, { recursive: true, force: true });
-    });
-
-    it("should create .claude/rules/ directory and copy all files", async () => {
-      const result = await copyRulesToProject(tempDir);
-
-      expect(result.created).toBe(7);
+      expect(result.created).toBe(8);
       expect(result.skipped).toBe(0);
-      expect(result.createdFiles.length).toBe(7);
+      expect(result.createdFiles).toHaveLength(8);
 
       // Verify files exist
-      const rulesDir = path.join(tempDir, ".claude", "rules");
-      const files = await fs.readdir(rulesDir);
-      expect(files.length).toBe(7);
+      const rulesDir = path.join(testDir, ".claude", "rules");
+      for (const name of RULE_TEMPLATES) {
+        const filePath = path.join(rulesDir, `${name}.md`);
+        const exists = await fs
+          .stat(filePath)
+          .then(() => true)
+          .catch(() => false);
+        expect(exists).toBe(true);
+      }
     });
 
-    it("should skip existing files by default", async () => {
+    it("should skip existing files without force", async () => {
       // First copy
-      await copyRulesToProject(tempDir);
+      await copyRulesToProject(testDir);
 
-      // Second copy should skip all
-      const result = await copyRulesToProject(tempDir);
-
+      // Second copy should skip
+      const result = await copyRulesToProject(testDir);
       expect(result.created).toBe(0);
-      expect(result.skipped).toBe(7);
+      expect(result.skipped).toBe(8);
     });
 
-    it("should overwrite existing files with force option", async () => {
+    it("should overwrite with force option", async () => {
       // First copy
-      await copyRulesToProject(tempDir);
+      await copyRulesToProject(testDir);
 
       // Modify a file
-      const filePath = path.join(tempDir, ".claude", "rules", "00-overview.md");
-      await fs.writeFile(filePath, "modified content");
+      const rulesDir = path.join(testDir, ".claude", "rules");
+      const filePath = path.join(rulesDir, "00-overview.md");
+      await fs.writeFile(filePath, "MODIFIED");
 
-      // Second copy with force
-      const result = await copyRulesToProject(tempDir, { force: true });
-
-      expect(result.created).toBe(7);
+      // Force copy should overwrite
+      const result = await copyRulesToProject(testDir, { force: true });
+      expect(result.created).toBe(8);
       expect(result.skipped).toBe(0);
 
-      // Verify content was restored
+      // Verify file was overwritten
       const content = await fs.readFile(filePath, "utf-8");
+      expect(content).not.toBe("MODIFIED");
       expect(content).toContain("Long-Task Harness");
     });
   });
 
   describe("hasRulesInstalled", () => {
-    let tempDir: string;
-
-    beforeEach(async () => {
-      tempDir = await fs.mkdtemp(path.join(tmpdir(), "rules-test-"));
+    it("should return false for empty directory", () => {
+      expect(hasRulesInstalled(testDir)).toBe(false);
     });
 
-    afterEach(async () => {
-      await fs.rm(tempDir, { recursive: true, force: true });
+    it("should return true after rules are copied", async () => {
+      await copyRulesToProject(testDir);
+      expect(hasRulesInstalled(testDir)).toBe(true);
     });
 
-    it("should return false when no rules directory exists", () => {
-      const result = hasRulesInstalled(tempDir);
-      expect(result).toBe(false);
-    });
+    it("should return true if at least one rule file exists", async () => {
+      const rulesDir = path.join(testDir, ".claude", "rules");
+      await fs.mkdir(rulesDir, { recursive: true });
+      await fs.writeFile(path.join(rulesDir, "00-overview.md"), "test");
 
-    it("should return false when rules directory is empty", async () => {
-      await fs.mkdir(path.join(tempDir, ".claude", "rules"), { recursive: true });
-      const result = hasRulesInstalled(tempDir);
-      expect(result).toBe(false);
-    });
-
-    it("should return true when at least one rule file exists", async () => {
-      await copyRulesToProject(tempDir);
-      const result = hasRulesInstalled(tempDir);
-      expect(result).toBe(true);
+      expect(hasRulesInstalled(testDir)).toBe(true);
     });
   });
 
-  // ============================================================================
-  // Edge Case Tests for Uncovered Lines
-  // ============================================================================
-
-  describe("getRuleTemplate edge cases", () => {
-    it("should handle templates that exist in embedded but not file system", () => {
-      // All templates should be available from embedded
-      for (const name of RULE_TEMPLATES) {
-        const content = getRuleTemplate(name);
-        expect(content).not.toBeNull();
-        expect(typeof content).toBe("string");
-      }
-    });
-  });
-
-  describe("verifyRuleTemplates edge cases", () => {
-    it("should check embedded templates first", () => {
-      const { available, missing } = verifyRuleTemplates();
-
-      // All templates should be available (from embedded)
-      expect(available.length).toBe(RULE_TEMPLATES.length);
-      expect(missing.length).toBe(0);
-
-      // Available should contain all template names
-      for (const name of RULE_TEMPLATES) {
-        expect(available).toContain(name);
-      }
-    });
-
-    it("should return arrays with no undefined values", () => {
-      const { available, missing } = verifyRuleTemplates();
-
-      expect(available.every(name => typeof name === "string")).toBe(true);
-      expect(missing.every(name => typeof name === "string")).toBe(true);
-    });
-  });
-
-  describe("copyRulesToProject edge cases", () => {
-    let tempDir: string;
-
-    beforeEach(async () => {
-      tempDir = await fs.mkdtemp(path.join(tmpdir(), "rules-edge-"));
-    });
-
-    afterEach(async () => {
-      await fs.rm(tempDir, { recursive: true, force: true });
-    });
-
-    it("should handle nested directory creation", async () => {
-      // Ensure no .claude directory exists
-      const claudeDir = path.join(tempDir, ".claude");
-      try {
-        await fs.rm(claudeDir, { recursive: true });
-      } catch {
-        // Directory doesn't exist, which is expected
-      }
-
-      const result = await copyRulesToProject(tempDir);
-      expect(result.created).toBe(7);
-
-      // Verify directory was created
-      const stat = await fs.stat(path.join(tempDir, ".claude", "rules"));
-      expect(stat.isDirectory()).toBe(true);
-    });
-
-    it("should skip null content templates gracefully", async () => {
-      // This tests the "if (!content) continue" path
-      // All templates should have content, so created should be 7
-      const result = await copyRulesToProject(tempDir);
-      expect(result.created).toBe(7);
-    });
-  });
-
-  // ============================================================================
-  // updateProjectRulesIfExists Tests (coverage for lines 230-235)
-  // ============================================================================
-
-  describe("updateProjectRulesIfExists", () => {
-    let tempDir: string;
-
-    beforeEach(async () => {
-      tempDir = await fs.mkdtemp(path.join(tmpdir(), "rules-update-"));
-    });
-
-    afterEach(async () => {
-      await fs.rm(tempDir, { recursive: true, force: true });
-    });
-
-    it("should return null when no rules are installed", async () => {
-      const result = await updateProjectRulesIfExists(tempDir);
-      expect(result).toBeNull();
-    });
-
-    it("should update existing rules when rules are installed", async () => {
-      // First install rules
-      await copyRulesToProject(tempDir);
-
-      // Modify a file to verify it gets updated
-      const filePath = path.join(tempDir, ".claude", "rules", "00-overview.md");
-      await fs.writeFile(filePath, "modified content");
-
-      // Update rules
-      const result = await updateProjectRulesIfExists(tempDir);
-
-      expect(result).not.toBeNull();
-      expect(result!.created).toBe(7);
-      expect(result!.skipped).toBe(0);
-
-      // Verify content was restored
-      const content = await fs.readFile(filePath, "utf-8");
-      expect(content).toContain("Long-Task Harness");
-    });
-
-    it("should force overwrite all files when updating", async () => {
-      // First install rules
-      await copyRulesToProject(tempDir);
-
-      // Update rules
-      const result = await updateProjectRulesIfExists(tempDir);
-
-      // All files should be created (overwritten), none skipped
-      expect(result!.created).toBe(7);
-      expect(result!.skipped).toBe(0);
-    });
-  });
-
-  // ============================================================================
-  // getRuleTemplatePath Tests
-  // ============================================================================
-
-  describe("getRuleTemplatePath", () => {
-    it("should return a valid path for overview template", () => {
-      const templatePath = getRuleTemplatePath("00-overview");
-      expect(templatePath).toContain("templates");
-      expect(templatePath).toContain("00-overview.md");
-    });
-
-    it("should return a valid path for all templates", () => {
-      for (const name of RULE_TEMPLATES) {
-        const templatePath = getRuleTemplatePath(name);
-        expect(templatePath).toContain("templates");
-        expect(templatePath).toContain(`${name}.md`);
-      }
-    });
-
-    it("should return consistent paths", () => {
-      const path1 = getRuleTemplatePath("01-workflow");
-      const path2 = getRuleTemplatePath("01-workflow");
-      expect(path1).toBe(path2);
-    });
-
-    it("should return absolute paths", () => {
-      const templatePath = getRuleTemplatePath("02-rules");
-      expect(path.isAbsolute(templatePath)).toBe(true);
+  describe("verifyRuleTemplates", () => {
+    it("should report all templates as available", () => {
+      const result = verifyRuleTemplates();
+      expect(result.available).toHaveLength(8);
+      expect(result.missing).toHaveLength(0);
     });
   });
 });

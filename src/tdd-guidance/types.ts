@@ -1,12 +1,12 @@
 /**
- * TDD Guidance Types
+ * TDD Guidance type definitions
  */
 
 /**
  * TDD guidance for a feature
  */
 export interface TDDGuidance {
-  /** Feature ID this guidance is for */
+  /** Task ID this guidance is for */
   featureId: string;
   /** Suggested test file paths */
   suggestedTestFiles: {
