@@ -55,14 +55,8 @@ export default defineConfig({
     // Use 'forks' pool for better process isolation and cleanup
     // This ensures child processes spawned by tests are properly terminated
     pool: "forks",
-    poolOptions: {
-      forks: {
-        // Isolate each test file in its own process
-        isolate: true,
-        // Single fork for sequential execution (prevents resource contention)
-        singleFork: false,
-      },
-    },
+    // Vitest 4: pool options are now top-level (not nested in poolOptions)
+    isolate: true,
     // Timeout for cleanup when Vitest shuts down
     teardownTimeout: 5000,
     // Hook timeout for setup/teardown hooks
