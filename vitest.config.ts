@@ -14,6 +14,8 @@ export default defineConfig({
       exclude: [
         // Entry point (CLI bootstrap)
         "src/index.ts",
+        // Generated file (auto-generated, not testable)
+        "src/embedded-assets.generated.ts",
         // Type-only files (no executable code)
         "src/**/types.ts",
         "src/types/**/*.ts",
@@ -48,6 +50,12 @@ export default defineConfig({
         "src/strategies/file-strategy/index.ts",
         "src/strategies/http-strategy/index.ts",
         "src/strategies/script-strategy/index.ts",
+        // Re-export wrapper files (backward compatibility)
+        "src/strategies/ai-strategy.ts",
+        "src/strategies/file-strategy.ts",
+        "src/strategies/http-strategy.ts",
+        // Thin wrapper around external agent (hard to unit test)
+        "src/strategies/ai-strategy/agent.ts",
       ],
       reportsDirectory: "./coverage",
     },
