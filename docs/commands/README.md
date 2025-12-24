@@ -17,7 +17,6 @@ Comprehensive documentation for all agent-foreman CLI commands.
 | [`install`](./install.md) | Install Claude Code plugin | Plugin management |
 | [`uninstall`](./uninstall.md) | Remove Claude Code plugin | Plugin management |
 | [`agents`](./agents.md) | Show AI agents status | Agent management |
-| [`upgrade`](./upgrade.md) | Check for updates | Version management |
 
 ## Workflow Commands
 
@@ -86,12 +85,6 @@ agent-foreman install
 
 # Remove plugin
 agent-foreman uninstall
-
-# Check for updates
-agent-foreman upgrade --check
-
-# Perform upgrade
-agent-foreman upgrade
 ```
 
 ## Command Categories
@@ -121,7 +114,6 @@ agent-foreman upgrade
 |---------|-------------|
 | `init --analyze` | Generate/update architecture docs |
 | `impact` | Before/after significant changes |
-| `upgrade` | Keep tool up to date |
 
 ## Common Options
 

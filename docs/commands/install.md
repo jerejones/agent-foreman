@@ -184,7 +184,7 @@ Updates `~/.claude/settings.json`:
 
 ### `runInstall(force)`
 
-**Location**: `src/commands/install.ts:17`
+**Location**: `src/commands/install.ts:18`
 
 Main entry point for the install command.
 
@@ -334,4 +334,3 @@ After installation, the plugin provides:
 ## Related Commands
 
 - [`uninstall`](./uninstall.md) - Remove the plugin
-- [`upgrade`](./upgrade.md) - Update to latest version

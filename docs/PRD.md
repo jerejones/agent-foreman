@@ -151,9 +151,9 @@ agent-foreman next
 ### Existing Project
 
 ```bash
-agent-foreman analyze        # Analyze existing code
-agent-foreman init          # Create harness from survey
-agent-foreman next          # Start working
+agent-foreman init --analyze  # Analyze existing code
+agent-foreman init           # Create harness from survey
+agent-foreman next           # Start working
 ```
 
 ### Development Loop
@@ -204,13 +204,14 @@ When changing a task:
 
 | Command | Purpose |
 |---------|---------|
-| `analyze` | AI-powered project analysis |
 | `init` | Initialize or upgrade harness |
+| `init --analyze` | AI-powered project analysis |
+| `init --scan` | Scan project verification capabilities |
 | `next` | Get next priority task |
 | `status` | Show project progress |
 | `done` | Verify + mark complete + auto-commit |
-| `scan` | Scan project verification capabilities |
 | `check` | Preview verification |
+| `fail` | Mark task as failed |
 | `impact` | Analyze dependencies |
 | `agents` | Show available AI agents |
 

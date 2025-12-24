@@ -67,7 +67,7 @@ graph TB
 
 ### `printAgentStatus()`
 
-**Location**: `src/agents/index.ts`
+**Location**: `src/agents/orchestrator.ts:127`
 
 Prints the status of all configured AI agents.
 
@@ -78,7 +78,7 @@ Prints the status of all configured AI agents.
 
 ### `commandExists(command)`
 
-**Location**: `src/agents/index.ts`
+**Location**: `src/agents/detection.ts:21`
 
 Checks if a command is available in the system PATH.
 
@@ -86,7 +86,7 @@ Checks if a command is available in the system PATH.
 
 ### `getAvailableAgent()`
 
-**Location**: `src/agents/index.ts`
+**Location**: `src/agents/detection.ts:32`
 
 Gets the first available agent based on priority.
 
@@ -94,7 +94,7 @@ Gets the first available agent based on priority.
 
 ### `getAgentPriorityString()`
 
-**Location**: `src/agents/index.ts`
+**Location**: `src/agents/orchestrator.ts:140`
 
 Returns a string representation of agent priority.
 
@@ -214,7 +214,7 @@ Agents are used by these commands:
 | Command | Agent Usage |
 |---------|-------------|
 | `init` | Project analysis |
-| `analyze` | Architecture analysis |
+| `init --analyze` | Architecture analysis |
 | `check` | AI verification |
 | `done` | Verification (when enabled) |
 
@@ -281,5 +281,4 @@ const agents = filterAvailableAgents(DEFAULT_AGENTS);
 ## Related Commands
 
 - [`init`](./init.md) - Uses agents for analysis
-- [`analyze`](./analyze.md) - Uses agents for project analysis
 - [`check`](./check.md) - Uses agents for verification

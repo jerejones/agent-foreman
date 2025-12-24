@@ -151,9 +151,9 @@ graph LR
 
 ## Key Functions
 
-### `runInit(goal, mode, verbose, taskType)`
+### `runInit(goal, mode, verbose, taskType?, options?)`
 
-**Location**: `src/commands/init.ts:87`
+**Location**: `src/commands/init.ts:201`
 
 Main entry point for the init command.
 
@@ -162,6 +162,7 @@ Main entry point for the init command.
 - `mode: InitMode` - Init mode (merge/new/scan)
 - `verbose: boolean` - Enable verbose output
 - `taskType?: TaskType` - Optional default task type
+- `options?: InitOptions` - Optional analyze/scan mode options
 
 **Process**:
 1. Verify/initialize git repository
@@ -173,7 +174,7 @@ Main entry point for the init command.
 
 ### `promptTDDMode()`
 
-**Location**: `src/commands/init.ts:20`
+**Location**: `src/commands/init.ts:41`
 
 Interactive TDD mode selection with timeout.
 
@@ -188,7 +189,7 @@ Interactive TDD mode selection with timeout.
 
 ### `detectAndAnalyzeProject(cwd, goal, verbose)`
 
-**Location**: `src/init/index.js`
+**Location**: `src/init/index.ts`
 
 AI-powered project analysis using Claude, Codex, or Gemini.
 
@@ -196,7 +197,7 @@ AI-powered project analysis using Claude, Codex, or Gemini.
 
 ### `mergeOrCreateFeatures(cwd, survey, goal, mode, verbose, tddMode)`
 
-**Location**: `src/init/index.js`
+**Location**: `src/init/index.ts`
 
 Generates or merges feature list based on mode.
 
@@ -204,7 +205,7 @@ Generates or merges feature list based on mode.
 
 ### `generateHarnessFiles(cwd, survey, featureList, goal, mode)`
 
-**Location**: `src/init/index.js`
+**Location**: `src/init/index.ts`
 
 Creates all harness infrastructure files.
 
@@ -284,5 +285,8 @@ When TDD mode is set to `strict`:
 
 - [`next`](./next.md) - Get next task to work on
 - [`status`](./status.md) - View project status
-- [`scan`](./scan.md) - Scan project capabilities
-- [`analyze`](./analyze.md) - Generate architecture analysis
+- [`agents`](./agents.md) - Show AI agent status
+
+**Note**: `scan` and `analyze` are flags of the `init` command:
+- `agent-foreman init --scan` - Scan project capabilities
+- `agent-foreman init --analyze` - Generate architecture analysis

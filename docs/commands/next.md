@@ -190,7 +190,7 @@ graph LR
 
 ### `runNext(featureId, dryRun, runCheck, allowDirty, outputJson, quiet, refreshGuidance)`
 
-**Location**: `src/commands/next.ts:29`
+**Location**: `src/commands/next.ts:33`
 
 Main entry point for the next command.
 

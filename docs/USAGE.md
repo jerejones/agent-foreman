@@ -312,8 +312,9 @@ sudo mv agent-foreman /usr/local/bin/
 
 | Command | Description |
 |---------|-------------|
-| `analyze [output]` | Generate project architecture report |
 | `init [goal]` | Initialize or upgrade the harness |
+| `init --analyze` | Generate project architecture report |
+| `init --scan` | Scan project verification capabilities |
 | `next [task_id]` | Show next task to work on |
 | `status` | Show current project status |
 | `check [task_id]` | Verify code changes or task completion |
@@ -321,15 +322,9 @@ sudo mv agent-foreman /usr/local/bin/
 | `fail <task_id>` | Mark task as failed |
 | `tdd [mode]` | View or change TDD mode (strict/recommended/disabled) |
 | `impact <task_id>` | Analyze impact of changes |
-| `validate [module]` | Validate spec workflow task quality |
 | `agents` | Show available AI agents |
-| `scan` | Scan project verification capabilities |
-| `upgrade` | Check for updates and upgrade to latest version |
 | `install` | Install agent-foreman Claude Code plugin |
 | `uninstall` | Uninstall agent-foreman Claude Code plugin |
-| `license` | Show license status |
-| `activate <key>` | Activate a license key on this device |
-| `deactivate` | Deactivate the license on this device |
 
 ### CLI Examples
 
@@ -343,7 +338,7 @@ agent-foreman init "Build a REST API for user management"
 **Existing project:**
 ```bash
 cd existing-project
-agent-foreman analyze
+agent-foreman init --analyze
 agent-foreman init "Add authentication feature"
 ```
 

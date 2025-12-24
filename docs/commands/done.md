@@ -288,13 +288,13 @@ Main entry point for the done command.
 
 ### `runVerification(...)`
 
-**Location**: `src/commands/done.ts:279`
+**Location**: `src/commands/done.ts:402`
 
 Internal function that runs verification when `--no-skip-check` is used.
 
 ### `handleCommit(cwd, feature, autoCommit)`
 
-**Location**: `src/commands/done.ts:368`
+**Location**: `src/commands/done.ts:489`
 
 Handles git add and commit operations.
 
