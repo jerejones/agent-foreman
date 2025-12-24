@@ -28,16 +28,35 @@ AI 编程助手在处理复杂项目时，常常会掉进这三个坑：
 
 ## 安装
 
+### 快速安装（推荐）
+
 ```bash
-# 通过 npm 全局安装
+# 一行命令安装（自动下载最新二进制文件）
+curl -fsSL https://raw.githubusercontent.com/mylukin/agent-foreman/main/scripts/install.sh | bash
+
+# 安装指定版本
+VERSION=0.1.147 curl -fsSL https://raw.githubusercontent.com/mylukin/agent-foreman/main/scripts/install.sh | bash
+
+# 自定义安装目录
+INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/mylukin/agent-foreman/main/scripts/install.sh | bash
+```
+
+### 通过 npm 安装
+
+```bash
+# 全局安装
 npm install -g agent-foreman
 
-# 或者用 npx 直接运行
+# 或者用 npx 直接运行（无需安装）
 npx agent-foreman --help
 
-# 或从 GitHub Releases 下载独立二进制文件
-# https://github.com/mylukin/agent-foreman/releases
+# 通过脚本使用 npm 安装
+USE_NPM=1 curl -fsSL https://raw.githubusercontent.com/mylukin/agent-foreman/main/scripts/install.sh | bash
 ```
+
+### 手动下载
+
+从 [GitHub Releases](https://github.com/mylukin/agent-foreman/releases) 下载独立二进制文件
 
 ---
 

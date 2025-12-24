@@ -28,16 +28,35 @@ AI coding agents face three common failure modes:
 
 ## Installation
 
+### Quick Install (Recommended)
+
 ```bash
-# Global installation via npm
+# One-line install (downloads latest binary)
+curl -fsSL https://raw.githubusercontent.com/mylukin/agent-foreman/main/scripts/install.sh | bash
+
+# Install specific version
+VERSION=0.1.147 curl -fsSL https://raw.githubusercontent.com/mylukin/agent-foreman/main/scripts/install.sh | bash
+
+# Custom install directory
+INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/mylukin/agent-foreman/main/scripts/install.sh | bash
+```
+
+### Via npm
+
+```bash
+# Global installation
 npm install -g agent-foreman
 
-# Or use with npx
+# Or use with npx (no install)
 npx agent-foreman --help
 
-# Or download standalone binary from GitHub Releases
-# https://github.com/mylukin/agent-foreman/releases
+# Install via script
+USE_NPM=1 curl -fsSL https://raw.githubusercontent.com/mylukin/agent-foreman/main/scripts/install.sh | bash
 ```
+
+### Manual Download
+
+Download standalone binary from [GitHub Releases](https://github.com/mylukin/agent-foreman/releases)
 
 ---
 
