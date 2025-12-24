@@ -10,7 +10,7 @@ agent-foreman agents
 
 ## Description
 
-The `agents` command displays the status of available AI agents (Claude, Codex, Gemini) and their priority order for use in analysis, verification, and other AI-powered operations.
+The `agents` command displays the status of available AI agents (Claude, Codex, Gemini, OpenCode) and their priority order for use in analysis, verification, and other AI-powered operations.
 
 ## Execution Flow
 
@@ -37,6 +37,7 @@ graph TB
         A1[commandExists: claude]
         A2[commandExists: codex]
         A3[commandExists: gemini]
+        A4[commandExists: opencode]
     end
 
     subgraph Status["Status Check"]
@@ -54,6 +55,7 @@ graph TB
     A1 --> B1
     A2 --> B1
     A3 --> B1
+    A4 --> B1
 
     B1 --> B2
     B2 --> B3
@@ -98,7 +100,7 @@ Gets the first available agent based on priority.
 
 Returns a string representation of agent priority.
 
-**Returns**: `string` (e.g., "claude → codex → gemini")
+**Returns**: `string` (e.g., "claude → codex → gemini → opencode")
 
 ## Agent Configuration
 
@@ -119,6 +121,11 @@ const DEFAULT_AGENTS: AgentConfig[] = [
     command: 'gemini',
     priority: 3,
   },
+  {
+    name: 'opencode',
+    command: 'opencode',
+    priority: 4,
+  },
 ];
 ```
 
@@ -132,11 +139,14 @@ graph LR
     D -->|Yes| E[Use Codex]
     D -->|No| F{Gemini Available?}
     F -->|Yes| G[Use Gemini]
-    F -->|No| H[Error: No Agent]
+    F -->|No| I{OpenCode Available?}
+    I -->|Yes| J[Use OpenCode]
+    I -->|No| H[Error: No Agent]
 
     style C fill:#4CAF50
     style E fill:#2196F3
     style G fill:#FF9800
+    style J fill:#9C27B0
     style H fill:#f44336
 ```
 
@@ -145,6 +155,7 @@ graph LR
 | 1 | Claude | `claude` | Anthropic's Claude CLI |
 | 2 | Codex | `codex` | OpenAI's Codex CLI |
 | 3 | Gemini | `gemini` | Google's Gemini CLI |
+| 4 | OpenCode | `opencode` | OpenCode CLI |
 
 ## Output Example
 
@@ -155,8 +166,9 @@ Available Agents:
   ✓ claude (priority: 1) - ACTIVE
   ✓ codex (priority: 2)
   ✗ gemini (priority: 3) - not found
+  ✗ opencode (priority: 4) - not found
 
-Priority Order: claude → codex → gemini
+Priority Order: claude → codex → gemini → opencode
 
 Current Agent: claude
 ```
@@ -170,8 +182,9 @@ Available Agents:
   ✓ claude (priority: 1) - ACTIVE
   ✓ codex (priority: 2)
   ✓ gemini (priority: 3)
+  ✓ opencode (priority: 4)
 
-Priority Order: claude → codex → gemini
+Priority Order: claude → codex → gemini → opencode
 
 Current Agent: claude
 ```
@@ -185,8 +198,9 @@ Available Agents:
   ✗ claude (priority: 1) - not found
   ✗ codex (priority: 2) - not found
   ✓ gemini (priority: 3) - ACTIVE
+  ✗ opencode (priority: 4) - not found
 
-Priority Order: claude → codex → gemini
+Priority Order: claude → codex → gemini → opencode
 
 Current Agent: gemini
 ```
@@ -200,11 +214,12 @@ Available Agents:
   ✗ claude (priority: 1) - not found
   ✗ codex (priority: 2) - not found
   ✗ gemini (priority: 3) - not found
+  ✗ opencode (priority: 4) - not found
 
-Priority Order: claude → codex → gemini
+Priority Order: claude → codex → gemini → opencode
 
 ⚠ No AI agents available!
-Install at least one: claude, codex, or gemini
+Install at least one: claude, codex, gemini, or opencode
 ```
 
 ## Agent Usage
@@ -229,29 +244,72 @@ agent-foreman agents
 
 ## Installing Agents
 
-### Claude CLI
+### Claude CLI (Claude Code)
 
 ```bash
-# macOS
-brew install anthropic/tap/claude
+# Native installer (Recommended - no Node.js required)
+curl -fsSL https://claude.ai/install.sh | bash
 
-# Other platforms
-# Visit: https://claude.ai/download
+# Via npm (requires Node.js 18+)
+npm install -g @anthropic-ai/claude-code
+
+# Verify installation
+claude --version
+claude doctor
 ```
+
+See: [Claude Code Setup](https://code.claude.com/docs/en/setup)
 
 ### Codex CLI
 
 ```bash
 # Via npm
 npm install -g @openai/codex
+
+# Via Homebrew (macOS)
+brew install --cask codex
+
+# Verify installation
+codex --version
 ```
+
+See: [OpenAI Codex CLI](https://developers.openai.com/codex/cli)
 
 ### Gemini CLI
 
 ```bash
-# Via pip
-pip install google-generativeai
+# Via npm (Recommended)
+npm install -g @google/gemini-cli
+
+# Run without installing (for testing)
+npx @google/gemini-cli
+
+# Verify installation
+gemini --version
 ```
+
+See: [Gemini CLI GitHub](https://github.com/google-gemini/gemini-cli)
+
+### OpenCode CLI
+
+```bash
+# Quick install script (Recommended)
+curl -fsSL https://opencode.ai/install | bash
+
+# Via npm
+npm install -g opencode-ai@latest
+
+# Via Homebrew (macOS/Linux)
+brew install opencode
+
+# Via Scoop (Windows)
+scoop bucket add extras && scoop install extras/opencode
+
+# Verify installation
+opencode --version
+```
+
+See: [OpenCode GitHub](https://github.com/sst/opencode)
 
 ## Agent Selection API
 
@@ -275,7 +333,7 @@ const agents = filterAvailableAgents(DEFAULT_AGENTS);
 
 | Error | Cause | Resolution |
 |-------|-------|------------|
-| "No AI agents available" | No CLIs installed | Install claude, codex, or gemini |
+| "No AI agents available" | No CLIs installed | Install claude, codex, gemini, or opencode |
 | Agent not found | CLI not in PATH | Check installation and PATH |
 
 ## Related Commands

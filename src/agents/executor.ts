@@ -4,6 +4,9 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import chalk from "chalk";
 import { getTimeout } from "../timeout-config.js";
 import type { AgentConfig, AgentState, CallAgentOptions } from "./types.js";
@@ -26,21 +29,52 @@ export async function callAgent(
   };
 
   const useStdin = config.promptViaStdin !== false;
+  const useFile = config.promptViaFile === true;
   state.startTime = Date.now();
   state.status = "running";
 
   let child: ChildProcess;
+  let promptFile: string | null = null;
+
+  // Merge custom env with process.env
+  const spawnEnv = config.env ? { ...process.env, ...config.env } : process.env;
+
   try {
-    child = useStdin
-      ? spawn(config.command[0], config.command.slice(1), {
-          stdio: ["pipe", "pipe", "pipe"],
-          cwd,
-        })
-      : spawn(config.command[0], [...config.command.slice(1), prompt], {
-          stdio: ["ignore", "pipe", "pipe"],
-          cwd,
-        });
+    if (useFile) {
+      // Write prompt to temp file and pass as @filename
+      const tmpDir = os.tmpdir();
+      const randomId = Math.random().toString(36).substring(7);
+      promptFile = path.join(tmpDir, `agent-foreman-prompt-${randomId}.txt`);
+      fs.writeFileSync(promptFile, prompt, "utf-8");
+
+      const args = [...config.command.slice(1), `@${promptFile}`];
+      child = spawn(config.command[0], args, {
+        stdio: ["ignore", "pipe", "pipe"],
+        cwd,
+        env: spawnEnv,
+      });
+    } else if (useStdin) {
+      child = spawn(config.command[0], config.command.slice(1), {
+        stdio: ["pipe", "pipe", "pipe"],
+        cwd,
+        env: spawnEnv,
+      });
+    } else {
+      child = spawn(config.command[0], [...config.command.slice(1), prompt], {
+        stdio: ["ignore", "pipe", "pipe"],
+        cwd,
+        env: spawnEnv,
+      });
+    }
   } catch (err) {
+    // Clean up temp file on error
+    if (promptFile && fs.existsSync(promptFile)) {
+      try {
+        fs.unlinkSync(promptFile);
+      } catch {
+        // Ignore cleanup error
+      }
+    }
     return {
       success: false,
       output: "",
@@ -50,18 +84,25 @@ export async function callAgent(
 
   state.process = child;
 
-  if (useStdin && child.stdin) {
+  if (useStdin && !useFile && child.stdin) {
     child.stdin.write(prompt);
     child.stdin.end();
   }
 
-  child.stdout?.on("data", (chunk) => {
-    state.stdout.push(chunk.toString());
-  });
+  // Use UTF-8 encoding for proper multi-byte character handling
+  if (child.stdout) {
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      state.stdout.push(chunk.toString());
+    });
+  }
 
-  child.stderr?.on("data", (chunk) => {
-    state.stderr.push(chunk.toString());
-  });
+  if (child.stderr) {
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => {
+      state.stderr.push(chunk.toString());
+    });
+  }
 
   const completion = new Promise<AgentState>((resolve) => {
     child.on("close", (code) => {
@@ -95,6 +136,15 @@ export async function callAgent(
 
   const result = await completion;
   if (state.timeoutHandle) clearTimeout(state.timeoutHandle);
+
+  // Clean up temp file after completion
+  if (promptFile && fs.existsSync(promptFile)) {
+    try {
+      fs.unlinkSync(promptFile);
+    } catch {
+      // Ignore cleanup error
+    }
+  }
 
   const output = result.stdout.join("");
   const errorOutput = result.stderr.join("");

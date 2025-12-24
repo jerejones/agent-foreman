@@ -101,12 +101,12 @@ export const AGENT_ENV_VAR = "AGENT_FOREMAN_AGENTS";
  * First agent has highest priority, agents are tried in order until one succeeds
  * Priority: Claude > Codex > Gemini (1 = highest priority)
  */
-export const DEFAULT_AGENT_PRIORITY = ["claude", "codex", "gemini"] as const;
+export const DEFAULT_AGENT_PRIORITY = ["claude", "codex", "gemini", "opencode"] as const;
 
 /**
  * Valid agent names that can be configured
  */
-export const VALID_AGENT_NAMES = ["claude", "gemini", "codex"] as const;
+export const VALID_AGENT_NAMES = ["claude", "gemini", "codex", "opencode"] as const;
 export type ValidAgentName = (typeof VALID_AGENT_NAMES)[number];
 
 /**

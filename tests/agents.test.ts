@@ -23,15 +23,27 @@ vi.mock("node:child_process", () => ({
   spawnSync: vi.fn(),
 }));
 
+// Mock fs for promptViaFile tests
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    writeFileSync: vi.fn(),
+    existsSync: vi.fn().mockReturnValue(true),
+    unlinkSync: vi.fn(),
+  };
+});
+
 import { spawn, spawnSync } from "node:child_process";
 
 describe("Agents", () => {
   describe("DEFAULT_AGENTS", () => {
-    it("should have claude, gemini, and codex agents defined", () => {
+    it("should have claude, gemini, codex, and opencode agents defined", () => {
       const agentNames = DEFAULT_AGENTS.map((a) => a.name);
       expect(agentNames).toContain("claude");
       expect(agentNames).toContain("gemini");
       expect(agentNames).toContain("codex");
+      expect(agentNames).toContain("opencode");
     });
 
     it("should have claude configured with bypass permissions mode", () => {
@@ -58,11 +70,29 @@ describe("Agents", () => {
       expect(codex!.command).toContain("--skip-git-repo-check");
     });
 
-    it("should have all agents configured with promptViaStdin: true", () => {
-      for (const agent of DEFAULT_AGENTS) {
-        // All agents use stdin for prompt delivery (safer for complex content)
+    it("should have stdin-based agents configured with promptViaStdin: true", () => {
+      const stdinAgents = DEFAULT_AGENTS.filter((a) => a.name !== "opencode");
+      for (const agent of stdinAgents) {
+        // Most agents use stdin for prompt delivery (safer for complex content)
         expect(agent.promptViaStdin).toBe(true);
       }
+    });
+
+    it("should have opencode configured with promptViaFile: true", () => {
+      const opencode = DEFAULT_AGENTS.find((a) => a.name === "opencode");
+      expect(opencode).toBeDefined();
+      expect(opencode!.promptViaStdin).toBe(false);
+      expect(opencode!.promptViaFile).toBe(true);
+      expect(opencode!.env).toBeDefined();
+      expect(opencode!.env!.OPENCODE_PERMISSION).toBeDefined();
+    });
+
+    it("should have opencode configured with --format and --agent flags", () => {
+      const opencode = DEFAULT_AGENTS.find((a) => a.name === "opencode");
+      expect(opencode).toBeDefined();
+      expect(opencode!.command).toContain("run");
+      expect(opencode!.command).toContain("--format");
+      expect(opencode!.command).toContain("--agent");
     });
 
     it("should have claude agent with '-' stdin indicator for v2.0.67+ compatibility", () => {
@@ -195,7 +225,7 @@ describe("Agents", () => {
 
       expect(result.available.length).toBe(1);
       expect(result.available[0].name).toBe("claude");
-      expect(result.unavailable.length).toBe(2);
+      expect(result.unavailable.length).toBe(DEFAULT_AGENTS.length - 1);
     });
 
     it("should return all unavailable when none found", () => {
@@ -204,7 +234,7 @@ describe("Agents", () => {
       const result = filterAvailableAgents(DEFAULT_AGENTS);
 
       expect(result.available.length).toBe(0);
-      expect(result.unavailable.length).toBe(3);
+      expect(result.unavailable.length).toBe(DEFAULT_AGENTS.length);
     });
 
     it("should return all available when all found", () => {
@@ -212,7 +242,7 @@ describe("Agents", () => {
 
       const result = filterAvailableAgents(DEFAULT_AGENTS);
 
-      expect(result.available.length).toBe(3);
+      expect(result.available.length).toBe(DEFAULT_AGENTS.length);
       expect(result.unavailable.length).toBe(0);
     });
   });
@@ -227,7 +257,7 @@ describe("Agents", () => {
 
       const result = checkAvailableAgents();
 
-      expect(result.length).toBe(3);
+      expect(result.length).toBe(DEFAULT_AGENTS.length);
       expect(result.every((r) => r.name && typeof r.available === "boolean")).toBe(true);
     });
 
@@ -255,6 +285,9 @@ describe("Agents", () => {
       mockProcess.stdin = { write: vi.fn(), end: vi.fn() };
       mockProcess.stdout = new EventEmitter();
       mockProcess.stderr = new EventEmitter();
+      // Add setEncoding mock for UTF-8 handling
+      mockProcess.stdout.setEncoding = vi.fn();
+      mockProcess.stderr.setEncoding = vi.fn();
 
       // Simulate async output and close
       setTimeout(() => {
@@ -337,6 +370,9 @@ describe("Agents", () => {
       mockProcess.stdin = { write: vi.fn(), end: vi.fn() };
       mockProcess.stdout = new EventEmitter();
       mockProcess.stderr = new EventEmitter();
+      // Add setEncoding mock for UTF-8 handling
+      mockProcess.stdout.setEncoding = vi.fn();
+      mockProcess.stderr.setEncoding = vi.fn();
 
       setTimeout(() => {
         mockProcess.stdout.emit("data", Buffer.from(output));
@@ -511,6 +547,9 @@ describe("Agents", () => {
       mockProcess.stdout = new EventEmitter();
       mockProcess.stderr = new EventEmitter();
       mockProcess.kill = vi.fn();
+      // Add setEncoding mock for UTF-8 handling
+      mockProcess.stdout.setEncoding = vi.fn();
+      mockProcess.stderr.setEncoding = vi.fn();
 
       setTimeout(() => {
         mockProcess.stdout.emit("data", Buffer.from(output));
@@ -552,6 +591,8 @@ describe("Agents", () => {
         mockProcess.stdout = new EventEmitter();
         mockProcess.stderr = new EventEmitter();
         mockProcess.kill = vi.fn();
+        mockProcess.stdout.setEncoding = vi.fn();
+        mockProcess.stderr.setEncoding = vi.fn();
 
         // Schedule the close event after a very short delay
         setTimeout(() => {
@@ -663,6 +704,8 @@ describe("Agents", () => {
         mockProcess.stdout = new EventEmitter();
         mockProcess.stderr = new EventEmitter();
         mockProcess.kill = vi.fn();
+        mockProcess.stdout.setEncoding = vi.fn();
+        mockProcess.stderr.setEncoding = vi.fn();
 
         setTimeout(() => {
           mockProcess.stderr.emit("data", Buffer.from("specific error"));
@@ -690,6 +733,9 @@ describe("Agents", () => {
       mockProcess.stdout = new EventEmitter();
       mockProcess.stderr = new EventEmitter();
       mockProcess.kill = vi.fn();
+      // Add setEncoding mock for UTF-8 handling
+      mockProcess.stdout.setEncoding = vi.fn();
+      mockProcess.stderr.setEncoding = vi.fn();
 
       setTimeout(() => {
         mockProcess.stdout.emit("data", Buffer.from(output));
@@ -709,6 +755,8 @@ describe("Agents", () => {
       mockProcess.stdin = { write: vi.fn(), end: vi.fn() };
       mockProcess.stdout = new EventEmitter();
       mockProcess.stderr = new EventEmitter();
+      mockProcess.stdout.setEncoding = vi.fn();
+      mockProcess.stderr.setEncoding = vi.fn();
 
       vi.mocked(spawn).mockReturnValue(mockProcess);
 
@@ -731,6 +779,8 @@ describe("Agents", () => {
       mockProcess.stdin = { write: vi.fn(), end: vi.fn() };
       mockProcess.stdout = new EventEmitter();
       mockProcess.stderr = new EventEmitter();
+      mockProcess.stdout.setEncoding = vi.fn();
+      mockProcess.stderr.setEncoding = vi.fn();
 
       vi.mocked(spawn).mockReturnValue(mockProcess);
 
@@ -757,6 +807,8 @@ describe("Agents", () => {
       mockProcess.stdout = new EventEmitter();
       mockProcess.stderr = new EventEmitter();
       mockProcess.kill = vi.fn();
+      mockProcess.stdout.setEncoding = vi.fn();
+      mockProcess.stderr.setEncoding = vi.fn();
 
       vi.mocked(spawn).mockReturnValue(mockProcess);
 
@@ -809,6 +861,53 @@ describe("Agents", () => {
         "test-cmd",
         ["--arg", "test prompt"],
         expect.objectContaining({ stdio: ["ignore", "pipe", "pipe"] })
+      );
+    });
+
+    it("should handle agent with promptViaFile=true", async () => {
+      const mockProcess = createMockProcess('{"ok": true}', 0);
+      vi.mocked(spawn).mockReturnValue(mockProcess);
+
+      const agent = {
+        name: "test-agent",
+        command: ["test-cmd", "--arg"],
+        promptViaStdin: false,
+        promptViaFile: true,
+      };
+
+      const resultPromise = callAgent(agent, "test prompt");
+      const result = await resultPromise;
+
+      expect(result.success).toBe(true);
+      // The prompt should be passed as @filename argument
+      expect(spawn).toHaveBeenCalledWith(
+        "test-cmd",
+        expect.arrayContaining([expect.stringMatching(/^@.*agent-foreman-prompt-.*\.txt$/)]),
+        expect.objectContaining({ stdio: ["ignore", "pipe", "pipe"] })
+      );
+    });
+
+    it("should pass custom env to spawn", async () => {
+      const mockProcess = createMockProcess('{"ok": true}', 0);
+      vi.mocked(spawn).mockReturnValue(mockProcess);
+
+      const agent = {
+        name: "test-agent",
+        command: ["test-cmd"],
+        promptViaStdin: true,
+        env: { CUSTOM_VAR: "custom-value" },
+      };
+
+      const resultPromise = callAgent(agent, "test prompt");
+      const result = await resultPromise;
+
+      expect(result.success).toBe(true);
+      expect(spawn).toHaveBeenCalledWith(
+        "test-cmd",
+        [],
+        expect.objectContaining({
+          env: expect.objectContaining({ CUSTOM_VAR: "custom-value" }),
+        })
       );
     });
   });

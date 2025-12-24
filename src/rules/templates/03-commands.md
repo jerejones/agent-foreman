@@ -76,7 +76,7 @@ agent-foreman init --analyze --analyze-output custom/path.md
 agent-foreman init --scan
 agent-foreman init --scan --scan-force  # Force re-detection (ignore cache)
 
-# Show AI agent status (claude, codex, gemini)
+# Show AI agent status (claude, codex, gemini, opencode)
 agent-foreman agents
 ```
 
