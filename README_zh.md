@@ -61,6 +61,7 @@ agent-foreman 设计为 **Claude Code 插件**，这是推荐的使用方式。
 | `/agent-foreman:status` | 查看项目状态和进度 |
 | `/agent-foreman:init` | 用项目目标初始化框架 |
 | `/agent-foreman:analyze` | 分析现有项目结构 |
+| `/agent-foreman:spec` | 通过多专家委员会将需求转化为任务文件 |
 | `/agent-foreman:next` | 获取下一个优先任务 |
 | `/agent-foreman:run` | 自动完成所有待办任务 |
 

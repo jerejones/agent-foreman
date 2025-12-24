@@ -30,6 +30,7 @@ agent-foreman install
 | `/agent-foreman:status` | View project status and progress |
 | `/agent-foreman:init` | Initialize harness with project goal |
 | `/agent-foreman:analyze` | Analyze existing project structure |
+| `/agent-foreman:spec` | Transform requirements into task files via Multi-Expert Council |
 | `/agent-foreman:next` | Get next priority task to work on |
 | `/agent-foreman:run` | Auto-complete all pending tasks |
 
@@ -153,6 +154,48 @@ Analyze existing project structure and generate documentation.
 - Directory structure
 - Modules discovered
 - Completion assessment
+
+---
+
+### `/agent-foreman:spec`
+
+Transform requirements into fine-grained task files using a Multi-Expert Council.
+
+> 通过多专家委员会将需求转化为细粒度任务文件。
+
+**Usage:**
+```
+/agent-foreman:spec <requirement description>
+```
+
+**How it works:**
+
+The spec command uses three virtual experts to analyze your requirements:
+
+| Expert | Focus | Key Questions |
+|--------|-------|---------------|
+| **Product Strategist** | User value, business logic | Who benefits? What defines success? |
+| **Technical Architect** | System design, patterns | How to build? What patterns to follow? |
+| **Quality Guardian** | Risk, testing, security | What can break? How to verify? |
+
+**Workflow Phases:**
+
+1. **Expert Deliberation** - Internal analysis by each expert
+2. **Synthesized Questions** - 5-8 clarifying questions with options
+3. **Project Context** - Auto-detect language, framework, patterns
+4. **Task Breakdown** - Generate fine-grained tasks in `ai/tasks/`
+
+**Examples:**
+```
+/agent-foreman:spec Add user authentication with OAuth2
+/agent-foreman:spec 实现用户登录功能，支持手机号和邮箱
+/agent-foreman:spec Build a REST API for inventory management
+```
+
+**Output:**
+- Creates task files in `ai/tasks/{module}/{task-name}.md`
+- Updates `ai/tasks/index.json` with new tasks
+- Each task has clear acceptance criteria
 
 ---
 

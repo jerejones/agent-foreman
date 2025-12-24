@@ -61,6 +61,7 @@ agent-foreman is designed as a **Claude Code plugin**. This is the recommended w
 | `/agent-foreman:status` | View project status and progress |
 | `/agent-foreman:init` | Initialize harness with project goal |
 | `/agent-foreman:analyze` | Analyze existing project structure |
+| `/agent-foreman:spec` | Transform requirements into task files via Multi-Expert Council |
 | `/agent-foreman:next` | Get next priority feature to work on |
 | `/agent-foreman:run` | Auto-complete all pending features |
 
