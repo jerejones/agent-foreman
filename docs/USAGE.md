@@ -515,23 +515,23 @@ For users not using Claude Code, agent-foreman is available as a standalone CLI.
 
 ### Installation
 
-Download the latest binary for your platform from [Releases](https://foreman.lukin.net/):
+Download the latest binary for your platform from [Releases](https://github.com/mylukin/agent-foreman/releases):
 
 ```bash
 # macOS (Apple Silicon)
-curl -fsSL https://foreman.lukin.net/latest/agent-foreman-darwin-arm64 -o agent-foreman
+curl -fsSL https://github.com/mylukin/agent-foreman/releases/latest/download/agent-foreman-darwin-arm64 -o agent-foreman
 chmod +x agent-foreman
 sudo mv agent-foreman /usr/local/bin/
 sudo xattr -dr com.apple.quarantine /usr/local/bin/agent-foreman
 
 # macOS (Intel)
-curl -fsSL https://foreman.lukin.net/latest/agent-foreman-darwin-x64 -o agent-foreman
+curl -fsSL https://github.com/mylukin/agent-foreman/releases/latest/download/agent-foreman-darwin-x64 -o agent-foreman
 chmod +x agent-foreman
 sudo mv agent-foreman /usr/local/bin/
 sudo xattr -dr com.apple.quarantine /usr/local/bin/agent-foreman
 
 # Linux (x64)
-curl -fsSL https://foreman.lukin.net/latest/agent-foreman-linux-x64 -o agent-foreman
+curl -fsSL https://github.com/mylukin/agent-foreman/releases/latest/download/agent-foreman-linux-x64 -o agent-foreman
 chmod +x agent-foreman
 sudo mv agent-foreman /usr/local/bin/
 ```
