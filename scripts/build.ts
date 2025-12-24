@@ -13,7 +13,8 @@
  */
 
 import { $ } from "bun";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT_DIR = join(import.meta.dirname, "..");
@@ -123,6 +124,36 @@ function parseArgs(): { targets: TargetKey[] } {
 }
 
 /**
+ * Generate SHA256SUMS.txt for all binaries in dist/bin
+ */
+function generateChecksums(): void {
+  console.log("\n=== Generating SHA256SUMS.txt ===");
+
+  const files = readdirSync(DIST_BIN_DIR).filter(
+    (f) => f.startsWith("agent-foreman-") && !f.endsWith(".txt")
+  );
+
+  if (files.length === 0) {
+    console.log("No binary files found, skipping checksum generation");
+    return;
+  }
+
+  const checksums: string[] = [];
+
+  for (const file of files.sort()) {
+    const filePath = join(DIST_BIN_DIR, file);
+    const content = readFileSync(filePath);
+    const hash = createHash("sha256").update(content).digest("hex");
+    checksums.push(`${hash}  ${file}`);
+    console.log(`  ${file}: ${hash.substring(0, 16)}...`);
+  }
+
+  const checksumsPath = join(DIST_BIN_DIR, "SHA256SUMS.txt");
+  writeFileSync(checksumsPath, checksums.join("\n") + "\n");
+  console.log(`\n✓ SHA256SUMS.txt generated with ${files.length} entries`);
+}
+
+/**
  * Check prerequisites and return version
  */
 function checkPrerequisites(): string {
@@ -185,6 +216,9 @@ async function main(): Promise<void> {
     }
     process.exit(1);
   }
+
+  // Generate SHA256SUMS.txt for all binaries
+  generateChecksums();
 
   console.log(`\nOutput directory: ${DIST_BIN_DIR}`);
 }
