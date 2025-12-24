@@ -35,6 +35,7 @@ ai/
 CLAUDE.md
 
 # Generated files (build)
+src/embedded-assets.generated.ts
 src/gitignore/embedded-templates.generated.ts
 src/plugins-bundle.generated.ts
 src/version.generated.ts
