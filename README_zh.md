@@ -28,35 +28,18 @@ AI 编程助手在处理复杂项目时，常常会掉进这三个坑：
 
 ## 安装
 
-### 快速安装（推荐）
-
 ```bash
-# 一行命令安装（自动下载最新二进制文件）
+# 快速安装（二进制）
 curl -fsSL https://raw.githubusercontent.com/mylukin/agent-foreman/main/scripts/install.sh | bash
 
-# 安装指定版本
-VERSION=0.1.147 curl -fsSL https://raw.githubusercontent.com/mylukin/agent-foreman/main/scripts/install.sh | bash
-
-# 自定义安装目录
-INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/mylukin/agent-foreman/main/scripts/install.sh | bash
-```
-
-### 通过 npm 安装
-
-```bash
-# 全局安装
+# 通过 npm
 npm install -g agent-foreman
 
-# 或者用 npx 直接运行（无需安装）
+# 或直接使用 npx
 npx agent-foreman --help
-
-# 通过脚本使用 npm 安装
-USE_NPM=1 curl -fsSL https://raw.githubusercontent.com/mylukin/agent-foreman/main/scripts/install.sh | bash
 ```
 
-### 手动下载
-
-从 [GitHub Releases](https://github.com/mylukin/agent-foreman/releases) 下载独立二进制文件
+手动下载：[GitHub Releases](https://github.com/mylukin/agent-foreman/releases)
 
 ---
 
@@ -122,15 +105,17 @@ agent-foreman 设计为 **Claude Code 插件**，这是推荐的使用方式。
 
 | 命令 | 说明 |
 |------|------|
-| `analyze [output]` | 生成项目架构报告 |
 | `init [goal]` | 初始化或升级框架 |
+| `init --analyze` | 仅生成 ARCHITECTURE.md |
+| `init --scan` | 仅检测验证能力 |
 | `next [feature_id]` | 显示下一个待处理任务 |
 | `status` | 显示当前项目状态 |
-| `check <feature_id>` | 预览验证（不标记完成） |
+| `check [feature_id]` | 验证代码变更或任务完成状态 |
 | `done <feature_id>` | 验证、标记完成并自动提交 |
+| `fail <feature_id>` | 标记任务为失败 |
 | `impact <feature_id>` | 分析变更影响 |
+| `tdd [mode]` | 查看或设置 TDD 模式 (strict/recommended/disabled) |
 | `agents` | 显示可用的 AI 代理 |
-| `scan` | 扫描项目验证能力 |
 | `install` | 安装 Claude Code 插件 |
 | `uninstall` | 卸载 Claude Code 插件 |
 
@@ -152,21 +137,33 @@ agent-foreman 把这套打法搬给了 AI：
 
 | 人类的做法 | AI 的等价物 |
 |-----------|------------|
-| Scrum 看板 | `feature_list.json` |
+| Scrum 看板 | `ai/tasks/index.json` |
 | 站会纪要 | `progress.log` |
 | CI/CD 流水线 | `init.sh check` |
 | Code Review | 验收标准 |
 
-### 为什么选 JSON 而非 Markdown？
+### 结构化存储格式
 
-Anthropic 的研究发现：
+每个任务以 Markdown 文件存储，包含 YAML frontmatter：
 
-> "相比 Markdown 清单，模型处理 JSON 结构时更加准确和稳定。"
+```yaml
+---
+id: auth.login
+status: failing
+priority: 1
+---
+# 用户可以登录
 
-用 JSON 存储功能列表，配合明确的 `status` 字段，AI：
-- 不会手滑删条目
-- 能精准更新状态
-- 严格遵守数据结构
+## 验收标准
+1. 有效凭证返回 JWT 令牌
+2. 无效凭证返回 401 错误
+```
+
+该格式的优势：
+- **人类可读** — 便于查看和编辑
+- **结构化元数据** — YAML frontmatter 用于状态追踪
+- **模式验证** — 防止无效状态
+- **Git 友好** — 清晰的 diff 便于代码审查
 
 ---
 
@@ -188,7 +185,7 @@ agent-foreman 采用 **TDD (测试驱动开发)** 理念：先定义验收标准
 │                                       │                                  │
 │                                       ▼                                  │
 │                             定义验收标准 (RED)                            │
-│                             feature_list.json                            │
+│                             ai/tasks/index.json                          │
 │                                                                          │
 ├──────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
@@ -247,7 +244,8 @@ agent-foreman 采用 **TDD (测试驱动开发)** 理念：先定义验收标准
 
 | 文件 | 用途 |
 |------|------|
-| `ai/feature_list.json` | 功能清单，带状态追踪 |
+| `ai/tasks/index.json` | 任务索引，带状态摘要 |
+| `ai/tasks/{module}/{id}.md` | 单个任务定义 (Markdown + YAML frontmatter) |
 | `ai/progress.log` | 进度日志，用于会话交接 |
 | `ai/init.sh` | 环境启动脚本 |
 | `ai/capabilities.json` | 项目能力缓存 |

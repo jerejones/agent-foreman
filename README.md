@@ -28,35 +28,18 @@ AI coding agents face three common failure modes:
 
 ## Installation
 
-### Quick Install (Recommended)
-
 ```bash
-# One-line install (downloads latest binary)
+# Quick install (binary)
 curl -fsSL https://raw.githubusercontent.com/mylukin/agent-foreman/main/scripts/install.sh | bash
 
-# Install specific version
-VERSION=0.1.147 curl -fsSL https://raw.githubusercontent.com/mylukin/agent-foreman/main/scripts/install.sh | bash
-
-# Custom install directory
-INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/mylukin/agent-foreman/main/scripts/install.sh | bash
-```
-
-### Via npm
-
-```bash
-# Global installation
+# Via npm
 npm install -g agent-foreman
 
-# Or use with npx (no install)
+# Or use npx directly
 npx agent-foreman --help
-
-# Install via script
-USE_NPM=1 curl -fsSL https://raw.githubusercontent.com/mylukin/agent-foreman/main/scripts/install.sh | bash
 ```
 
-### Manual Download
-
-Download standalone binary from [GitHub Releases](https://github.com/mylukin/agent-foreman/releases)
+Manual download: [GitHub Releases](https://github.com/mylukin/agent-foreman/releases)
 
 ---
 
@@ -122,15 +105,17 @@ For standalone CLI usage (without Claude Code):
 
 | Command | Description |
 |---------|-------------|
-| `analyze [output]` | Generate project architecture report |
 | `init [goal]` | Initialize or upgrade the harness |
+| `init --analyze` | Generate ARCHITECTURE.md only |
+| `init --scan` | Detect verification capabilities only |
 | `next [feature_id]` | Show next feature to work on |
 | `status` | Show current project status |
-| `check <feature_id>` | Preview verification without completing |
+| `check [feature_id]` | Verify code changes or task completion |
 | `done <feature_id>` | Verify, mark complete, and auto-commit |
+| `fail <feature_id>` | Mark a task as failed |
 | `impact <feature_id>` | Analyze impact of changes |
+| `tdd [mode]` | View or set TDD mode (strict/recommended/disabled) |
 | `agents` | Show available AI agents |
-| `scan` | Scan project verification capabilities |
 | `install` | Install Claude Code plugin |
 | `uninstall` | Uninstall Claude Code plugin |
 
@@ -152,21 +137,33 @@ agent-foreman brings these same patterns to AI:
 
 | Human Practice | AI Equivalent |
 |----------------|---------------|
-| Scrum board | `feature_list.json` |
+| Scrum board | `ai/tasks/index.json` |
 | Sprint notes | `progress.log` |
 | CI/CD pipeline | `init.sh check` |
 | Code review | Acceptance criteria |
 
-### Why JSON Instead of Markdown?
+### Structured Storage Format
 
-From Anthropic's research:
+Each task is stored as a Markdown file with YAML frontmatter:
 
-> "Models are more likely to respect and accurately update JSON structures than markdown checklists."
+```yaml
+---
+id: auth.login
+status: failing
+priority: 1
+---
+# User can login
 
-When features are stored as JSON with explicit `status` fields, AI agents:
-- Don't accidentally delete items
-- Update status correctly
-- Respect the schema
+## Acceptance Criteria
+1. Valid credentials return JWT token
+2. Invalid credentials return 401 error
+```
+
+This format provides:
+- **Human readability** — Easy to review and edit
+- **Structured metadata** — YAML frontmatter for status tracking
+- **Schema validation** — Prevents invalid states
+- **Git-friendly** — Clean diffs for code review
 
 ---
 
@@ -188,7 +185,7 @@ agent-foreman embraces **TDD (Test-Driven Development)** philosophy: define acce
 │                                       │                                  │
 │                                       ▼                                  │
 │                             Define acceptance criteria (RED)             │
-│                             feature_list.json                            │
+│                             ai/tasks/index.json                          │
 │                                                                          │
 ├──────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
@@ -247,7 +244,8 @@ agent-foreman embraces **TDD (Test-Driven Development)** philosophy: define acce
 
 | File | Purpose |
 |------|---------|
-| `ai/feature_list.json` | Feature backlog with status |
+| `ai/tasks/index.json` | Task index with status summary |
+| `ai/tasks/{module}/{id}.md` | Individual task definitions (Markdown + YAML frontmatter) |
 | `ai/progress.log` | Session handoff audit log |
 | `ai/init.sh` | Environment bootstrap script |
 | `ai/capabilities.json` | Cached project capabilities |
