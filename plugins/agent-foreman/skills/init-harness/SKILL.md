@@ -55,8 +55,8 @@ The prompt auto-skips after 10 seconds with recommended mode.
 
 For existing projects:
 ```bash
-agent-foreman analyze    # First: understand project
-agent-foreman init      # Then: create harness
+agent-foreman init --analyze    # First: understand project
+agent-foreman init              # Then: create harness
 ```
 
 ## Created Files

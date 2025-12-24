@@ -389,7 +389,7 @@ SPEC BREAKDOWN TASK
 1. Read all spec files (PM.md, UX.md, TECH.md, QA.md)
 2. Create OVERVIEW.md with executive summaries
 3. Create BREAKDOWN tasks for all modules (devops first, integration last)
-4. Update index via `agent-foreman scan`
+4. Run `agent-foreman status` to verify index update
 5. Return structured result
 
 ## Output Format
@@ -456,7 +456,7 @@ If delegation fails, you can manually execute Phase 3 by:
 1. Reading spec files (PM.md, UX.md, TECH.md, QA.md)
 2. Creating OVERVIEW.md with the template from breakdown-writer agent
 3. Creating BREAKDOWN files for each module
-4. Running `agent-foreman scan` to update index
+4. Running `agent-foreman status` to verify index update
 
 ---
 

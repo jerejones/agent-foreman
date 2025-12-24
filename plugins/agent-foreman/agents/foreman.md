@@ -32,16 +32,17 @@ Analyze user intent and delegate to the appropriate skill:
 # Core workflow
 agent-foreman status              # Check project status
 agent-foreman next [task_id]      # Get next/specific task
-agent-foreman check <task_id>     # Verify implementation
+agent-foreman check [task_id]     # Verify implementation
 agent-foreman done <task_id>      # Mark complete + commit
 agent-foreman fail <task_id> -r "reason"  # Mark as failed + continue
 
 # Setup
 agent-foreman init                # Initialize harness
-agent-foreman analyze             # Scan codebase
+agent-foreman init --analyze      # Generate ARCHITECTURE.md only
+agent-foreman init --scan         # Detect verification capabilities only
 
 # Utility
-agent-foreman scan                # Detect verification capabilities
+agent-foreman tdd [mode]          # View or set TDD mode
 agent-foreman impact <task_id>    # Check dependent tasks
 ```
 

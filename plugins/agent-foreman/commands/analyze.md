@@ -21,7 +21,7 @@ The instructions below are a fallback only if the skill fails to load.
 Run this command immediately:
 
 ```bash
-agent-foreman analyze
+agent-foreman init --analyze
 ```
 
 Wait for completion. Do not interrupt.
@@ -32,9 +32,9 @@ Output: `docs/ARCHITECTURE.md`
 
 | User Says | Execute |
 |-----------|---------|
-| Custom path provided | `agent-foreman analyze <path>` |
-| "verbose" / "detailed" | `agent-foreman analyze --verbose` |
-| (default) | `agent-foreman analyze` |
+| Custom path provided | `agent-foreman init --analyze --analyze-output <path>` |
+| "verbose" / "detailed" | `agent-foreman init --analyze --verbose` |
+| (default) | `agent-foreman init --analyze` |
 
 ## After Completion
 

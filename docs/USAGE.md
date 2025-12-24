@@ -159,43 +159,228 @@ Analyze existing project structure and generate documentation.
 
 ### `/agent-foreman:spec`
 
-Transform requirements into fine-grained task files using a Multi-Expert Council.
+Transform requirements into fine-grained task files using a Multi-Expert Council with 4 specialized AI agents.
 
-> 通过多专家委员会将需求转化为细粒度任务文件。
+> 通过多专家委员会（4 个专业 AI 代理）将需求转化为细粒度任务文件。
 
 **Usage:**
 ```
 /agent-foreman:spec <requirement description>
 ```
 
-**How it works:**
+---
 
-The spec command uses three virtual experts to analyze your requirements:
+#### Overview
 
-| Expert | Focus | Key Questions |
-|--------|-------|---------------|
-| **Product Strategist** | User value, business logic | Who benefits? What defines success? |
-| **Technical Architect** | System design, patterns | How to build? What patterns to follow? |
-| **Quality Guardian** | Risk, testing, security | What can break? How to verify? |
+The spec command orchestrates a team of 4 AI experts to analyze your requirements from different perspectives, each conducting web research before analysis:
 
-**Workflow Phases:**
+> spec 命令协调 4 个 AI 专家从不同角度分析需求，每个专家在分析前都会进行网络研究：
 
-1. **Expert Deliberation** - Internal analysis by each expert
-2. **Synthesized Questions** - 5-8 clarifying questions with options
-3. **Project Context** - Auto-detect language, framework, patterns
-4. **Task Breakdown** - Generate fine-grained tasks in `ai/tasks/`
+| Expert | Role | Focus | Research Areas |
+|--------|------|-------|----------------|
+| **PM** (Product Manager) | First analyst | WHAT and WHY | Market trends, competitor analysis, industry KPIs |
+| **UX** (UX/UI Designer) | Second analyst | User experience | UX patterns, accessibility (WCAG), interaction design |
+| **Tech** (Technical Architect) | Third analyst | HOW to build | Architecture patterns, security (OWASP), frameworks |
+| **QA** (QA Manager) | Final analyst | HOW to verify | Testing strategies, tools, benchmarks |
 
-**Examples:**
+---
+
+#### Mode Selection
+
+Before analysis begins, you'll be asked to choose a mode:
+
+> 在分析开始前，系统会询问你选择模式：
+
+| Mode | Duration | Q&A Style | Best For |
+|------|----------|-----------|----------|
+| **Quick Mode** | ~3-4 min | One combined Q&A session after all experts | Clear requirements, existing projects |
+| **Deep Mode** | ~8-10 min | Q&A after EACH expert (4 sessions) | Complex/new projects, ambiguous requirements |
+
+**Mode recommendation logic:**
+- **New project** or **complex requirement** → Deep Mode recommended
+- **Existing project** with **clear requirement** → Quick Mode recommended
+
+---
+
+#### Workflow Phases
+
+**Phase 1: Codebase Scan**
+- Detects project type (web app, CLI, API, etc.)
+- Identifies tech stack (language, framework, database)
+- Reads existing patterns from `ARCHITECTURE.md`, `package.json`, etc.
+
+> 扫描代码库，检测项目类型和技术栈。
+
+**Phase 2: Expert Analysis**
+
+*Quick Mode (Parallel):*
+```
+┌─────────────────────────────────────────────────────────┐
+│  PM    ─┐                                               │
+│  UX    ─┼─→ All 4 run in parallel → Merge questions    │
+│  Tech  ─┤                                               │
+│  QA    ─┘                                               │
+└─────────────────────────────────────────────────────────┘
+```
+
+*Deep Mode (Serial):*
+```
+┌─────────────────────────────────────────────────────────┐
+│  PM → Q&A → UX → Q&A → Tech → Q&A → QA → Q&A           │
+│  (Each agent reads previous answers before analyzing)   │
+└─────────────────────────────────────────────────────────┘
+```
+
+> Quick 模式：4 个专家并行分析，最后合并问题一次性提问。
+> Deep 模式：专家串行分析，每个专家分析后立即提问，答案会传递给下一个专家。
+
+**Phase 3: Q&A Interaction**
+
+Each expert may ask clarifying questions with:
+- **Options** (2-4 choices per question)
+- **Recommendations** (with rationale)
+- **Impact explanation** (why this matters)
+
+> 每个专家可能会提问，每个问题有 2-4 个选项和推荐答案。
+
+**Phase 4: Overview & Breakdown**
+
+After Q&A, a breakdown-writer agent:
+1. Reads all 4 spec files (PM.md, UX.md, TECH.md, QA.md)
+2. Creates `ai/tasks/spec/OVERVIEW.md` with executive summaries
+3. Creates `BREAKDOWN` tasks for each module
+4. Updates `ai/tasks/index.json`
+
+> 问答完成后，breakdown-writer 代理会创建概述和分解任务。
+
+---
+
+#### Expert Outputs
+
+Each expert writes their analysis to a dedicated file:
+
+| Expert | Output File | Content |
+|--------|-------------|---------|
+| PM | `ai/tasks/spec/PM.md` | Users, goals, scope, MVP, risks |
+| UX | `ai/tasks/spec/UX.md` | User journeys, wireframes, interactions, accessibility |
+| Tech | `ai/tasks/spec/TECH.md` | Modules, APIs, data models, architecture decisions |
+| QA | `ai/tasks/spec/QA.md` | Test strategy, risk assessment, quality gates |
+
+**Additional files created:**
+- `ai/tasks/spec/OVERVIEW.md` - Executive summary of all analyses
+- `ai/tasks/{module}/BREAKDOWN.md` - Module breakdown tasks
+
+---
+
+#### BREAKDOWN Tasks
+
+After spec completes, BREAKDOWN tasks are created for each module:
+
+```
+ai/tasks/
+├── spec/
+│   ├── PM.md
+│   ├── UX.md
+│   ├── TECH.md
+│   ├── QA.md
+│   └── OVERVIEW.md
+├── devops/
+│   └── BREAKDOWN.md       ← Priority 0 (always first)
+├── auth/
+│   └── BREAKDOWN.md       ← Priority 1-998
+├── users/
+│   └── BREAKDOWN.md       ← Priority 1-998
+└── integration/
+    └── BREAKDOWN.md       ← Priority 999 (always last)
+```
+
+**Mandatory bookend modules:**
+- `devops` (priority: 0) - Environment setup, scaffolding, dependencies
+- `integration` (priority: 999) - Final verification, E2E tests, security audit
+
+> 必须包含两个端点模块：devops（优先级 0）和 integration（优先级 999）。
+
+---
+
+#### Processing BREAKDOWN Tasks
+
+After spec completes, process all BREAKDOWN tasks to create implementation tasks:
+
+> spec 完成后，处理所有 BREAKDOWN 任务以创建实现任务：
+
+```bash
+# Auto-complete all BREAKDOWN tasks
+/agent-foreman:run
+
+# Or process a specific module
+/agent-foreman:run auth.BREAKDOWN
+```
+
+Each BREAKDOWN task, when processed, will:
+1. Read all spec documents for context
+2. Create fine-grained implementation tasks in `ai/tasks/{module}/`
+3. Each task has clear acceptance criteria and test requirements
+
+---
+
+#### Examples
+
+**Basic usage:**
 ```
 /agent-foreman:spec Add user authentication with OAuth2
-/agent-foreman:spec 实现用户登录功能，支持手机号和邮箱
-/agent-foreman:spec Build a REST API for inventory management
 ```
 
-**Output:**
-- Creates task files in `ai/tasks/{module}/{task-name}.md`
-- Updates `ai/tasks/index.json` with new tasks
-- Each task has clear acceptance criteria
+**Chinese requirement:**
+```
+/agent-foreman:spec 实现用户登录功能，支持手机号和邮箱
+```
+
+**Complex feature:**
+```
+/agent-foreman:spec Build a real-time chat system with end-to-end encryption, message history, and typing indicators
+```
+
+**API development:**
+```
+/agent-foreman:spec Create a REST API for inventory management with CRUD operations and stock alerts
+```
+
+---
+
+#### Best Practices
+
+1. **Be specific** - Clear requirements lead to better analysis
+   > 需求描述要具体明确
+
+2. **Answer questions thoughtfully** - Your answers shape the implementation
+   > 认真回答专家的问题
+
+3. **Choose the right mode**:
+   - New project? → Deep Mode
+   - Adding to existing? → Quick Mode
+   > 根据项目情况选择合适的模式
+
+4. **Review the OVERVIEW.md** - Contains synthesized decisions
+   > 查看 OVERVIEW.md 了解综合决策
+
+5. **Run `/agent-foreman:run` after spec** - Processes BREAKDOWN tasks
+   > spec 完成后运行 `/agent-foreman:run` 处理 BREAKDOWN 任务
+
+---
+
+#### Output Summary
+
+After running `/agent-foreman:spec`, you'll have:
+
+| Created | Purpose |
+|---------|---------|
+| `ai/tasks/spec/PM.md` | Product requirements and scope |
+| `ai/tasks/spec/UX.md` | User experience design with wireframes |
+| `ai/tasks/spec/TECH.md` | Technical architecture and APIs |
+| `ai/tasks/spec/QA.md` | Test strategy and quality gates |
+| `ai/tasks/spec/OVERVIEW.md` | Executive summary |
+| `ai/tasks/{module}/BREAKDOWN.md` | Module breakdown tasks |
+| Updated `ai/tasks/index.json` | Task index with new tasks |
 
 ---
 

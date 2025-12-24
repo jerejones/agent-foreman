@@ -15,7 +15,7 @@ You are a spec breakdown agent. Your mission is to synthesize spec documents int
 2. Create OVERVIEW.md with executive summaries
 3. Extract modules from TECH.md
 4. Create BREAKDOWN task files for each module
-5. Update index via `agent-foreman scan`
+5. Run `agent-foreman status` to verify index update
 6. Return structured result
 
 ## CRITICAL: Autonomous Operation
@@ -339,16 +339,16 @@ All APIs - verifies cross-module data flows and contracts.
 
 ---
 
-## Step 5: Update Index
+## Step 5: Verify Index Update
 
 Run:
 ```bash
-agent-foreman scan
+agent-foreman status
 ```
 
-This registers all new BREAKDOWN tasks in `ai/tasks/index.json`.
+This verifies all new BREAKDOWN tasks are registered in `ai/tasks/index.json`.
 
-If scan command is unavailable, the files will be detected automatically on next `agent-foreman status`.
+Tasks are automatically detected and indexed when files are created in `ai/tasks/`.
 
 ---
 
@@ -413,7 +413,7 @@ I have completed the spec breakdown:
 1. Read all 4 spec files (PM.md, UX.md, TECH.md, QA.md)
 2. Created OVERVIEW.md with executive summaries
 3. Created 5 BREAKDOWN tasks: devops, auth, chat, api, integration
-4. Updated index via agent-foreman scan
+4. Verified index via agent-foreman status
 
 ---BREAKDOWN RESULT---
 overview_created: true

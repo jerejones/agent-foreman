@@ -5,12 +5,12 @@ description: Scans codebases to generate architecture documentation (ARCHITECTUR
 
 # 🔍 Project Analyze
 
-**One command**: `agent-foreman analyze`
+**One command**: `agent-foreman init --analyze`
 
 ## Quick Start
 
 ```bash
-agent-foreman analyze
+agent-foreman init --analyze
 ```
 
 Output: `docs/ARCHITECTURE.md`
@@ -19,7 +19,7 @@ Output: `docs/ARCHITECTURE.md`
 
 | Flag | Effect |
 |------|--------|
-| `./path/FILE.md` | Custom output path |
+| `--analyze-output ./path/FILE.md` | Custom output path |
 | `--verbose` | Show detailed progress |
 
 ## Use When
