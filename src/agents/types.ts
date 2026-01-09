@@ -11,8 +11,8 @@ export interface AgentConfig {
   name: string;
   command: string[];
   promptViaStdin?: boolean;
-  promptViaFile?: boolean; // Pass prompt via @filename argument (for CLIs that don't support stdin)
-  env?: Record<string, string>; // Custom environment variables for this agent
+  promptViaFile?: boolean;
+  env?: Record<string, string>;
 }
 
 /**

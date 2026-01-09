@@ -78,23 +78,16 @@ describe("Agents", () => {
       }
     });
 
-    it("should have opencode configured for non-interactive run with positional prompt", () => {
+    it("should have opencode configured with promptViaFile for large prompt safety", () => {
       const opencode = DEFAULT_AGENTS.find((a) => a.name === "opencode");
       expect(opencode).toBeDefined();
       expect(opencode!.command).toContain("run");
       expect(opencode!.command).toContain("--format");
       expect(opencode!.command).toContain("default");
-      // No default agent - only included if env var is set
-      // Prompt passed as positional arg, NOT stdin, NOT @file
       expect(opencode!.promptViaStdin).toBe(false);
-      // @ts-ignore
-      expect(opencode!.promptViaFile).toBe(false);
-      // Should have OPENCODE_PERMISSION env var
-      // @ts-ignore
+      expect(opencode!.promptViaFile).toBe(true);
       expect(opencode!.env).toBeDefined();
-      // @ts-ignore
       expect(opencode!.env!.OPENCODE_PERMISSION).toBeDefined();
-      // @ts-ignore
       expect(opencode!.env!.OPENCODE_PERMISSION).toContain('"bash":"allow"');
     });
 
@@ -882,10 +875,9 @@ describe("Agents", () => {
       const result = await resultPromise;
 
       expect(result.success).toBe(true);
-      // The prompt should be passed as @filename argument
       expect(spawn).toHaveBeenCalledWith(
         "test-cmd",
-        expect.arrayContaining([expect.stringMatching(/^@.*agent-foreman-prompt-.*\.txt$/)]),
+        expect.arrayContaining(["-f", expect.stringMatching(/agent-foreman-prompt-.*\.txt$/)]),
         expect.objectContaining({ stdio: ["ignore", "pipe", "pipe"] })
       );
     });
@@ -1032,14 +1024,12 @@ describe("Agents", () => {
       expect(opencode!.command).toContain("default");
     });
 
-    it("should use positional prompt argument (not stdin, not @file)", () => {
+    it("should use promptViaFile (avoids E2BIG on large prompts)", () => {
       const opencode = DEFAULT_AGENTS.find((a) => a.name === "opencode");
       expect(opencode).toBeDefined();
 
-      // Verify configuration for positional prompt passing
       expect(opencode!.promptViaStdin).toBe(false);
-      // @ts-ignore - promptViaFile may not be in the type but is used
-      expect(opencode!.promptViaFile).toBe(false);
+      expect(opencode!.promptViaFile).toBe(true);
     });
   });
 });

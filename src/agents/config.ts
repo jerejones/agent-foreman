@@ -7,12 +7,10 @@ import type { AgentConfig } from "./types.js";
 /**
  * OpenCode configuration helpers
  *
- * NOTE: `opencode run` accepts the prompt as a positional argument (NOT stdin).
- * Model and agent are configurable ONLY via environment variables:
+ * NOTE: `opencode run` accepts the prompt via `-f <file>` flag to avoid E2BIG on large prompts.
+ * Model and agent are configurable via environment variables:
  * - AGENT_FOREMAN_OPENCODE_MODEL / OPENCODE_MODEL (optional)
  * - AGENT_FOREMAN_OPENCODE_AGENT / OPENCODE_AGENT (optional)
- *
- * No default model is hardcoded - OpenCode uses its own configured defaults.
  */
 const OPENCODE_MODEL_ENV_VARS = ["AGENT_FOREMAN_OPENCODE_MODEL", "OPENCODE_MODEL"] as const;
 const OPENCODE_AGENT_ENV_VARS = ["AGENT_FOREMAN_OPENCODE_AGENT", "OPENCODE_AGENT"] as const;
@@ -85,16 +83,12 @@ export const DEFAULT_AGENTS: AgentConfig[] = [
     command: ["gemini", "--output-format", "text", "--yolo"],
     promptViaStdin: true,
   },
-  // OpenCode: non-interactive mode via `opencode run`
-  // Prompt is passed as a positional argument (NOT stdin, NOT @file).
-  // Model/agent are only included if explicitly configured via env:
-  // - AGENT_FOREMAN_OPENCODE_MODEL / OPENCODE_MODEL (optional)
-  // - AGENT_FOREMAN_OPENCODE_AGENT / OPENCODE_AGENT (optional)
+  // OpenCode: prompt passed via `-f <file>` to avoid E2BIG on large prompts
   {
     name: "opencode",
     command: buildOpencodeCommand(),
     promptViaStdin: false,
-    promptViaFile: false,
+    promptViaFile: true,
     env: {
       // Auto-approve all permissions for non-interactive execution
       OPENCODE_PERMISSION: JSON.stringify({

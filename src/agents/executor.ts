@@ -36,18 +36,16 @@ export async function callAgent(
   let child: ChildProcess;
   let promptFile: string | null = null;
 
-  // Merge custom env with process.env
   const spawnEnv = config.env ? { ...process.env, ...config.env } : process.env;
 
   try {
     if (useFile) {
-      // Write prompt to temp file and pass as @filename
       const tmpDir = os.tmpdir();
       const randomId = Math.random().toString(36).substring(7);
       promptFile = path.join(tmpDir, `agent-foreman-prompt-${randomId}.txt`);
       fs.writeFileSync(promptFile, prompt, "utf-8");
 
-      const args = [...config.command.slice(1), `@${promptFile}`];
+      const args = [...config.command.slice(1), "-f", promptFile];
       child = spawn(config.command[0], args, {
         stdio: ["ignore", "pipe", "pipe"],
         cwd,
