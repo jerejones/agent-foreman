@@ -7,9 +7,12 @@ import type { AgentConfig } from "./types.js";
 /**
  * OpenCode configuration helpers
  *
- * NOTE: `opencode run` accepts the prompt via @file argument (NOT stdin).
- * In practice, it may also require an explicit model to avoid hanging
- * (e.g. when the default provider/model is rate-limited).
+ * NOTE: `opencode run` accepts the prompt as a positional argument (NOT stdin).
+ * Model and agent are configurable ONLY via environment variables:
+ * - AGENT_FOREMAN_OPENCODE_MODEL / OPENCODE_MODEL (optional)
+ * - AGENT_FOREMAN_OPENCODE_AGENT / OPENCODE_AGENT (optional)
+ *
+ * No default model is hardcoded - OpenCode uses its own configured defaults.
  */
 const OPENCODE_MODEL_ENV_VARS = ["AGENT_FOREMAN_OPENCODE_MODEL", "OPENCODE_MODEL"] as const;
 const OPENCODE_AGENT_ENV_VARS = ["AGENT_FOREMAN_OPENCODE_AGENT", "OPENCODE_AGENT"] as const;
@@ -24,6 +27,7 @@ function firstNonEmptyEnv(names: readonly string[]): string | undefined {
 
 function defaultOpencodeAgent(): string {
   // Keep output minimal/structured for JSON-only prompts used by agent-foreman scanners.
+  // Note: Upstream uses "summary", but the agent file must exist or OPENCODE_AGENT must be set.
   return firstNonEmptyEnv(OPENCODE_AGENT_ENV_VARS) ?? "summary";
 }
 
@@ -45,9 +49,12 @@ function buildOpencodeCommand(): string[] {
   const agent = defaultOpencodeAgent();
   const model = defaultOpencodeModel();
 
-  // Note: Permissions are handled via OPENCODE_PERMISSION env var, not CLI flags
+  // Base command: opencode run --format default
   const cmd = ["opencode", "run", "--format", "default", "--agent", agent];
+
+  // Only include --model if explicitly configured via env
   if (model) cmd.push("--model", model);
+
   return cmd;
 }
 
@@ -79,14 +86,15 @@ export const DEFAULT_AGENTS: AgentConfig[] = [
     promptViaStdin: true,
   },
   // OpenCode: non-interactive mode via `opencode run`
-  // Prompt is passed via @file argument (NOT stdin). Model/agent are configurable via env:
-  // - AGENT_FOREMAN_OPENCODE_MODEL / OPENCODE_MODEL
-  // - AGENT_FOREMAN_OPENCODE_AGENT / OPENCODE_AGENT
+  // Prompt is passed as a positional argument (NOT stdin, NOT @file).
+  // Model/agent are only included if explicitly configured via env:
+  // - AGENT_FOREMAN_OPENCODE_MODEL / OPENCODE_MODEL (optional)
+  // - AGENT_FOREMAN_OPENCODE_AGENT / OPENCODE_AGENT (optional)
   {
     name: "opencode",
     command: buildOpencodeCommand(),
     promptViaStdin: false,
-    promptViaFile: true,
+    promptViaFile: false,
     env: {
       // Auto-approve all permissions for non-interactive execution
       OPENCODE_PERMISSION: JSON.stringify({

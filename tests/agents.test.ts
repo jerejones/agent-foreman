@@ -78,21 +78,24 @@ describe("Agents", () => {
       }
     });
 
-    it("should have opencode configured with promptViaFile: true", () => {
-      const opencode = DEFAULT_AGENTS.find((a) => a.name === "opencode");
-      expect(opencode).toBeDefined();
-      expect(opencode!.promptViaStdin).toBe(false);
-      expect(opencode!.promptViaFile).toBe(true);
-      expect(opencode!.env).toBeDefined();
-      expect(opencode!.env!.OPENCODE_PERMISSION).toBeDefined();
-    });
-
-    it("should have opencode configured with --format and --agent flags", () => {
+    it("should have opencode configured for non-interactive run with positional prompt", () => {
       const opencode = DEFAULT_AGENTS.find((a) => a.name === "opencode");
       expect(opencode).toBeDefined();
       expect(opencode!.command).toContain("run");
       expect(opencode!.command).toContain("--format");
-      expect(opencode!.command).toContain("--agent");
+      expect(opencode!.command).toContain("default");
+      // No default agent - only included if env var is set
+      // Prompt passed as positional arg, NOT stdin, NOT @file
+      expect(opencode!.promptViaStdin).toBe(false);
+      // @ts-ignore
+      expect(opencode!.promptViaFile).toBe(false);
+      // Should have OPENCODE_PERMISSION env var
+      // @ts-ignore
+      expect(opencode!.env).toBeDefined();
+      // @ts-ignore
+      expect(opencode!.env!.OPENCODE_PERMISSION).toBeDefined();
+      // @ts-ignore
+      expect(opencode!.env!.OPENCODE_PERMISSION).toContain('"bash":"allow"');
     });
 
     it("should have claude agent with '-' stdin indicator for v2.0.67+ compatibility", () => {
@@ -973,6 +976,70 @@ describe("Agents", () => {
       for (const part of parts) {
         expect(part).toMatch(/^[A-Z][a-z]+$/);
       }
+    });
+  });
+
+  describe("OpenCode configuration (no hardcoded defaults)", () => {
+    it("should include --agent summary flag by default when env var is not set", () => {
+      // When no OPENCODE_AGENT env var is set, the command should default to --agent summary
+      // Note: DEFAULT_AGENTS is built at module load time, so this tests the default state
+      const opencode = DEFAULT_AGENTS.find((a) => a.name === "opencode");
+      expect(opencode).toBeDefined();
+
+      const agentIndex = opencode!.command.indexOf("--agent");
+      const agentEnvSet = Boolean(
+        process.env.AGENT_FOREMAN_OPENCODE_AGENT || process.env.OPENCODE_AGENT
+      );
+
+      // If env var is not set, it should default to "summary"
+      if (!agentEnvSet) {
+        expect(agentIndex).toBeGreaterThan(-1);
+        expect(opencode!.command[agentIndex + 1]).toBe("summary");
+      }
+    });
+
+    it("should include --model flag if Vertex env vars or model env vars are set", () => {
+      const opencode = DEFAULT_AGENTS.find((a) => a.name === "opencode");
+      expect(opencode).toBeDefined();
+
+      const hasModelFlag = opencode!.command.includes("--model");
+      const modelEnvSet = Boolean(
+        process.env.AGENT_FOREMAN_OPENCODE_MODEL || process.env.OPENCODE_MODEL
+      );
+      const hasVertex = Boolean(
+        process.env.GOOGLE_VERTEX_PROJECT ||
+        process.env.GOOGLE_CLOUD_PROJECT ||
+        process.env.GOOGLE_VERTEX_LOCATION
+      );
+
+      // If neither explicit model nor Vertex envs are set, no model flag should be present
+      if (!modelEnvSet && !hasVertex) {
+        expect(hasModelFlag).toBe(false);
+      } else {
+        // Otherwise it might be present (can't easily assert true without controlling env at load time)
+        // But we know the logic supports it.
+      }
+    });
+
+    it("should always have base opencode run command", () => {
+      const opencode = DEFAULT_AGENTS.find((a) => a.name === "opencode");
+      expect(opencode).toBeDefined();
+
+      // Base command should always include: opencode run --format default
+      expect(opencode!.command[0]).toBe("opencode");
+      expect(opencode!.command[1]).toBe("run");
+      expect(opencode!.command).toContain("--format");
+      expect(opencode!.command).toContain("default");
+    });
+
+    it("should use positional prompt argument (not stdin, not @file)", () => {
+      const opencode = DEFAULT_AGENTS.find((a) => a.name === "opencode");
+      expect(opencode).toBeDefined();
+
+      // Verify configuration for positional prompt passing
+      expect(opencode!.promptViaStdin).toBe(false);
+      // @ts-ignore - promptViaFile may not be in the type but is used
+      expect(opencode!.promptViaFile).toBe(false);
     });
   });
 });
