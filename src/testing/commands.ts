@@ -15,6 +15,14 @@ interface ExtendedTestCapabilities extends VerificationCapabilities {
 }
 
 /**
+ * Check if a pattern is a glob pattern (not suitable for regex-based test filters)
+ * Go's -run flag expects regex patterns, not glob patterns like "**"
+ */
+function isGlobPattern(pattern: string): boolean {
+  return pattern.includes("**") || pattern.includes("*/") || pattern.includes("/*");
+}
+
+/**
  * Build a selective test command using AI-discovered templates or fallback patterns
  *
  * Priority:
@@ -51,6 +59,13 @@ export function buildSelectiveTestCommand(
 
     // Priority 2: Use selectiveNameTemplate for pattern-based filtering
     if (testInfo.selectiveNameTemplate) {
+      // Skip pattern-based filtering for frameworks that need regex when pattern is a glob
+      // Go's -run flag expects regex, not glob patterns like "**"
+      const isGoFramework = testInfo.framework === "go" || framework === "go";
+      if (isGlobPattern(pattern) && isGoFramework) {
+        // Fall back to full test command instead of invalid regex
+        return capabilities.testCommand;
+      }
       return testInfo.selectiveNameTemplate.replace("{pattern}", pattern);
     }
   }
@@ -95,6 +110,10 @@ function buildHardcodedSelectiveCommand(
       return `pytest -k "${pattern}"`;
 
     case "go":
+      // Go -run expects regex, not glob patterns
+      if (isGlobPattern(pattern)) {
+        return `go test ./...`; // Run all tests
+      }
       return `go test -run "${pattern}" ./...`;
 
     case "cargo":

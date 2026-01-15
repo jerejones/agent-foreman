@@ -555,6 +555,61 @@ describe("Test Discovery", () => {
       expect(result).toBe('go test -run "TestAuth" ./...');
     });
 
+    it("should fall back to full go test when pattern contains ** glob", () => {
+      const caps = createMockCapabilities({ testFramework: "go" });
+
+      // This is a glob pattern that would be invalid regex for Go's -run flag
+      const result = buildSelectiveTestCommand(caps, "**/auth/**/*.test.*", defaultDiscovery);
+
+      expect(result).toBe("go test ./...");
+    });
+
+    it("should fall back to full go test when pattern contains */ glob", () => {
+      const caps = createMockCapabilities({ testFramework: "go" });
+
+      const result = buildSelectiveTestCommand(caps, "auth/*/login", defaultDiscovery);
+
+      expect(result).toBe("go test ./...");
+    });
+
+    it("should fall back to full go test when pattern contains /* glob", () => {
+      const caps = createMockCapabilities({ testFramework: "go" });
+
+      const result = buildSelectiveTestCommand(caps, "auth/*", defaultDiscovery);
+
+      expect(result).toBe("go test ./...");
+    });
+
+    it("should use selectiveNameTemplate for Go with valid regex pattern", () => {
+      const caps = {
+        ...createMockCapabilities({ testFramework: "go" }),
+        testInfo: {
+          framework: "go",
+          selectiveNameTemplate: 'go test -run "{pattern}" ./...',
+        },
+      };
+
+      const result = buildSelectiveTestCommand(caps, "TestAuth.*", defaultDiscovery);
+
+      expect(result).toBe('go test -run "TestAuth.*" ./...');
+    });
+
+    it("should fall back to full test command for Go with glob pattern in selectiveNameTemplate", () => {
+      const caps = {
+        ...createMockCapabilities({ testFramework: "go", testCommand: "go test ./..." }),
+        testInfo: {
+          framework: "go",
+          selectiveNameTemplate: 'go test -run "{pattern}" ./...',
+        },
+      };
+
+      // Glob pattern from module-based fallback
+      const result = buildSelectiveTestCommand(caps, "**/auth/**/*.test.*", defaultDiscovery);
+
+      // Should fall back to full test command instead of invalid regex
+      expect(result).toBe("go test ./...");
+    });
+
     // Cargo
     it("should build cargo test command with filter", () => {
       const caps = createMockCapabilities({ testFramework: "cargo" });
