@@ -2,7 +2,7 @@
 name: implementer
 description: Task implementation agent for feature-run workflow. Executes the next-implement-check cycle for a single task. Handles TDD workflow (RED-GREEN-REFACTOR) when strict mode is active. Returns structured results for orchestrator to process.
 model: inherit
-tools: Read, Glob, Grep, Write, Edit, Bash, WebSearch
+tools: Read, Glob, Grep, Write, Edit, Bash, WebSearch, Task
 ---
 
 # Task Implementer (implementer)
@@ -209,6 +209,92 @@ You MUST follow the RED → GREEN → REFACTOR cycle:
 3. Run tests after EACH change to ensure they still pass
 
 **CRITICAL: DO NOT write implementation code before tests exist in TDD strict mode!**
+
+---
+
+## Browser Testing with MCP Tools (Via Sub-Agent)
+
+**CRITICAL: MCP tools are NOT directly available to plugin subagents.**
+
+Due to a Claude Code limitation, custom plugin agents cannot access MCP tools directly. Instead, use the `Task` tool to spawn a `general-purpose` sub-agent for browser testing.
+
+### How to Use Browser Testing
+
+**❌ WRONG - Do NOT call MCP tools directly:**
+```
+mcp__chrome-devtools__navigate_page(...)  # Will fail - tools not available
+```
+
+**✅ CORRECT - Spawn a general-purpose sub-agent:**
+```
+Task(
+  subagent_type="general-purpose",
+  prompt="Use chrome-devtools MCP tools to verify the UI:
+
+  1. Navigate to http://localhost:3000/login
+  2. Take a screenshot
+  3. Verify the login form appears with email and password fields
+  4. Check for any console errors
+
+  Return: PASS/FAIL with details of what you observed."
+)
+```
+
+### When to Use Browser Testing Sub-Agent
+
+Spawn a `general-purpose` sub-agent when the task:
+- Mentions "visual", "UI", "appearance", "layout"
+- Requires verifying something "looks" correct
+- Tests user flows (login, forms, navigation)
+- Checks responsive design or themes
+
+### Example Prompts for Browser Testing Sub-Agent
+
+**Visual verification:**
+```
+Task(
+  subagent_type="general-purpose",
+  prompt="Use chrome-devtools MCP to verify the dashboard:
+  1. Navigate to http://localhost:3000/dashboard
+  2. Take a screenshot
+  3. Verify: sidebar is visible, header shows user name, main content area loads
+  4. Return PASS/FAIL with screenshot observations"
+)
+```
+
+**Form testing:**
+```
+Task(
+  subagent_type="general-purpose",
+  prompt="Use chrome-devtools MCP to test the signup form:
+  1. Navigate to http://localhost:3000/signup
+  2. Fill the form: email='test@example.com', password='Test123!'
+  3. Click the submit button
+  4. Wait for navigation or error message
+  5. Take screenshot of result
+  6. Return PASS/FAIL with what happened"
+)
+```
+
+**Theme verification:**
+```
+Task(
+  subagent_type="general-purpose",
+  prompt="Use chrome-devtools MCP to verify theme styling:
+  1. Navigate to http://localhost:3000
+  2. Take screenshot
+  3. Use evaluate_script to check computed styles on key elements
+  4. Verify colors match expected theme values
+  5. Return PASS/FAIL with style details"
+)
+```
+
+### Important Notes
+
+- The `general-purpose` sub-agent has access to MCP tools because it's a built-in agent
+- Keep prompts focused on specific verification tasks
+- Always request PASS/FAIL with details for clear results
+- If MCP tools aren't configured by the user, the sub-agent will report they're unavailable
 
 ---
 
